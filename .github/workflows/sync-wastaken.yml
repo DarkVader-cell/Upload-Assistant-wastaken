@@ -1,0 +1,99 @@
+name: Sync Wastaken development
+
+on:
+  schedule:
+    - cron: '0 * * * *' # hourly
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: sync-wastaken
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout wastaken
+        uses: actions/checkout@v4
+        with:
+          ref: wastaken
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch Wastaken development
+        run: git fetch --no-tags https://github.com/wastaken7/Upload-Assistant.git refs/heads/development:refs/remotes/wastaken7/development
+
+      - name: Fast-forward wastaken
+        id: sync
+        run: |
+          current=$(git rev-parse wastaken)
+          latest=$(git rev-parse wastaken7/development)
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+          if [ "$current" = "$latest" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "wastaken is already current."
+            exit 0
+          fi
+
+          if ! git merge-base --is-ancestor "$current" "$latest"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "diverged=true" >> "$GITHUB_OUTPUT"
+            echo "wastaken diverged from Wastaken development; refusing to overwrite it."
+            exit 1
+          fi
+
+          git update-ref refs/heads/wastaken "$latest" "$current"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Push fast-forward
+        if: steps.sync.outputs.changed == 'true'
+        run: git push origin wastaken
+
+      - name: Report divergence
+        if: failure() && steps.sync.outputs.diverged == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = 'Wastaken sync blocked: wastaken branch diverged';
+            const body = [
+              'The hourly sync refused to overwrite `wastaken` because it is no longer an ancestor of `wastaken7/Upload-Assistant:development`.',
+              '',
+              `Current branch: \`${{ steps.sync.outputs.current }}\``,
+              `Wastaken development: \`${{ steps.sync.outputs.latest }}\``,
+              '',
+              'Resolve the divergence manually, then close this issue.'
+            ].join('\\n');
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
