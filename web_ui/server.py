@@ -29,6 +29,7 @@ from collections.abc import Iterator, Mapping, Sequence
 
 import web_ui.auth as auth_mod
 from src.webui_progress import ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
+from src.manual_metadata import parse_detached_metadata_request, parse_metadata_submission
 
 
 def _module_name(*parts: str) -> str:
@@ -1329,6 +1330,17 @@ def _set_detached_job(job_id: str, **updates: Any) -> None:
             job.update(updates)
 
 
+def _waiting_metadata_request(job_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if not job or job.get("status") != "waiting_for_metadata":
+            return None
+        request_data = job.get("metadata_request")
+        return dict(request_data) if isinstance(request_data, Mapping) else None
+
+
 def _start_detached_worker() -> None:
     global detached_worker_thread
     with detached_jobs_lock:
@@ -1361,13 +1373,13 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
         command = cast(list[str], job["command"])
         process = subprocess.Popen(
             command,
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
             cwd=str(base_dir),
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "UA_DETACHED_JOB_ID": job_id},
         )
         with active_processes_lock:
             active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}
@@ -1376,16 +1388,27 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
             log_file.write(f"\n{'=' * 60}\n{started_at}  detached_job={job_id}\n{' '.join(command)}\n{'=' * 60}\n")
             if process.stdout is not None:
                 for line in process.stdout:
-                    log_file.write(strip_ansi(line))
+                    clean_line = strip_ansi(line)
+                    metadata_request = parse_detached_metadata_request(clean_line.rstrip("\r\n"))
+                    if metadata_request is not None:
+                        _set_detached_job(
+                            job_id,
+                            status="waiting_for_metadata",
+                            message="Waiting for IMDb/TMDb IDs in Operations",
+                            metadata_request=metadata_request,
+                        )
+                        log_file.write("Waiting for metadata IDs from Web UI\n")
+                    else:
+                        log_file.write(clean_line)
                     log_file.flush()
 
         return_code = process.wait()
         finished_at = datetime.now(UTC).isoformat()
         status = "completed" if return_code == 0 else "failed"
-        _set_detached_job(job_id, status=status, finished_at=finished_at, return_code=return_code, message=f"Exited with code {return_code}")
+        _set_detached_job(job_id, status=status, finished_at=finished_at, return_code=return_code, message=f"Exited with code {return_code}", metadata_request=None)
     except Exception as error:
         finished_at = datetime.now(UTC).isoformat()
-        _set_detached_job(job_id, status="failed", finished_at=finished_at, error=str(error), message="Detached upload failed")
+        _set_detached_job(job_id, status="failed", finished_at=finished_at, error=str(error), message="Detached upload failed", metadata_request=None)
         with contextlib.suppress(Exception), log_path.open("a", encoding="utf-8", errors="replace") as log_file:
             log_file.write(f"\nDetached upload failed: {error}\n{traceback.format_exc()}\n")
     finally:
@@ -3963,6 +3986,34 @@ def qui_log(job_id: str):
         max_bytes = 50000
     data = log_path.read_bytes()
     return jsonify({"success": True, "job_id": job_id, "log": data[-max_bytes:].decode("utf-8", errors="replace"), "bytes": len(data)})
+
+
+@app.route("/api/qui/metadata/<job_id>", methods=["POST"])
+def qui_metadata(job_id: str):
+    """Submit metadata IDs to resume a detached upload checkpoint."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    request_data = _waiting_metadata_request(job_id)
+    if request_data is None:
+        return jsonify({"success": False, "error": "Job is not waiting for metadata"}), 409
+    try:
+        payload = parse_metadata_submission(request.get_json(silent=True), request_data.get("category"))
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+    with active_processes_lock:
+        process_info = active_processes.get(job_id)
+        process = process_info.get("process") if process_info else None
+    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
+        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    try:
+        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        process.stdin.flush()
+    except (BrokenPipeError, OSError) as error:
+        return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
+    _set_detached_job(job_id, status="running", message="Metadata received; resuming upload", metadata_request=None)
+    return jsonify({"success": True, "job_id": job_id, "metadata": payload})
 
 
 @app.route("/api/config_update", methods=["POST"])
