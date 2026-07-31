@@ -39,6 +39,41 @@ The canonical Compose file keeps the WebUI permanently active through
 - `docker-data/webui-auth` — WebUI sessions and authentication state;
 - `/mnt/seeding` — the only host content root exposed to the WebUI.
 
+Everything owned by Upload Assistant that must survive a rebuild or move is
+under `docker-data/`; the folder is intentionally ignored by Git because it
+contains configuration, cookies, WebUI credentials, session keys, audit logs,
+and generated media/cache files. In particular:
+
+- `docker-data/data/config.py` contains the active Upload Assistant settings;
+- `docker-data/data/cookies/` contains tracker cookies;
+- `docker-data/tmp/` contains generated descriptions, screenshots, logs, and
+  the durable unattended-job state;
+- `docker-data/webui-auth/` contains WebUI authentication and session data.
+
+Do not commit or publicly upload `docker-data/`. It contains secrets.
+
+## Syncing to another host
+
+Stop the service before taking a consistent copy, then sync the complete
+folder to the same relative location in the other checkout:
+
+```bash
+cd /home/artemis/Upload-Assistant-wastaken
+docker compose stop
+rsync -aH --numeric-ids docker-data/ user@other-host:/path/to/Upload-Assistant-wastaken/docker-data/
+docker compose start
+```
+
+On the destination, clone the repository, place the copied folder at
+`docker-data/`, ensure `/mnt/seeding` is mounted there, and run the normal
+update/start commands. Preserve the files and permissions; do not use a Git
+checkout to transfer this folder.
+
+Qui's wrapper token is separate from Upload Assistant state and remains in
+Qui's `/config/.ua-token`. When moving Qui as well, copy that file through the
+Qui configuration backup or create a new Wastaken API token and update the
+wrapper on the destination.
+
 The service listens on port `5000` inside the Gluetun network namespace, so
 Qui reaches it through the existing `172.60.0.1:5000` route.
 
