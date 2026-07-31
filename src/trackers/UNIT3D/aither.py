@@ -1,5 +1,5 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
-from typing import Any
+from typing import Any, cast
 
 from src.console import logger
 from src.languages import languages_manager
@@ -46,7 +46,39 @@ class Aither(UNIT3D):
             logger.info(f"{self.tracker}: [bold red]No unique ID in mediainfo, skipping {self.tracker} upload.")
             return False
 
+        if not self._audio_tracks_allowed(meta):
+            return False
+
         return should_continue
+
+    def _audio_tracks_allowed(self, meta: Meta) -> bool:
+        """Reject duplicate primary audio languages unless marked compatible."""
+        mediainfo = cast(dict[str, Any], meta.mediainfo or {})
+        media = cast(dict[str, Any], mediainfo.get("media") or {})
+        tracks = cast(list[dict[str, Any]], media.get("track") or [])
+
+        tracks_by_language: dict[str, list[dict[str, Any]]] = {}
+        for track in tracks:
+            if track.get("@type") != "Audio":
+                continue
+            title = str(track.get("Title") or track.get("title") or "").lower()
+            if "commentary" in title:
+                continue
+            language = str(track.get("Language") or "und").strip().lower()
+            tracks_by_language.setdefault(language, []).append(track)
+
+        for language, language_tracks in tracks_by_language.items():
+            if len(language_tracks) <= 1:
+                continue
+            primary_tracks = [track for track in language_tracks if "compatibility" not in str(track.get("Title") or track.get("title") or "").lower()]
+            if len(primary_tracks) > 1:
+                logger.info(
+                    f"{self.tracker}: [bold red]Found {len(primary_tracks)} audio tracks in the same language "
+                    f"({language or 'unknown'}) without a Compatibility label.[/bold red]"
+                )
+                return False
+
+        return True
 
     async def get_additional_data(self, meta: Meta):
         hdr_value = meta.hdr or ""
