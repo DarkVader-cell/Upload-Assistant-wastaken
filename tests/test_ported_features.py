@@ -4,6 +4,8 @@ from cogs.redaction import Redaction
 from src.manual_metadata import metadata_request, parse_metadata_submission, should_request_metadata
 from src.modified_release import MODIFIED_RELEASE_REASON, detect_modified_release
 from src.safe_url import UnsafeURL, assert_public_http_url
+from upload import queue_item_has_successful_upload
+from web_ui import server as webui_server
 
 
 def test_detached_metadata_policy_respects_optional_and_no_prompt_flags():
@@ -45,3 +47,29 @@ def test_safe_url_rejects_private_network_targets():
         raise AssertionError("private URL was accepted")
 
     asyncio.run(check())
+
+
+def test_detached_qui_restore_marks_inflight_jobs_retryable(tmp_path, monkeypatch):
+    state_path = tmp_path / "qui_jobs.json"
+    state_path.write_text(
+        '{"job-1": {"id": "job-1", "status": "running", '
+        '"command": ["python", "upload.py", "/media/item"], '
+        '"source_path": "/media/item"}}',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(webui_server, "DETACHED_JOB_STATE_PATH", state_path)
+    with webui_server.detached_jobs_lock:
+        webui_server.detached_jobs.clear()
+        webui_server.detached_job_queue.clear()
+
+    webui_server._restore_detached_jobs()
+
+    assert webui_server.detached_jobs["job-1"]["status"] == "interrupted"
+    assert webui_server.detached_jobs["job-1"]["recovery_available"] is True
+    assert webui_server.detached_job_queue == []
+
+
+def test_failed_unattended_queue_item_remains_retryable():
+    assert not queue_item_has_successful_upload([{"upload_success": False}])
+    assert queue_item_has_successful_upload([{"upload_success": True}])
+    assert queue_item_has_successful_upload([], debug=True)

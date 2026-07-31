@@ -18,7 +18,7 @@ import sys
 import threading
 import time
 import traceback
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlparse
@@ -2031,6 +2031,16 @@ async def save_processed_file(log_file: str, file_path: str) -> None:
         await f.write(json.dumps(processed_files, indent=4))
 
 
+def queue_item_has_successful_upload(tracker_statuses: Sequence[Mapping[str, Any]], *, debug: bool = False) -> bool:
+    """Return whether a queue item is safe to mark as processed.
+
+    Unattended queues must retain items when every tracker failed. Debug mode
+    is intentionally treated as complete because it is a non-uploading dry
+    run and has historically consumed queue entries.
+    """
+    return debug or any(status.get("upload_success") is True for status in tracker_statuses)
+
+
 def get_local_version(version_file: str | Path) -> str | None:
     """Extracts the local version from the version.py file."""
     try:
@@ -2470,12 +2480,7 @@ async def do_the_thing(base_dir: str) -> None:
                 if "queue" in meta and meta.queue is not None:
                     processed_files_count += 1
                     skipped_files_count += 1
-                    logger.info(f"[cyan]Processed {processed_files_count}/{total_files} files with {skipped_files_count} skipped uploading.\n\n")
-                    if log_file and (not meta.debug or "debug" in Path(log_file).name):
-                        if meta.site_upload_queue:
-                            await QueueManager.save_processed_path(log_file, current_item_path)
-                        else:
-                            await save_processed_file(log_file, current_item_path)
+                    logger.info(f"[yellow]Upload preparation failed for {current_item_path}; leaving it retryable in the queue.\n\n")
                 await cleanup_manager.cleanup()
                 gc.collect()
                 cleanup_manager.reset_terminal()
@@ -2679,7 +2684,7 @@ async def do_the_thing(base_dir: str) -> None:
                     if "queue" in meta and meta.queue is not None:
                         processed_files_count += 1
                         tracker_statuses = [status for status in meta.tracker_status.values() if isinstance(status, Mapping)]
-                        upload_succeeded = any(status.get("upload_success") is True for status in tracker_statuses)
+                        upload_succeeded = queue_item_has_successful_upload(tracker_statuses, debug=bool(meta.debug))
                         if not upload_succeeded and not meta.debug:
                             skipped_files_count += 1
                             logger.info(f"[yellow]Processed {processed_files_count}/{total_files} files; no tracker upload succeeded.[/yellow]")
@@ -2689,11 +2694,17 @@ async def do_the_thing(base_dir: str) -> None:
                             logger.info(f"[cyan]Successfully uploaded {processed_files_count - skipped_files_count} of {meta.limit_queue} in limit with {total_files} files.")
                         else:
                             logger.info(f"[cyan]Successfully uploaded {processed_files_count - skipped_files_count}/{total_files} files.")
-                        if log_file and (not meta.debug or "debug" in Path(log_file).name):
-                            if meta.site_upload_queue:
-                                await QueueManager.save_processed_path(log_file, current_item_path)
-                            else:
-                                await save_processed_file(log_file, current_item_path)
+                        # A queue item is complete only after at least one
+                        # tracker accepted it (or in debug mode). Leaving
+                        # zero-success items unlogged lets unattended Qui
+                        # queues retry them after a restart instead of
+                        # silently losing work.
+                        if upload_succeeded or meta.debug:
+                            if log_file and (not meta.debug or "debug" in Path(log_file).name):
+                                if meta.site_upload_queue:
+                                    await QueueManager.save_processed_path(log_file, current_item_path)
+                                else:
+                                    await save_processed_file(log_file, current_item_path)
 
             finish_time = time.time()
             logger.debug(f"Uploads processed in {finish_time - start_time:.4f} seconds")

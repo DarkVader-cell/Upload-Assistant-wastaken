@@ -95,6 +95,21 @@ Notes:
 - If you face quoting headaches, prefer the wrapper script approach (PowerShell `ConvertTo-Json` or a small `.ps1` file) which avoids manual JSON escaping.
 - No terminal is required/terminal does not work with the above setup.
 
+### Qui detached-job recovery
+
+Qui submissions are persisted under `tmp/qui_jobs.json` so queued jobs survive
+a Web UI or container restart. Jobs that were already running when the Web UI
+stopped are reported as `interrupted` and retained for safe retry; they are not
+blindly replayed because a tracker may have accepted the request before the
+process stopped.
+
+### /api/qui/retry/<job_id>
+
+- Methods: POST
+- Auth: same authentication as the other `/api/qui/*` endpoints
+- Description: explicitly requeue a detached job in `failed` or `interrupted` state
+- Response: `{"success": true, "job_id": "...", "status": "queued"}` or a conflict if the job is not retryable
+
 ### /api/input
 
 - Methods: POST

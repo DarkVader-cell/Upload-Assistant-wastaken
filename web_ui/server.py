@@ -1144,6 +1144,7 @@ detached_jobs: dict[str, dict[str, Any]] = {}
 detached_job_queue: list[str] = []
 detached_jobs_lock = threading.Lock()
 detached_worker_thread: threading.Thread | None = None
+DETACHED_JOB_STATE_PATH = Path(__file__).resolve().parent.parent / "tmp" / "qui_jobs.json"
 
 # Local store for consoles we've wrapped to avoid assigning attributes on Console
 _ua_console_store: dict[int, dict[str, Any]] = {}
@@ -1323,11 +1324,92 @@ def _detached_job_snapshot(limit: int = 100) -> list[dict[str, Any]]:
     return [_json_safe({key: value for key, value in job.items() if key != "command"}) for job in jobs[:limit]]
 
 
+def _persist_detached_jobs_locked() -> None:
+    """Persist detached Qui state without exposing it through the status API."""
+    DETACHED_JOB_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {job_id: dict(job) for job_id, job in detached_jobs.items()}
+    temporary_path = DETACHED_JOB_STATE_PATH.with_suffix(".json.tmp")
+    temporary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    temporary_path.replace(DETACHED_JOB_STATE_PATH)
+
+
 def _set_detached_job(job_id: str, **updates: Any) -> None:
     with detached_jobs_lock:
         job = detached_jobs.get(job_id)
         if job:
             job.update(updates)
+            with contextlib.suppress(OSError, TypeError, ValueError):
+                _persist_detached_jobs_locked()
+
+
+def _restore_detached_jobs() -> None:
+    """Restore Qui jobs after a WebUI restart.
+
+    Queued jobs are safe to resume because no child process was started. Jobs
+    which were already running are retained as interrupted instead of being
+    blindly replayed, since a tracker may have accepted the request before the
+    WebUI/container stopped.
+    """
+    if not DETACHED_JOB_STATE_PATH.exists():
+        return
+    try:
+        stored = json.loads(DETACHED_JOB_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return
+    if not isinstance(stored, Mapping):
+        return
+
+    restored_queue: list[str] = []
+    with detached_jobs_lock:
+        for raw_job_id, raw_job in stored.items():
+            job_id = str(raw_job_id)
+            if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id) or not isinstance(raw_job, Mapping):
+                continue
+            job = dict(raw_job)
+            command = job.get("command")
+            if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
+                continue
+            status = str(job.get("status", ""))
+            if status == "queued":
+                restored_queue.append(job_id)
+                job["message"] = "Recovered after WebUI restart; queued for unattended execution"
+            elif status in {"running", "waiting_for_metadata"}:
+                job["status"] = "interrupted"
+                job["message"] = "Interrupted by WebUI restart; retained for safe retry"
+                job["recovery_available"] = True
+                job["finished_at"] = datetime.now(UTC).isoformat()
+                job["metadata_request"] = None
+            detached_jobs[job_id] = job
+        detached_job_queue.extend(restored_queue)
+        with contextlib.suppress(OSError, TypeError, ValueError):
+            _persist_detached_jobs_locked()
+    if restored_queue:
+        _start_detached_worker()
+
+
+def _retry_detached_job(job_id: str) -> bool:
+    """Queue an interrupted/failed Qui job for an explicit safe retry."""
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if not job or str(job.get("status")) not in {"interrupted", "failed"}:
+            return False
+        job.update(
+            {
+                "status": "queued",
+                "message": "Queued for retry",
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "metadata_request": None,
+                "recovery_available": False,
+            }
+        )
+        detached_job_queue.append(job_id)
+        with contextlib.suppress(OSError, TypeError, ValueError):
+            _persist_detached_jobs_locked()
+    _start_detached_worker()
+    return True
 
 
 def _waiting_metadata_request(job_id: str) -> dict[str, Any] | None:
@@ -1357,6 +1439,11 @@ def _detached_worker() -> None:
                 return
             job_id = detached_job_queue.pop(0)
             job = dict(detached_jobs.get(job_id) or {})
+            if job:
+                job["status"] = "starting"
+                job["message"] = "Starting upload"
+                with contextlib.suppress(OSError, TypeError, ValueError):
+                    _persist_detached_jobs_locked()
         if job:
             _run_detached_job(job_id, job)
 
@@ -1383,6 +1470,7 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
         )
         with active_processes_lock:
             active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}
+        _set_detached_job(job_id, process_active=True)
 
         with log_path.open("a", encoding="utf-8", errors="replace") as log_file:
             log_file.write(f"\n{'=' * 60}\n{started_at}  detached_job={job_id}\n{' '.join(command)}\n{'=' * 60}\n")
@@ -1414,9 +1502,13 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
     finally:
         with active_processes_lock:
             active_processes.pop(job_id, None)
+        _set_detached_job(job_id, process_active=False)
         if process and process.poll() is None:
             with contextlib.suppress(Exception):
                 process.kill()
+
+
+_restore_detached_jobs()
 
 
 def _string_list_preview_values(value: object) -> list[str]:
@@ -3942,10 +4034,13 @@ def qui_submit():
                 "finished_at": None,
                 "return_code": None,
                 "log_path": str(base_dir / "tmp" / f"ua-{job_id}.log"),
+                "recovery_available": False,
+                "process_active": False,
             }
             with detached_jobs_lock:
                 detached_jobs[job_id] = job
                 detached_job_queue.append(job_id)
+                _persist_detached_jobs_locked()
             created.append({key: value for key, value in job.items() if key != "command"})
         except Exception as error:  # noqa: PERF203
             errors.append({"path": str(raw_path), "error": str(error)})
@@ -3986,6 +4081,19 @@ def qui_log(job_id: str):
         max_bytes = 50000
     data = log_path.read_bytes()
     return jsonify({"success": True, "job_id": job_id, "log": data[-max_bytes:].decode("utf-8", errors="replace"), "bytes": len(data)})
+
+
+@app.route("/api/qui/retry/<job_id>", methods=["POST"])
+def qui_retry(job_id: str):
+    """Explicitly retry an interrupted or failed detached job."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return jsonify({"success": False, "error": "Invalid job id"}), 400
+    if not _retry_detached_job(job_id):
+        return jsonify({"success": False, "error": "Job is not retryable"}), 409
+    return jsonify({"success": True, "job_id": job_id, "status": "queued"}), 202
 
 
 @app.route("/api/qui/metadata/<job_id>", methods=["POST"])
