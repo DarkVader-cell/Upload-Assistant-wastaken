@@ -115,6 +115,26 @@ def round_to_even(value: float) -> int:
     return rounded
 
 
+def par_scaled_dimensions(width: float, height: float, w_sar: float, h_sar: float) -> tuple[int, int] | None:
+    """Return a meaningful PAR-corrected size, snapping rounding noise to source dimensions."""
+    if w_sar == 1 and h_sar == 1:
+        return None
+
+    scaled_w = round_to_even(width * w_sar)
+    scaled_h = round_to_even(height * h_sar)
+    stored_w = round_to_even(width)
+    stored_h = round_to_even(height)
+
+    if abs(scaled_w - stored_w) <= 4:
+        scaled_w = stored_w
+    if abs(scaled_h - stored_h) <= 4:
+        scaled_h = stored_h
+
+    if scaled_w == stored_w and scaled_h == stored_h:
+        return None
+    return scaled_w, scaled_h
+
+
 async def disc_screenshots(
     meta: Meta,
     filename: str,
@@ -740,9 +760,9 @@ async def capture_dvd_screenshot(task: tuple[int, str, str, str, Meta, float, fl
 
         # Build filter chain
         vf_filters: list[str] = []
-        if w_sar != 1 or h_sar != 1:
-            scaled_w = round_to_even(width * w_sar)
-            scaled_h = round_to_even(height * h_sar)
+        scale_dimensions = par_scaled_dimensions(width, height, w_sar, h_sar)
+        if scale_dimensions:
+            scaled_w, scaled_h = scale_dimensions
             vf_filters.append(f"scale={scaled_w}:{scaled_h}")
 
         if meta.frame_overlay:
@@ -1896,8 +1916,8 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
         if ss_time < 0:
             return None
 
-        scaled_w = round_to_even(width * w_sar)
-        scaled_h = round_to_even(height * h_sar)
+        scale_dimensions = par_scaled_dimensions(width, height, w_sar, h_sar)
+        scaled_w, scaled_h = scale_dimensions or (round_to_even(width * w_sar), round_to_even(height * h_sar))
 
         # Normalize path for cross-platform compatibility
         path = os.path.normpath(path)
@@ -1942,9 +1962,7 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
             threads_val = threads_value[1]
             vf_filters: list[str] = []
 
-            if w_sar != 1 or h_sar != 1:
-                scaled_w = round_to_even(width * w_sar)
-                scaled_h = round_to_even(height * h_sar)
+            if scale_dimensions:
                 vf_filters.append(f"scale={scaled_w}:{scaled_h}")
                 if loglevel == "verbose" or (meta and meta.debug):
                     logger.info(f"[cyan]Applied PAR scale -> {scaled_w}x{scaled_h}[/cyan]")
@@ -2025,7 +2043,7 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
                 meta.libplacebo = False
                 # Rebuild chain with zscale
                 z_vf_filters: list[str] = []
-                if w_sar != 1 or h_sar != 1:
+                if scale_dimensions:
                     z_vf_filters.append(f"scale={scaled_w}:{scaled_h}")
                 z_vf_filters.extend(["format=rgb24", "zscale=transfer=linear", f"tonemap=tonemap={algorithm}:desat={desat}", "zscale=transfer=bt709"])
                 vf_chain = ",".join(z_vf_filters)
@@ -2051,9 +2069,7 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
         # Build filter chain
         vf_filters: list[str] = []
 
-        if w_sar != 1 or h_sar != 1:
-            scaled_w = round_to_even(width * w_sar)
-            scaled_h = round_to_even(height * h_sar)
+        if scale_dimensions:
             vf_filters.append(f"scale={scaled_w}:{scaled_h}")
 
         if hdr_tonemap:
