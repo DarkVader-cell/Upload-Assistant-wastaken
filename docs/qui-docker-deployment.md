@@ -8,8 +8,28 @@ Qui instance.
 Run from the repository root:
 
 ```bash
+cd /home/artemis/Upload-Assistant-wastaken
+git switch wastaken
+git pull --ff-only origin wastaken
 docker compose up -d --build
+docker compose ps
 ```
+
+To update an already-running installation, use the same commands. The build
+replaces only the container image; the bind-mounted `docker-data/` directories
+and `/mnt/seeding` remain in place. Confirm the service is `healthy` before
+resuming unattended Qui jobs.
+
+Useful maintenance commands:
+
+```bash
+docker compose logs --tail 200 -f
+docker compose restart
+docker compose down
+```
+
+`docker compose down` stops/removes the container but does not remove the
+bind-mounted local state.
 
 The canonical Compose file keeps the WebUI permanently active through
 `gluetun_seeding` and persists:

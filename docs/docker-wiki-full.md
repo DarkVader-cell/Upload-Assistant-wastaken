@@ -69,10 +69,23 @@ Google is your friend
 
 ## How do I update the docker image?
 
+For the persistent Qui/WebUI deployment in this repository, update from the
+checkout so the local image is rebuilt from the current branch:
+
+```bash
+cd /home/artemis/Upload-Assistant-wastaken
+git switch wastaken
+git pull --ff-only origin wastaken
+docker compose up -d --build
+docker compose ps
+```
+
+The `docker-data/` state directories and `/mnt/seeding` bind mount are retained.
+For standalone containers, pull the published image and recreate the container
+using the same volume and network arguments:
+
 ```bash
 docker pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest
-# Recreate the container to run the pulled image.
-# Docker Compose: docker compose up -d
 ```
 
 ## How do I use an image of a specific commit?

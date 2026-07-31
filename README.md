@@ -288,10 +288,21 @@ In your terminal, run the command for your operating system and follow the on-sc
 
 ## **Updating:**
 
-- To update a Git installation, navigate into the Upload-Assistant directory and pull the latest changes:
+- For the persistent Docker/WebUI installation used with Qui, update it from the CLI:
+  ```bash
+  cd /home/artemis/Upload-Assistant-wastaken
+  git switch wastaken
+  git pull --ff-only origin wastaken
+  docker compose up -d --build
+  docker compose ps
+  ```
+  This updates the image in place while preserving `docker-data/` and the
+  `/mnt/seeding` mount. Check that the service reports `healthy` before using
+  Qui again. See [Qui Docker Deployment](docs/qui-docker-deployment.md).
+- For a non-Docker Git installation, navigate into the Upload-Assistant directory and pull the latest changes:
   ```bash
   cd Upload-Assistant
-  git pull
+  git pull --ff-only
   ```
 - Or, if you downloaded the ZIP file, download a fresh ZIP from GitHub and overwrite your existing files.
 - For the Windows installation, run `ua-update`.
