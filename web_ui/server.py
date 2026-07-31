@@ -5604,16 +5604,12 @@ def execute_command():
                         with contextlib.suppress(Exception):
                             if process is not None and not _session_state_is_current(session_id, process_state) and process.poll() is None:
                                 process.kill()
-                        # Ensure subprocess pipes are closed to avoid leaking file handles
+                        # Close stdin only. The reader threads own stdout/stderr and
+                        # must drain them to natural EOF; closing them here races
+                        # with reads and can produce "I/O operation on closed file".
                         with contextlib.suppress(Exception):
                             if process.stdin is not None:
                                 process.stdin.close()
-                        with contextlib.suppress(Exception):
-                            if process.stdout is not None:
-                                process.stdout.close()
-                        with contextlib.suppress(Exception):
-                            if process.stderr is not None:
-                                process.stderr.close()
                         # Ensure we remove tracking entry if still present
                         with contextlib.suppress(Exception):
                             _discard_session_state(session_id, process_state)
