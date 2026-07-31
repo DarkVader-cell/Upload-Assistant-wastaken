@@ -36,6 +36,9 @@ class Common:
         {"french", "fra", "fre", "fr", "francais", "français", "french canada", "french canadian"},
         {"portuguese", "por", "pt", "pt pt", "brazilian portuguese", "portuguese brazil", "portuguese br", "pt br", "brazilian"},
         {"spanish", "spa", "es", "es es", "spanish latin america", "latin american spanish", "es 419", "es mx", "castilian", "espanol", "español", "latino"},
+        {"bengali", "bangla", "ben", "bn"},
+        {"punjabi", "panjabi", "pan", "pa"},
+        {"odia", "oriya", "ori", "or"},
     )
 
     def __init__(self, config: dict[str, Any]) -> None:
