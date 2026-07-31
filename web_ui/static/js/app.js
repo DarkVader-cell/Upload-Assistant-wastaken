@@ -149,6 +149,18 @@ const argumentCategories = [
       },
       { label: "--tmdb", placeholder: "movie/123", description: "TMDb id" },
       { label: "--imdb", placeholder: "tt0111161", description: "IMDb id" },
+      {
+        label: "--prompt-missing-ids",
+        description: "Review unresolved IMDb/TMDb IDs after automatic matching",
+      },
+      {
+        label: "--no-prompt-missing-ids",
+        description: "Never pause unattended jobs for unresolved IDs",
+      },
+      {
+        label: "--imdb-optional",
+        description: "Allow continuation when only the TMDb ID is available",
+      },
       { label: "--mal", placeholder: "ID", description: "MAL id" },
       { label: "--tvmaze", placeholder: "ID", description: "TVMaze id" },
       { label: "--tvdb", placeholder: "ID", description: "TVDB id" },

@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM python:3.14
 
 # ── System dependencies ──────────────────────────────────────────────
@@ -25,21 +26,30 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
-RUN pip install --no-cache-dir --upgrade pip==25.3 wheel==0.45.1 requests==2.32.5
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install --upgrade pip==25.3 wheel==0.45.1 requests==2.32.5
 
 # ── Application setup ────────────────────────────────────────────────
 WORKDIR /Upload-Assistant
 
-# Copy DVD MediaInfo download script and run it
+# Copy the downloader scripts before the application source. Their expensive
+# binary-download layers remain cached when ordinary Python source changes.
 # This downloads specialized MediaInfo binaries for DVD processing with language support
 COPY bin/get_dvd_mediainfo_docker.py bin/
 RUN python3 bin/get_dvd_mediainfo_docker.py
 
 # Copy the Python requirements file and install Python dependencies
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    pip install -r requirements.txt
 
-# Copy the rest of the application
+# Download architecture-specific binaries before copying the rest of the
+# application, so source-only changes do not invalidate these layers.
+COPY bin/get_mkbrr.py bin/get_bdinfo_docker.py bin/
+RUN python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"
+RUN python3 bin/get_bdinfo_docker.py
+
+# Copy the rest of the application after the stable binary layers.
 COPY . .
 
 # Preserve the built-in data/ directory outside the mount-point so that
@@ -50,12 +60,6 @@ RUN rm -rf /Upload-Assistant/defaults \
     && mkdir -p /Upload-Assistant/defaults \
     && cp -a data /Upload-Assistant/defaults/ \
     && find /Upload-Assistant/defaults/ -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-
-# Download only the required mkbrr binary (requires full repo for src imports)
-RUN python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"
-
-# Download bdinfo binary for the container architecture using the docker helper
-RUN python3 bin/get_bdinfo_docker.py
 
 # Ensure downloaded binaries are executable
 RUN find bin/mkbrr -name "mkbrr" -print0 | xargs -0 chmod +x && \
