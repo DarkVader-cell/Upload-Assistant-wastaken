@@ -14,6 +14,7 @@ import click
 
 from src.console import logger
 from src.meta import Meta
+from src.queue_policy import should_prompt_for_queue_edits
 
 type QueueItem = dict[str, Any]
 type QueueList = list[str] | list[QueueItem]
@@ -524,7 +525,7 @@ class QueueManager:
                         for file in sorted(removed_files):
                             logger.info(f"  - {file}")
 
-                    if not meta.unattended or (meta.unattended and meta.unattended_confirm):
+                    if should_prompt_for_queue_edits(meta):
                         logger.info("[yellow]Do you want to update the queue log, edit, discard, or keep the existing queue?[/yellow]")
                         edit_choice_raw = cli_ui.ask_string(
                             "Enter 'u' to update, 'a' to add specific new files, 'e' to edit, 'd' to discard, or press Enter to keep it as is: "
@@ -580,7 +581,7 @@ class QueueManager:
                 else:
                     # No changes detected
                     logger.info("[green]No changes detected in the queue.[/green]")
-                    if not meta.unattended or (meta.unattended and meta.unattended_confirm):
+                    if should_prompt_for_queue_edits(meta):
                         logger.info("[yellow]Do you want to edit, discard, or keep the existing queue?[/yellow]")
                         edit_choice_raw = cli_ui.ask_string("Enter 'e' to edit, 'd' to discard, or press Enter to keep it as is: ")
                         edit_choice = (edit_choice_raw or "").strip().lower()
@@ -617,20 +618,23 @@ class QueueManager:
 
                 logger.info(f"[cyan]A new queue log file will be created:[/cyan] [green]{log_file}[/green]")
                 logger.info(f"[cyan]The new queue will contain {len(queue)} items.[/cyan]")
-                logger.info("[cyan]Do you want to edit the initial queue before saving?[/cyan]")
-                edit_choice_raw = cli_ui.ask_string("Enter 'e' to edit, or press Enter to save as is: ")
-                edit_choice = (edit_choice_raw or "").strip().lower()
+                if should_prompt_for_queue_edits(meta):
+                    logger.info("[cyan]Do you want to edit the initial queue before saving?[/cyan]")
+                    edit_choice_raw = cli_ui.ask_string("Enter 'e' to edit, or press Enter to save as is: ")
+                    edit_choice = (edit_choice_raw or "").strip().lower()
 
-                if edit_choice == "e":
-                    edited_content = cast(str | None, click.edit(cast(Any, json.dumps(queue, indent=4))))
-                    if edited_content:
-                        try:
-                            queue = json.loads(edited_content.strip())
-                            logger.info("[bold green]Successfully updated the queue from the editor.")
-                        except json.JSONDecodeError as e:
-                            logger.info(f"[bold red]Failed to parse the edited content: {e}. Using the original queue.")
-                    else:
-                        logger.info("[bold red]No changes were made. Using the original queue.")
+                    if edit_choice == "e":
+                        edited_content = cast(str | None, click.edit(cast(Any, json.dumps(queue, indent=4))))
+                        if edited_content:
+                            try:
+                                queue = json.loads(edited_content.strip())
+                                logger.info("[bold green]Successfully updated the queue from the editor.")
+                            except json.JSONDecodeError as e:
+                                logger.info(f"[bold red]Failed to parse the edited content: {e}. Using the original queue.")
+                        else:
+                            logger.info("[bold red]No changes were made. Using the original queue.")
+                else:
+                    logger.info("[bold yellow]Unattended mode is active; saving the initial queue without prompting.")
 
                 # Save the queue to the log file
                 await _write_json_file(log_file, queue, indent=4)

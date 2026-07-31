@@ -48,7 +48,7 @@ logs, and host-specific Docker state are never porting inputs.
 
 | ID | Case | Old-fork evidence | Wastaken evidence | Initial status | Recommendation / test gate |
 | --- | --- | --- | --- | --- | --- |
-| Q-01 | Named queue safety and unattended no-prompt behavior | `src/queue_policy.py`, `src/queuemanage.py` | `src/queuemanage.py` | `partial` | Compare queue policy and prompt paths; test unattended failure, continuation, and timeout behavior. |
+| Q-01 | Named queue safety and unattended no-prompt behavior | `src/queue_policy.py`, `src/queuemanage.py` | `src/queue_policy.py`, `src/queuemanage.py`, `tests/test_queue_policy.py` | `implemented` | Centralized the policy and guarded new/existing queue edit prompts; Ruff/static smoke checks pass, while formal pytest remains pending dependency availability. |
 | Q-02 | FIFO detached Qui queue and unique session IDs | `web_ui/server.py`, `docs/detached-metadata.md`, commits `64fb32e9`, `ce3fdfe3` | current Wastaken server/API | `review` | Include API/worker behavior but exclude frontend presentation; test concurrent submissions and FIFO ordering. |
 | Q-03 | Qui status and log endpoints | old fork `/api/qui/*` implementation and docs | current server API | `review` | Port only missing curl-friendly contracts; add endpoint contract tests with API-key authentication. |
 | Q-04 | Detached metadata checkpoints and resume | `src/manual_metadata.py`, `web_ui/server.py`, `docs/detached-metadata.md` | current metadata/queue architecture | `review` | Reconcile with Wastaken’s job model; test waiting, validated resume, and invalid IDs. |
