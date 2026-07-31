@@ -1138,6 +1138,12 @@ ProcessInfo = dict[str, Any]
 # Store active processes
 active_processes: dict[str, ProcessInfo] = {}
 
+# Detached Qui jobs are intentionally serialized to preserve submission order.
+detached_jobs: dict[str, dict[str, Any]] = {}
+detached_job_queue: list[str] = []
+detached_jobs_lock = threading.Lock()
+detached_worker_thread: threading.Thread | None = None
+
 # Local store for consoles we've wrapped to avoid assigning attributes on Console
 _ua_console_store: dict[int, dict[str, Any]] = {}
 
@@ -1294,6 +1300,100 @@ def _discard_session_state(session_id: str, process_state: Mapping[str, object])
         run_token = process_state.get("run_token")
         if run_token and current_state.get("run_token") == run_token:
             active_processes.pop(session_id, None)
+
+
+def _submit_auth_ok() -> tuple[bool, tuple[Any, int] | None]:
+    bearer = _get_bearer_from_header()
+    if bearer:
+        if _token_is_valid(bearer):
+            return True, None
+        return False, (jsonify({"success": False, "error": "Forbidden (invalid token)"}), 403)
+    if not _is_authenticated():
+        return False, (jsonify({"success": False, "error": "Authentication required"}), 401)
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return False, (jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403)
+    return True, None
+
+
+def _detached_job_snapshot(limit: int = 100) -> list[dict[str, Any]]:
+    with detached_jobs_lock:
+        jobs = list(detached_jobs.values())
+    jobs.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
+    return [_json_safe({key: value for key, value in job.items() if key != "command"}) for job in jobs[:limit]]
+
+
+def _set_detached_job(job_id: str, **updates: Any) -> None:
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if job:
+            job.update(updates)
+
+
+def _start_detached_worker() -> None:
+    global detached_worker_thread
+    with detached_jobs_lock:
+        if detached_worker_thread and detached_worker_thread.is_alive():
+            return
+        detached_worker_thread = threading.Thread(target=_detached_worker, name="ua-detached-queue", daemon=True)
+        detached_worker_thread.start()
+
+
+def _detached_worker() -> None:
+    while True:
+        with detached_jobs_lock:
+            if not detached_job_queue:
+                return
+            job_id = detached_job_queue.pop(0)
+            job = dict(detached_jobs.get(job_id) or {})
+        if job:
+            _run_detached_job(job_id, job)
+
+
+def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
+    base_dir = Path(__file__).resolve().parent.parent
+    log_path = base_dir / "tmp" / f"ua-{job_id}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    started_at = datetime.now(UTC).isoformat()
+    _set_detached_job(job_id, status="running", started_at=started_at, log_path=str(log_path), message="Running upload")
+
+    process: subprocess.Popen[str] | None = None
+    try:
+        command = cast(list[str], job["command"])
+        process = subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            cwd=str(base_dir),
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
+        )
+        with active_processes_lock:
+            active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}
+
+        with log_path.open("a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(f"\n{'=' * 60}\n{started_at}  detached_job={job_id}\n{' '.join(command)}\n{'=' * 60}\n")
+            if process.stdout is not None:
+                for line in process.stdout:
+                    log_file.write(strip_ansi(line))
+                    log_file.flush()
+
+        return_code = process.wait()
+        finished_at = datetime.now(UTC).isoformat()
+        status = "completed" if return_code == 0 else "failed"
+        _set_detached_job(job_id, status=status, finished_at=finished_at, return_code=return_code, message=f"Exited with code {return_code}")
+    except Exception as error:
+        finished_at = datetime.now(UTC).isoformat()
+        _set_detached_job(job_id, status="failed", finished_at=finished_at, error=str(error), message="Detached upload failed")
+        with contextlib.suppress(Exception), log_path.open("a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(f"\nDetached upload failed: {error}\n{traceback.format_exc()}\n")
+    finally:
+        with active_processes_lock:
+            active_processes.pop(job_id, None)
+        if process and process.poll() is None:
+            with contextlib.suppress(Exception):
+                process.kill()
 
 
 def _string_list_preview_values(value: object) -> list[str]:
@@ -3760,6 +3860,109 @@ def get_trackers():
     trackers_data.sort(key=lambda x: x["display_name"].lower())
 
     return jsonify({"success": True, "default_trackers": default_trackers_list, "trackers": trackers_data})
+
+
+@app.route("/api/qui/submit", methods=["POST", "OPTIONS"])
+@limiter.limit("300 per hour", key_func=_rate_limit_key_func)
+def qui_submit():
+    """Submit one or more unattended uploads for detached FIFO processing."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+
+    data = _as_dict(request.get_json(silent=True)) or {}
+    raw_paths = data.get("paths")
+    if raw_paths is None:
+        raw_path = data.get("path")
+        raw_paths = [raw_path] if raw_path else []
+    if not isinstance(raw_paths, list):
+        return jsonify({"success": False, "error": "paths must be a list"}), 400
+
+    args = str(data.get("args", "") or "")
+    append_unattended = str(data.get("append_unattended", True)).strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        parsed_args = shlex.split(args)
+        if append_unattended and "-ua" not in parsed_args and "--unattended" not in parsed_args:
+            parsed_args.append("-ua")
+        validated_args = _validate_upload_assistant_args(parsed_args)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid upload arguments"}), 400
+
+    base_dir = Path(__file__).resolve().parent.parent
+    upload_script = str(base_dir / "upload.py")
+    created: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    prefix = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(data.get("session_prefix") or "qui")).strip("-") or "qui"
+
+    for raw_path in raw_paths:
+        try:
+            path_text = str(raw_path or "").strip()
+            if not path_text:
+                raise ValueError("empty path")
+            validated_path = _resolve_user_path(path_text, require_exists=True, require_dir=False)
+            _assert_safe_resolved_path(validated_path)
+            job_id = f"{prefix}-{secrets.token_hex(8)}"
+            command = [sys.executable, "-u", upload_script, validated_path, *validated_args]
+            now = datetime.now(UTC).isoformat()
+            job = {
+                "id": job_id,
+                "source_path": validated_path,
+                "args": " ".join(validated_args),
+                "command": command,
+                "status": "queued",
+                "message": "Queued",
+                "created_at": now,
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "log_path": str(base_dir / "tmp" / f"ua-{job_id}.log"),
+            }
+            with detached_jobs_lock:
+                detached_jobs[job_id] = job
+                detached_job_queue.append(job_id)
+            created.append({key: value for key, value in job.items() if key != "command"})
+        except Exception as error:  # noqa: PERF203
+            errors.append({"path": str(raw_path), "error": str(error)})
+
+    if created:
+        _start_detached_worker()
+    status_code = 202 if created else 400
+    return jsonify({"success": bool(created), "jobs": _json_safe(created), "errors": _json_safe(errors), "queued_count": len(created)}), status_code
+
+
+@app.route("/api/qui/status")
+def qui_status():
+    """Return detached Qui/API job status."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except (TypeError, ValueError):
+        limit = 100
+    return jsonify({"success": True, "jobs": _detached_job_snapshot(limit=max(1, min(limit, 500)))})
+
+
+@app.route("/api/qui/log/<job_id>")
+def qui_log(job_id: str):
+    """Return a detached job log tail."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return jsonify({"success": False, "error": "Invalid job id"}), 400
+    log_path = Path(__file__).resolve().parent.parent / "tmp" / f"ua-{job_id}.log"
+    if not log_path.exists():
+        return jsonify({"success": False, "error": "Log not found"}), 404
+    try:
+        max_bytes = min(max(int(request.args.get("bytes", "50000")), 1000), 500000)
+    except (TypeError, ValueError):
+        max_bytes = 50000
+    data = log_path.read_bytes()
+    return jsonify({"success": True, "job_id": job_id, "log": data[-max_bytes:].decode("utf-8", errors="replace"), "bytes": len(data)})
 
 
 @app.route("/api/config_update", methods=["POST"])
