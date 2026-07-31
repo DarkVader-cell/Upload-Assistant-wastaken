@@ -42,7 +42,7 @@ logs, and host-specific Docker state are never porting inputs.
 | M-11 | DT/DesiTorrents Indian-language audio gate | `src/trackers/DT.py`, commits `3df90b9e`, `0ca8a461` | `src/trackers/UNIT3D/torrentdesi.py` | `implemented` | Ported the gate to Wastaken's `DESITORRENTS` module, preserving the raw-BDMV exemption, full Indian-language list, audio-only check, and `require_both=True` behavior. |
 | M-12 | OE/ULCX skip when streaming service is undetected | tracker modules and commit `314d5630` | `src/trackers/UNIT3D/onlyencodes.py`, `ulcx.py` | `implemented` | Added the WEBDL/WEBRip empty-service guard to both trackers so unattended uploads cannot proceed without a streaming-service tag. |
 | M-13 | Description footer/signature policy | `upload.py`, description builder changes | `src/get_desc.py`, tracker description writers | `implemented` | Removed the automatic Upload Assistant signature from the shared builder and tracker-specific writers; `custom_signature` configuration remains available. |
-| M-14 | Safe path boundaries and literal glob escaping | `src/discparse.py`, `src/get_desc.py`, `src/manualpackage.py`, `src/rehostimages.py` | corresponding Wastaken modules | `review` | Port security fixes only where absent; test special characters and traversal-like names. |
+| M-14 | Safe path boundaries and literal glob escaping | `src/discparse.py`, `src/get_desc.py`, `src/manualpackage.py`, `src/rehostimages.py` | corresponding Wastaken modules | `present` | Wastaken's pathlib-based paths avoid the old glob construction hazards, and `rehostimages.py` already escapes title/disc-derived glob patterns. No port required. |
 
 ### Queue, Qui, and unattended operation
 
