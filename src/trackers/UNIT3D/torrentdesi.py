@@ -1,7 +1,18 @@
 from typing import Any
 
+from src.console import logger
 from src.meta import Meta
 from src.trackers.UNIT3D import UNIT3D
+
+INDIAN_LANGUAGES: tuple[str, ...] = (
+    "hindi", "hin", "hi", "tamil", "tam", "ta", "telugu", "tel", "te",
+    "kannada", "kan", "kn", "malayalam", "mal", "ml", "bengali", "bangla", "ben", "bn",
+    "marathi", "mar", "mr", "gujarati", "guj", "gu", "punjabi", "panjabi", "pan", "pa",
+    "odia", "oriya", "ori", "or", "assamese", "asm", "as", "urdu", "urd", "ur",
+    "nepali", "nep", "ne", "sanskrit", "san", "sa", "sindhi", "snd", "sd", "konkani", "kok",
+    "manipuri", "meitei", "mni", "kashmiri", "kas", "ks", "maithili", "mai", "bodo", "brx",
+    "dogri", "doi", "santali", "sat",
+)
 
 
 class DesiTorrents(UNIT3D):
@@ -22,6 +33,23 @@ class DesiTorrents(UNIT3D):
         super().__init__(config, tracker_name="DESITORRENTS")
 
         # Banned Groups
+
+    async def get_additional_checks(self, meta: Meta) -> bool:
+        if meta.is_disc == "BDMV":
+            return True
+
+        if not await self.common.check_language_requirements(
+            meta,
+            self.tracker,
+            languages_to_check=list(INDIAN_LANGUAGES),
+            check_audio=True,
+            check_subtitle=False,
+            require_both=True,
+            original_language=False,
+        ):
+            logger.info(f"{self.tracker}: [bold red]No Indian language audio track detected; skipping upload.[/bold red]")
+            return False
+        return True
 
     async def get_category_id(
         self,
