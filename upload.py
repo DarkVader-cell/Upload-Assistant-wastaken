@@ -53,6 +53,7 @@ from src.get_desc import gen_desc
 from src.get_name import NameManager
 from src.get_tracker_data import TrackerDataManager
 from src.qbitwait import Wait
+from src.modified_release import detect_modified_release
 from src.queuemanage import QueueManager
 from src.takescreens import TakeScreensManager
 from src.temp_paths import covers_dir, posters_dir, screenshots_dir
@@ -1094,6 +1095,28 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
         logger.info(f"Error in gather_prep: {e}")
         logger.info(traceback.format_exc())
         return False
+
+    modified_reason = detect_modified_release(
+        [str(meta.path or "")],
+        str(meta.tag or ""),
+        is_disc=bool(meta.is_disc),
+        personal_release=bool(meta.personalrelease),
+    )
+    if modified_reason and not meta.get("modified_release_reason"):
+        meta.modified_release_reason = modified_reason
+    if meta.modified_release_reason and not meta.is_disc and not meta.personalrelease and not config["DEFAULT"].get("allow_renamed_releases", False):
+        logger.info(f"[bold red]Upload blocked: {meta.modified_release_reason}[/bold red]")
+        if meta.unattended:
+            meta.we_are_uploading = False
+            meta.skip_cross_seeding = True
+            return False
+        try:
+            if not CLI_UI.ask_yes_no("Continue with this release anyway?", default=False):
+                meta.we_are_uploading = False
+                meta.skip_cross_seeding = True
+                return False
+        except EOFError:
+            return False
 
     # Load covers.json if it exists and not already present in meta
     covers_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/covers.json"

@@ -939,6 +939,13 @@ async def download_poster_from_meta(meta: Meta, cover_path: str, *, force: bool 
     poster_url = meta.poster
     if not poster_url:
         return False
+    from src.safe_url import UnsafeURL, assert_public_http_url
+
+    try:
+        await assert_public_http_url(poster_url)
+    except UnsafeURL as error:
+        logger.warning(f"[yellow]Skipping unsafe poster URL: {error}[/yellow]")
+        return False
 
     min_size = 20480
     if poster_url.startswith("http://books.google.com/") or poster_url.startswith("https://covers.openlibrary.org/b/id/"):

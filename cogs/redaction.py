@@ -28,6 +28,29 @@ SENSITIVE_KEYS: set[str] = {
     "Popcron",
 }
 
+PASSKEY_PATH_RE = re.compile(r"(?i)/([A-Za-z0-9]{10,})(/announce(?:\.php)?)")
+ANNOUNCE_PATH_TOKEN_RE = re.compile(r"(?i)(/announce(?:\.php)?/)([A-Za-z0-9]{10,})($|[/?#])")
+API_PATH_TOKEN_RE = re.compile(r'(?i)(/api/torrents/)([A-Za-z0-9]{10,})($|[/?#"])')
+PROXY_PATH_RE = re.compile(r'(?i)(/proxy/)([^/\s?#"]+)')
+QUERY_PARAM_RE = re.compile(
+    r"(?i)([?&](anti[_-]?csrf[_-]?token|api[_-]?key|api[_-]?token|auth|auth[_-]?key|csrf|"
+    r"info[_-]?hash|key|passkey|password|rss[_-]?key|secret|token|torrent[_-]?pass|uid|"
+    r"user|user[_-]?id|userid)=)[^&\s]+"
+)
+KEY_VALUE_QUOTED_RE = re.compile(
+    r"""(?ix)\b(anti[_-]?csrf[_-]?token|api[_-]?key|api[_-]?token|authorization|auth|auth[_-]?key|"""
+    r"""cookie|csrf|passkey|password|rss[_-]?key|secret|token|torrent[_-]?pass)\b(\s*[:=]\s*)"""
+    r"""("(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')"""
+)
+KEY_VALUE_PLAIN_RE = re.compile(
+    r"""(?ix)\b(anti[_-]?csrf[_-]?token|api[_-]?key|api[_-]?token|authorization|auth|auth[_-]?key|"""
+    r"""cookie|csrf|passkey|password|rss[_-]?key|secret|token|torrent[_-]?pass)\b(\s*[:=]\s*)"""
+    r"""(bearer\s+)?([^"'\s,;)\]}]+)"""
+)
+COOKIE_TAIL_RE = re.compile(r"(?i)(\bcookie\b\s*[:=]\s*\[REDACTED\])(?:[;]\s*[^,\r\n]+)+")
+AUTH_TAIL_RE = re.compile(r"(?i)(\bauthorization\b\s*[:=]\s*bearer\s+\[REDACTED\])(?:,\s*[^,\s]+)+")
+LONG_HEX_TOKEN_RE = re.compile(r"\b[a-fA-F0-9]{32,}\b")
+
 
 class PathAwareEncoder(json.JSONEncoder):
     """JSON encoder that converts pathlib.Path objects to strings."""
@@ -39,6 +62,15 @@ class PathAwareEncoder(json.JSONEncoder):
 
 
 class Redaction:
+    @staticmethod
+    def canonical_sensitive_key(key: str) -> str:
+        return re.sub(r"[_\-\s]", "", key.strip().lower())
+
+    @staticmethod
+    def is_sensitive_key(key: str, sensitive_keys: set[str]) -> bool:
+        canonical_key = Redaction.canonical_sensitive_key(key)
+        return any(Redaction.canonical_sensitive_key(candidate) in canonical_key for candidate in sensitive_keys)
+
     @staticmethod
     def extract_json_blocks(text: str) -> list[tuple[int, int]]:
         """Extract JSON-like blocks from a string using bracket counting.
@@ -116,14 +148,26 @@ class Redaction:
 
                 val = val[:start] + redacted_str + val[end:]
 
-            # Redact passkeys in announce URLs (e.g. /<passkey>/announce)
-            val = re.sub(r"(?<=/)[a-zA-Z0-9]{10,}(?=/announce)", "[REDACTED]", val)
-            # Redact content between /proxy/ and /api (e.g. /proxy/<secret>/api)
-            val = re.sub(r"(?<=/proxy/)[^/]+(?=/api)", "[REDACTED]", val)
-            # Redact query params like ?passkey=... or &token=...
-            val = re.sub(r"([?&](passkey|key|token|auth|info_hash|torrent_pass)=)[^&]+", r"\1[REDACTED]", val, flags=re.I)
-            # Redact long hex or base64-like strings (common for tokens)
-            val = re.sub(r"\b[a-fA-F0-9]{32,}\b", "[REDACTED]", val)
+            val = PASSKEY_PATH_RE.sub(r"/[REDACTED]\2", val)
+            val = ANNOUNCE_PATH_TOKEN_RE.sub(r"\1[REDACTED]\3", val)
+            val = API_PATH_TOKEN_RE.sub(r"\1[REDACTED]\3", val)
+            val = PROXY_PATH_RE.sub(r"\1[REDACTED]", val)
+            val = QUERY_PARAM_RE.sub(r"\1[REDACTED]", val)
+
+            def redact_quoted(match: re.Match[str]) -> str:
+                quoted = match.group(3)
+                return f"{match.group(1)}{match.group(2)}{quoted[0]}[REDACTED]{quoted[-1]}"
+
+            def redact_plain(match: re.Match[str]) -> str:
+                if match.group(4).casefold() in {"[redacted", "[redacted]"}:
+                    return match.group(0)
+                return f"{match.group(1)}{match.group(2)}{match.group(3) or ''}[REDACTED]"
+
+            val = KEY_VALUE_QUOTED_RE.sub(redact_quoted, val)
+            val = KEY_VALUE_PLAIN_RE.sub(redact_plain, val)
+            val = COOKIE_TAIL_RE.sub(r"\1", val)
+            val = AUTH_TAIL_RE.sub(r"\1", val)
+            val = LONG_HEX_TOKEN_RE.sub("[REDACTED]", val)
         return val
 
     @staticmethod
@@ -132,7 +176,7 @@ class Redaction:
         keys = sensitive_keys or SENSITIVE_KEYS
         if isinstance(data, dict):
             typed_data = cast(dict[str, Any], data)
-            return {k: ("[REDACTED]" if any(s.lower() in k.lower() for s in keys) else Redaction.redact_private_info(v, keys)) for k, v in typed_data.items()}
+            return {k: ("[REDACTED]" if Redaction.is_sensitive_key(k, keys) else Redaction.redact_private_info(v, keys)) for k, v in typed_data.items()}
         if isinstance(data, list):
             return [Redaction.redact_private_info(item, keys) for item in cast(list[Any], data)]
         if isinstance(data, str):
