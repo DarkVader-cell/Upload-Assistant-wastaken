@@ -19,6 +19,15 @@ def guessit_fn(value: str, options: dict[str, Any] | None = None) -> dict[str, A
     return cast(dict[str, Any], guessit_module.guessit(value, options))
 
 
+_DOT_GROUP_MAP: dict[str, str] = {
+    "Fried.Chicken.Please": "FriedChickenPlease",
+}
+
+
+def canonicalize_release_group(release_group: str) -> str:
+    return _DOT_GROUP_MAP.get(release_group, release_group)
+
+
 async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> str:
     # Using regex from cross-seed (https://github.com/cross-seed/cross-seed/tree/master?tab=Apache-2.0-1-ov-file)
     release_group = None
@@ -110,6 +119,7 @@ async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> st
             if release_group:
                 if "Z0N3" in release_group:
                     release_group = release_group.replace("Z0N3", "D-Z0N3")
+                release_group = canonicalize_release_group(release_group)
                 if not meta.scene and len(release_group) > 12:
                     release_group = None
             logger.debug(f"Non-anime regex match: {release_group}")
