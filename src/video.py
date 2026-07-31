@@ -54,22 +54,24 @@ class VideoManager:
                     hdr = ""
                     hdr_fields = [video_track.get("HDR_Format_Compatibility", ""), video_track.get("HDR_Format_String", ""), video_track.get("HDR_Format", "")]
                     hdr_format_string = next((v for v in hdr_fields if isinstance(v, str) and v.strip()), "")
-                    if "HDR10+" in hdr_format_string:
+                    hdr_format_upper = hdr_format_string.upper()
+                    if "HDR10+" in hdr_format_upper:
                         hdr = "HDR10+"
-                    elif "HDR10" in hdr_format_string or "SMPTE ST 2094 App 4" in hdr_format_string:
+                    elif "HDR10" in hdr_format_upper or "SMPTE ST 2094" in hdr_format_upper:
                         hdr = "HDR"
-                    if hdr_format_string and "HLG" in hdr_format_string:
+                    if hdr_format_string and "HLG" in hdr_format_upper:
                         hdr = f"{hdr} HLG"
                     if hdr_format_string == "" and "PQ" in (video_track.get("transfer_characteristics"), video_track.get("transfer_characteristics_Original", None)):
                         hdr = "PQ10"
-                    transfer_characteristics = video_track.get("transfer_characteristics_Original") or ""
-                    if "HLG" in transfer_characteristics:
+                    transfer_characteristics = str(video_track.get("transfer_characteristics_Original") or video_track.get("transfer_characteristics") or "")
+                    transfer_upper = transfer_characteristics.upper()
+                    if "HLG" in transfer_upper:
                         hdr = "HLG"
-                    if hdr != "HLG" and "BT.2020 (10-bit)" in transfer_characteristics:
+                    if hdr != "HLG" and "BT.2020 (10-BIT)" in transfer_upper:
                         hdr = "WCG"
 
             with contextlib.suppress(Exception):
-                if "Dolby Vision" in video_track.get("HDR_Format", "") or "Dolby Vision" in video_track.get("HDR_Format_String", ""):
+                if "DOLBY VISION" in str(video_track.get("HDR_Format", "")).upper() or "DOLBY VISION" in str(video_track.get("HDR_Format_String", "")).upper():
                     dv = "DV"
 
         return f"{dv} {hdr}".strip()

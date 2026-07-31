@@ -88,13 +88,19 @@ class NameManager:
             dvd_size = meta.dvd_size
         else:
             video_codec = meta.video_codec
-            video_encode = meta.video_encode
+            video_encode = meta.video_encode or video_codec
         edition = meta.edition
         if "hybrid" in edition.upper():
             edition = edition.replace("Hybrid", "").strip()
 
         if meta.category == "TV":
-            year = str(meta.year) if (meta.year is not None and meta.search_year != "") else ""
+            if meta.search_year != "":
+                search_year = str(meta.search_year)
+                year = str(meta.year) if meta.year is not None else ""
+                if title.endswith(f"({search_year})"):
+                    title = title[: -len(search_year) - 2].rstrip()
+            else:
+                year = ""
             if meta.manual_date:
                 # Ignore season and year for --daily flagged shows, just use manual date stored in episode_name
                 season = ""
@@ -484,7 +490,7 @@ class NameManager:
 
         year_pattern = r"(18|19|20)\d{2}"
         res_pattern = r"\b(480|576|720|1080|2160)[pi]\b"
-        type_pattern = r"(WEBDL|BluRay|REMUX|HDRip|Blu-Ray|Web-DL|webrip|web-rip|DVD|BD100|BD50|BD25|HDTV|UHD|HDR|DOVI|REPACK|Season)(?=[._\-\s]|$)"
+        type_pattern = r"(VODRip|VOD|WEBDL|BluRay|REMUX|HDRip|Blu-Ray|Web-DL|webrip|web-rip|DVD|BD100|BD50|BD25|HDTV|UHD|HDR|DOVI|REPACK|Season)(?=[._\-\s]|$)"
         season_pattern = r"\bS(\d{1,3})\b"
         season_episode_pattern = r"\bS(\d{1,3})E(\d{1,3})\b"
         date_pattern = r"\b(20\d{2})\.(\d{1,2})\.(\d{1,2})\b"
@@ -585,6 +591,8 @@ class NameManager:
             "WEB-DL": "",
             "WEBRip": "",
             "WEB": "",
+            "VODRip": "",
+            "VOD": "",
             "BluRay": "",
             "Blu-ray": "",
             "HDTV": "",
