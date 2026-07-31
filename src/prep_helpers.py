@@ -1,7 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import asyncio
 import contextlib
-import json
 import ntpath
 import os
 import re
@@ -27,7 +26,7 @@ from src.get_source import get_source
 from src.imdb import imdb_manager
 from src.languages import languages_manager
 from src.meta import Meta
-from src.manual_metadata import encode_metadata_request
+from src.manual_metadata import request_missing_metadata, should_request_metadata
 from src.region import get_distributor, get_region, get_service
 from src.tags import get_tag, tag_override
 from src.tvmaze import tvmaze_manager
@@ -1080,40 +1079,29 @@ async def search_metadata(
     # Detached Web UI jobs cannot answer an interactive prompt. Emit a
     # machine-readable checkpoint so the server can collect the missing IDs
     # and resume this same process through its stdin pipe.
-    if os.environ.get("UA_DETACHED_JOB_ID", "").strip() and meta.category not in ("BOOK", "GAME"):
-        if int(meta.tmdb_id or 0) == 0 or int(meta.imdb_id or 0) == 0:
-            print(encode_metadata_request(meta), flush=True)
-            response_line = sys.stdin.readline()
-            if not response_line:
-                raise RuntimeError("Detached metadata prompt closed before IDs were supplied")
-            from src.manual_metadata import apply_metadata_submission
-
-            try:
-                payload = json.loads(response_line)
-            except json.JSONDecodeError as exc:
-                raise ValueError("Invalid metadata response received from Web UI") from exc
-            changed = apply_metadata_submission(meta, payload)
-            if int(meta.imdb_id or 0) != 0 and int(meta.tmdb_id or 0) == 0:
-                category, tmdb_id, original_language, filename_search = await prep_instance.tmdb_manager.get_tmdb_from_imdb(
-                    _to_int(meta.imdb_id),
-                    _to_int(meta.tvdb_id) or None,
-                    _normalize_search_year(meta.search_year),
-                    filename,
-                    debug=meta.debug,
-                    mode=(meta.mode if meta.mode is not None else "non_cli"),
-                    category_preference=meta.category,
-                    imdb_info=meta.imdb_info,
-                )
-                meta.category = category
-                meta.tmdb_id = _to_int(tmdb_id)
-                meta.original_language = original_language
-                meta.no_ids = filename_search
-            if "tmdb_id" in changed or "category" in changed:
-                await prep_instance.tmdb_manager.set_tmdb_metadata(meta, filename)
-            if "imdb_id" in changed:
-                meta.imdb_info = await imdb_manager.get_imdb_info_api(
-                    _to_int(meta.imdb_id), manual_language=meta.manual_language, base_dir=meta.base_dir, config=prep_instance.config
-                )
+    if should_request_metadata(meta, detached=bool(os.environ.get("UA_DETACHED_JOB_ID"))) and meta.category not in ("BOOK", "GAME"):
+        changed = request_missing_metadata(meta)
+        if int(meta.imdb_id or 0) != 0 and int(meta.tmdb_id or 0) == 0:
+            category, tmdb_id, original_language, filename_search = await prep_instance.tmdb_manager.get_tmdb_from_imdb(
+                _to_int(meta.imdb_id),
+                _to_int(meta.tvdb_id) or None,
+                _normalize_search_year(meta.search_year),
+                filename,
+                debug=meta.debug,
+                mode=(meta.mode if meta.mode is not None else "non_cli"),
+                category_preference=meta.category,
+                imdb_info=meta.imdb_info,
+            )
+            meta.category = category
+            meta.tmdb_id = _to_int(tmdb_id)
+            meta.original_language = original_language
+            meta.no_ids = filename_search
+        if "tmdb_id" in changed or "category" in changed:
+            await prep_instance.tmdb_manager.set_tmdb_metadata(meta, filename)
+        if "imdb_id" in changed:
+            meta.imdb_info = await imdb_manager.get_imdb_info_api(
+                _to_int(meta.imdb_id), manual_language=meta.manual_language, base_dir=meta.base_dir, config=prep_instance.config
+            )
 
 
 async def finalize_metadata(

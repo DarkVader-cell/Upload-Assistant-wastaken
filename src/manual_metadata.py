@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import os
 import re
+import sys
 import urllib.parse
 from collections.abc import Mapping, MutableMapping
 from typing import Any
+
+from src.console import console
 
 DETACHED_METADATA_REQUEST_PREFIX = "__UA_METADATA_REQUEST__:"
 
@@ -51,13 +55,14 @@ def normalize_tmdb_id(value: Any, category: Any = None) -> tuple[int, str]:
 
 
 def metadata_request(meta: Mapping[str, Any]) -> dict[str, Any]:
+    imdb_optional = bool(meta.get("imdb_optional", False))
     return {
         "title": str(meta.get("title") or meta.get("filename") or meta.get("uuid") or ""),
         "year": meta.get("year") or meta.get("search_year") or meta.get("manual_year") or "",
         "category": str(meta.get("category") or "").upper(),
         "tmdb_id": int(meta.get("tmdb_id") or 0),
         "imdb_id": int(meta.get("imdb_id") or 0),
-        "missing": [name for name in ("tmdb_id", "imdb_id") if int(meta.get(name) or 0) == 0],
+        "missing": [name for name in ("tmdb_id", "imdb_id") if int(meta.get(name) or 0) == 0 and not (name == "imdb_id" and imdb_optional)],
     }
 
 
@@ -73,6 +78,17 @@ def parse_detached_metadata_request(line: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def should_request_metadata(meta: Mapping[str, Any], detached: bool = False) -> bool:
+    if meta.get("no_prompt_missing_ids", False):
+        return False
+    tmdb_missing = int(meta.get("tmdb_id") or 0) == 0
+    imdb_missing = int(meta.get("imdb_id") or 0) == 0 and not meta.get("imdb_optional", False)
+    missing_id = tmdb_missing or imdb_missing
+    if detached and missing_id:
+        return True
+    return bool(meta.get("prompt_missing_ids", False)) and (missing_id or (detached and bool(meta.get("quickie_search", False))))
 
 
 def parse_metadata_submission(payload: Any, current_category: Any = None) -> dict[str, Any]:
@@ -97,3 +113,32 @@ def apply_metadata_submission(meta: MutableMapping[str, Any], payload: Any) -> s
         meta["category"] = parsed["category"]
         changed.add("category")
     return changed
+
+
+def request_missing_metadata(meta: MutableMapping[str, Any]) -> set[str]:
+    request_data = metadata_request(meta)
+    detached_job_id = os.environ.get("UA_DETACHED_JOB_ID", "").strip()
+    if detached_job_id:
+        print(encode_metadata_request(meta), flush=True)
+        response_line = sys.stdin.readline()
+        if not response_line:
+            raise RuntimeError("Detached metadata prompt closed before IDs were supplied")
+        try:
+            payload = json.loads(response_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid metadata response received from Web UI") from exc
+        return apply_metadata_submission(meta, payload)
+
+    import cli_ui
+
+    console.print("[bold yellow]Automatic metadata lookup did not resolve the requested IDs.[/bold yellow]")
+    tmdb_value = cli_ui.ask_string(f"TMDb ID (movie/12345 or tv/12345; Enter keeps {request_data['tmdb_id'] or 'missing'}): ")
+    imdb_value = ""
+    if not meta.get("imdb_optional", False):
+        imdb_value = cli_ui.ask_string(f"IMDb ID (tt1234567; Enter keeps {request_data['imdb_id'] or 'missing'}): ")
+    payload = {
+        "tmdb_id": tmdb_value or request_data["tmdb_id"],
+        "imdb_id": imdb_value or request_data["imdb_id"],
+        "category": request_data["category"],
+    }
+    return apply_metadata_submission(meta, payload)

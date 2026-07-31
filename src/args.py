@@ -220,6 +220,27 @@ class Args:
         )
         parser.add_argument("-tmdb", "--tmdb", nargs=1, required=False, help="TMDb ID (use movie/ or tv/ prefix)", type=str, dest="tmdb_manual")
         parser.add_argument("-imdb", "--imdb", nargs=1, required=False, help="IMDb ID", type=str, dest="imdb_manual")
+        parser.add_argument(
+            "--prompt-missing-ids",
+            dest="prompt_missing_ids",
+            action="store_true",
+            required=False,
+            help="Pause for IMDb/TMDb review when filename matching leaves either ID unresolved",
+        )
+        parser.add_argument(
+            "--no-prompt-missing-ids",
+            dest="no_prompt_missing_ids",
+            action="store_true",
+            required=False,
+            help="Do not pause detached uploads when IMDb/TMDb IDs remain unresolved",
+        )
+        parser.add_argument(
+            "--imdb-optional",
+            dest="imdb_optional",
+            action="store_true",
+            required=False,
+            help="Allow an upload to proceed with only a TMDb ID",
+        )
         parser.add_argument("-mal", "--mal", nargs=1, required=False, help="MAL ID", type=str, dest="mal_manual")
         parser.add_argument("-tvmaze", "--tvmaze", nargs=1, required=False, help="TVMAZE ID", type=str, dest="tvmaze_manual")
         parser.add_argument("-tvdb", "--tvdb", nargs=1, required=False, help="TVDB ID", type=str, dest="tvdb_manual")
