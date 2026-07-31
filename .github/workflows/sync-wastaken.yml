@@ -33,7 +33,7 @@ jobs:
       - name: Fetch Wastaken development
         run: git fetch --no-tags https://github.com/wastaken7/Upload-Assistant.git refs/heads/development:refs/remotes/wastaken7/development
 
-      - name: Fast-forward wastaken
+      - name: Merge Wastaken development
         id: sync
         run: |
           current=$(git rev-parse wastaken)
@@ -47,15 +47,21 @@ jobs:
             exit 0
           fi
 
-          if ! git merge-base --is-ancestor "$current" "$latest"; then
+          if git merge-base --is-ancestor "$latest" "$current"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "diverged=true" >> "$GITHUB_OUTPUT"
-            echo "wastaken diverged from Wastaken development; refusing to overwrite it."
-            exit 1
+            echo "wastaken already contains Wastaken development."
+            exit 0
           fi
 
-          git update-ref refs/heads/wastaken "$latest" "$current"
-          echo "changed=true" >> "$GITHUB_OUTPUT"
+          if git merge --no-edit --no-ff "$latest"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            git merge --abort 2>/dev/null || true
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "diverged=true" >> "$GITHUB_OUTPUT"
+            echo "wastaken contains local changes that cannot be merged automatically."
+            exit 1
+          fi
 
       - name: Push fast-forward
         if: steps.sync.outputs.changed == 'true'
@@ -68,7 +74,7 @@ jobs:
           script: |
             const title = 'Wastaken sync blocked: wastaken branch diverged';
             const body = [
-              'The hourly sync refused to overwrite `wastaken` because it is no longer an ancestor of `wastaken7/Upload-Assistant:development`.',
+              'The hourly sync could not merge `wastaken7/Upload-Assistant:development` into `wastaken` without manual resolution.',
               '',
               `Current branch: \`${{ steps.sync.outputs.current }}\``,
               `Wastaken development: \`${{ steps.sync.outputs.latest }}\``,
