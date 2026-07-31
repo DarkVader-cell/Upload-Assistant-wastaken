@@ -375,6 +375,13 @@ class GreatPosterWall:
     async def search_existing(self, meta: Meta) -> list[dict[str, str]]:
         dupes: list[dict[str, str]] = []
 
+        # Duplicate-search callers can reach this method independently of the
+        # upload loop's additional-check stage. Preserve the skip decision so
+        # GPW is not processed after rejecting an incompatible release.
+        if not await self.get_additional_checks(meta):
+            meta.skipping = self.tracker
+            return dupes
+
         group_id = await self.get_groupid(meta)
         if not group_id:
             return []
