@@ -202,7 +202,7 @@ class MoreThanTV:
 
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
 
-                async with httpx.AsyncClient(cookies=cookies, timeout=10.0, follow_redirects=True, headers=headers) as client:
+                async with httpx.AsyncClient(cookies=cookies, timeout=60.0, follow_redirects=True, headers=headers) as client:
                     response = await client.post(url=self.upload_url, data=data, files=files)
 
                     # This is not a header or cookie size issue, but MORETHANTV returns this status.
@@ -527,7 +527,7 @@ class MoreThanTV:
                     data = await cf.read()
                     cookies_dict = await self.async_json_loads(data)
 
-                async with httpx.AsyncClient(cookies=cookies_dict, timeout=10) as client:
+                async with httpx.AsyncClient(cookies=cookies_dict, timeout=30) as client:
                     try:
                         resp = await client.get(url=url)
                         logger.debug(f"{self.tracker}: [cyan]Validating {self.tracker} Cookies:")
@@ -563,7 +563,7 @@ class MoreThanTV:
                     data = await cf.read()
                     cookies = await self.async_json_loads(data)
 
-                async with httpx.AsyncClient(cookies=cookies, timeout=10) as client:
+                async with httpx.AsyncClient(cookies=cookies, timeout=30) as client:
                     try:
                         resp = await client.get(url=url)
                         if "authkey=" in resp.text:
@@ -753,7 +753,7 @@ class MoreThanTV:
         else:
             params["q"] = meta.title.replace(": ", " ").replace("’", "").replace("'", "")  # noqa: RUF001
 
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=20.0) as client:
             response = await client.get(url=self.search_url, params=params)
             response.raise_for_status()
 
