@@ -2375,6 +2375,79 @@ async def get_service(
         "TF": "TF",
         "takflix": "TF",
         "Takflix": "TF",
+        # Indian and South Asian streaming services
+        "Prime Video": "AMZN",
+        "Amazon Prime Video": "AMZN",
+        "Sun NXT": "SNXT",
+        "SunNXT": "SNXT",
+        "SNXT": "SNXT",
+        "Tentkotta": "TK",
+        "TK": "TK",
+        "Sony LIV": "SONY",
+        "SonyLIV": "SONY",
+        "Google Play": "GPLAY",
+        "GooglePlay": "GPLAY",
+        "GPLAY": "GPLAY",
+        "Voot Select": "VOOT",
+        "Voot": "VOOT",
+        "VOOT": "VOOT",
+        "Disney Plus Hotstar": "DSPH",
+        "Disney+ Hotstar": "DSPH",
+        "DisneyPlusHotstar": "DSPH",
+        "DSPH": "DSPH",
+        "JioHotstar": "JHS",
+        "Jio Hotstar": "JHS",
+        "JHS": "JHS",
+        "Zee5": "ZEE5",
+        "ZEE5": "ZEE5",
+        "ZEE 5": "ZEE5",
+        "Jio Cinema": "JC",
+        "JioCinema": "JC",
+        "JC": "JC",
+        "Simply South": "SS",
+        "SimplySouth": "SS",
+        "SS": "SS",
+        "AHA": "AHA",
+        "Aha": "AHA",
+        "MX Player": "MX",
+        "MXPlayer": "MX",
+        "MX": "MX",
+        "Hungama Play": "HPLAY",
+        "HungamaPlay": "HPLAY",
+        "Hungama": "HPLAY",
+        "HPLAY": "HPLAY",
+        "TVF Play": "TVF",
+        "TVFPlay": "TVF",
+        "TVF": "TVF",
+        "Shemaroo Me": "SME",
+        "ShemarooMe": "SME",
+        "Shemaroo me": "SME",
+        "SME": "SME",
+        "ALT Balaji": "ALT",
+        "AltBalaji": "ALT",
+        "Alt Balaji": "ALT",
+        "ALT": "ALT",
+        "Lionsgate Play": "LGP",
+        "LionsgatePlay": "LGP",
+        "LGP": "LGP",
+        "Book My Show": "BMS",
+        "BookMyShow": "BMS",
+        "BMS": "BMS",
+        "Chaupal TV": "CHTV",
+        "Chaupal": "CHTV",
+        "ChaupalTV": "CHTV",
+        "CHTV": "CHTV",
+        "ManoramaMAX": "MMAX",
+        "Manorama MAX": "MMAX",
+        "ManoramaMax": "MMAX",
+        "MMAX": "MMAX",
+        "Sainaplay": "SPLAY",
+        "Saina Play": "SPLAY",
+        "SainaPlay": "SPLAY",
+        "SPLAY": "SPLAY",
+        "Discovery+": "DSCV",
+        "DSCV": "DSCV",
+        "chorki": "CRKI",
     }
 
     if get_services_only:
@@ -2391,6 +2464,13 @@ async def get_service(
         video_name = video_name.replace("DTS-HD.MA.", "").replace("DTS-HD MA ", "")
     title_guess = guessit_fn(video, {"excludes": ["country", "language"]})
     title_guess_title = str(title_guess.get("title", ""))
+
+    # SonyLIV is commonly embedded in release filenames without separators
+    # (and sometimes alongside punctuation/underscores). Recognise it
+    # anywhere in the filename, independent of case, before whole-word scans.
+    if "sonyliv" in re.sub(r"[^a-z0-9]", "", video_name.casefold()):
+        service = "SONY"
+
     for key, value in services.items():
         if ((" " + key + " ") in video_name and key not in title_guess_title) or key == service:
             service = value

@@ -29,8 +29,8 @@ logs, and host-specific Docker state are never porting inputs.
 
 | ID | Case | Old-fork evidence | Wastaken evidence | Initial status | Recommendation / test gate |
 | --- | --- | --- | --- | --- | --- |
-| M-01 | Indian/South Asian streaming services and aliases | `src/region.py`, `docs/streaming-services.md`, commits `a63eca48`, `40db429d` | `src/region.py`, README supported categories | `review` | Compare the complete alias set and normalization rules; add focused region/name tests. |
-| M-02 | Uppercase service abbreviations and SonyLIV recognition | commits `b0eb797f`, `97cb152b` | `src/region.py`, `src/get_name.py` | `review` | Port only missing aliases or parser cases; test separator, punctuation, and mixed-case filenames. |
+| M-01 | Indian/South Asian streaming services and aliases | `src/region.py`, `docs/streaming-services.md`, commits `a63eca48`, `40db429d` | `src/region.py`, `docs/streaming-services.md` | `implemented` | Added missing aliases and documented the canonical codes; Ruff and stubbed runtime smoke checks pass. Formal pytest is pending dependency availability. |
+| M-02 | Uppercase service abbreviations and SonyLIV recognition | commits `b0eb797f`, `97cb152b` | `src/region.py`, `tests/test_region_services.py` | `implemented` | Added separator-insensitive, case-insensitive SonyLIV detection while preserving `iP`, `iT`, and `iQIYI`; Ruff and stubbed runtime smoke checks pass. |
 | M-03 | Bengali, Odia, and Punjabi language equivalence | `src/languages.py`, DT-related commits | `src/languages.py` | `review` | Compare language groups and tracker consumers; add language normalization tests. |
 | M-04 | Screenshot SAR/PAR correction and exact dimensions | `src/takescreens.py`, `src/screenshot_review.py` | `src/takescreens.py`, screenshot review support | `partial` | Port only missing dimension chokepoints; test anamorphic correction and eight-pixel tolerance. |
 | M-05 | Fried.Chicken.Please release-group handling | `src/tags.py`, commit `7b1642bb` | `src/tags.py` | `review` | Verify ordering before group-length validation; add dotted-group regression test. |
@@ -62,7 +62,7 @@ logs, and host-specific Docker state are never porting inputs.
 | ID | Case | Old-fork evidence | Wastaken evidence | Initial status | Recommendation / test gate |
 | --- | --- | --- | --- | --- | --- |
 | T-01 | Zenith / ZNTH | `src/trackers/ZNTH.py`, `src/trackersetup.py`, commits `c6165f1d`, `54007da6` | `src/trackers/UNIT3D/znth.py`, tracker registry | `present` | Confirm behavior and tests; do not duplicate the tracker. |
-| T-02 | MTEAM and NexusPHP additions | `src/trackers/MTEAM.py`, `LAJIDUI.py`, `LPT.py`, `PTCAFE.py`, `PTFANS.py`, `PTGTK.py`, `RPT.py` | `src/trackers/mteam.py`, `src/trackers/NEXUSPHP/*` | `partial` | Map old modules to Wastaken classes and port only missing behavior/IDs. |
+| T-02 | MTEAM and NexusPHP additions | `src/trackers/MTEAM.py`, `LAJIDUI.py`, `LPT.py`, `PTCAFE.py`, `PTFANS.py`, `PTGTK.py`, `RPT.py` | `src/trackers/mteam.py`, `src/trackers/NEXUSPHP/*` | `present` | Wastaken already provides these trackers in its own class layout; do not duplicate them. |
 | T-03 | Tracker-specific category, banned-group, and ID fixes | old tracker modules and commits through `04271bb1` | Wastaken tracker modules | `review` | Create one subcase per tracker; each requires a focused fixture or mocked request test. |
 | T-04 | HUNO 2026 API | `src/trackers/HUNO.py`, commit `da8fe7fe` | no obvious matching Wastaken module in current tracker tree | `missing` | Port as a Wastaken-compatible tracker only if HUNO is in scope; add API mock tests. |
 | T-05 | MTV timeout and upload fixes | `src/trackers/MTV.py`, commits `70d1ace9`, `11cb5366` | no matching Wastaken MTV module visible | `missing` | Port only if MTV support is required; isolate timeout and request-shape changes. |
