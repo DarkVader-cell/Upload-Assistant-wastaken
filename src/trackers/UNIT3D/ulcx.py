@@ -80,6 +80,10 @@ class ULCX(UNIT3D):
         self.config = config
 
     async def get_additional_checks(self, meta: Meta) -> bool:
+        if meta.type in ("WEBDL", "WEBRIP") and not meta.service:
+            logger.info(f"{self.tracker}: [bold red]Streaming service could not be detected; skipping upload.[/bold red]")
+            return False
+
         if "concert" in meta.keywords:
             if not meta.unattended or (meta.unattended and meta.unattended_confirm):
                 logger.info(f"{self.tracker}: [bold red]Concerts not allowed.[/bold red]")

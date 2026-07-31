@@ -2,6 +2,7 @@
 import re
 from typing import Any, cast
 
+from src.console import logger
 from src.languages import languages_manager
 from src.meta import Meta
 from src.rehostimages import RehostImagesManager
@@ -172,6 +173,10 @@ class OnlyEncodes(UNIT3D):
 
     async def get_additional_checks(self, meta: Meta) -> bool:
         if not self.common.check_and_confirm_adult_media_upload(meta, self.tracker):
+            return False
+
+        if meta.type in ("WEBDL", "WEBRIP") and not meta.service:
+            logger.info(f"{self.tracker}: [bold red]Streaming service could not be detected; skipping upload.[/bold red]")
             return False
 
         return not (
