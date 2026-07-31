@@ -1288,13 +1288,6 @@ class DescriptionBuilder:
         if custom_signature:
             desc_parts.append(await self.get_custom_signature())
 
-        # UA Signature
-        if ua_signature:
-            if not signature:
-                script_signature = meta.ua_signature
-                signature = f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{script_signature}[/size][/url][/right]"
-            desc_parts.append(signature)
-
         description_str: str = "\n".join(part for part in desc_parts if part.strip())
 
         # Formatting

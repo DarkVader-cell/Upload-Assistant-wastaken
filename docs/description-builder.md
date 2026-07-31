@@ -174,7 +174,7 @@ Appends audio spectrogram analyses images in a grid format.
 
 #### 17. Signatures
 
-Appends `custom_signature` and the automated tool signature link:
+Appends `custom_signature` when configured. Upload Assistant no longer adds an automated tool signature.
 
 ```bbcode
 [center]This is my signature, it will be displayed at the bottom of every description.[/center]

@@ -351,7 +351,6 @@ class TorrentHR:
         #         full_mi = mi_file.read()
         #         desc.write(f"[/align]\n[hide=FULL MEDIAINFO]{full_mi}[/hide][align=center]")
         #         mi_file.close()
-        desc_parts.append(f"\n\n[size=2][url={self.base_url}/forums.php?action=viewtopic&topicid=8977]{meta.ua_signature}[/url][/size][/align]")
         async with aiofiles.open(
             f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[TORRENTHR]DESCRIPTION.txt",
             "w",

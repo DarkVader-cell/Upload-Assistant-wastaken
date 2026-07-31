@@ -1014,8 +1014,6 @@ class ShareIsland(UNIT3D):
                 links_section += f"[size=11][color=#FFFFFF]TMDb: https://www.themoviedb.org/{media_type}/{tmdb_id}[/color][/size]\n"
             links_section += "\n"
 
-        ua_sig = meta.ua_signature
-
         # Mediainfo section
         mediainfo_section = ""
         if synthetic_mi:
@@ -1063,5 +1061,4 @@ class ShareIsland(UNIT3D):
 
 [size=13][color=#0592a3][size=16][b]BUON DOWNLOAD![/b][/size][/color][/size]
 
-[right][size=8]{ua_sig}[/size][/right]
 [/code]"""
