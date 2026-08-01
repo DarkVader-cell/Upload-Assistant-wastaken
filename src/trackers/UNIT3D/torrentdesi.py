@@ -35,9 +35,6 @@ class DesiTorrents(UNIT3D):
         # Banned Groups
 
     async def get_additional_checks(self, meta: Meta) -> bool:
-        if meta.is_disc == "BDMV":
-            return True
-
         if not await self.common.check_language_requirements(
             meta,
             self.tracker,
