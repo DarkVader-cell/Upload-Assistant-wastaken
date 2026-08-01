@@ -29,6 +29,13 @@ TRACKER_DISC_REQUIREMENTS = {
 }
 
 
+def _title_key(value: str) -> str:
+    """Normalize a title for safe comparison of TMDB titles and AKA values."""
+    normalized = re.sub(r"^aka\s+", "", value.strip(), flags=re.IGNORECASE)
+    normalized = re.sub(r"\b(?:19|20)\d{2}\b", "", normalized)
+    return re.sub(r"[^a-z0-9]+", "", normalized.casefold())
+
+
 class NameManager:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -51,6 +58,8 @@ class NameManager:
         type = str(meta.type).upper()
         title = meta.title
         alt_title = meta.aka
+        if alt_title and _title_key(str(title)) == _title_key(str(alt_title)):
+            alt_title = ""
         year = str(meta.year) if meta.year is not None else ""
         manual_year_value = meta.manual_year
         if manual_year_value is not None and manual_year_value > 0:
