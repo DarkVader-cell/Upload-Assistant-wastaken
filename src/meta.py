@@ -243,6 +243,7 @@ class Meta:
     mismatched_imdb_id: int = 0
     mkbrr_threads: str | int | None = None
     mkbrr: bool = False
+    modified_release_reason: str | None = None
     mode: str = ""
     music_album: str = ""
     music_artist: str = ""
