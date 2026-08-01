@@ -1,4 +1,5 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
+import re
 from typing import Any
 
 import cli_ui
@@ -120,8 +121,64 @@ class Blutopia(UNIT3D):
         self.config = config
         self.common = Common(config)
 
+    @staticmethod
+    def _audio_tracks(meta: Meta) -> list[dict[str, Any]]:
+        mediainfo = getattr(meta, "mediainfo", {}) or {}
+        tracks = mediainfo.get("media", {}).get("track", []) if isinstance(mediainfo, dict) else []
+        if isinstance(tracks, dict):
+            tracks = [tracks]
+        return [track for track in tracks if isinstance(track, dict) and track.get("@type") == "Audio"]
+
+    @staticmethod
+    def _audio_format(track: dict[str, Any]) -> str:
+        values = (
+            track.get("Format", ""),
+            track.get("Format_Commercial_IfAny", ""),
+            track.get("Format_Commercial_Name", ""),
+        )
+        return " ".join(str(value) for value in values if value).lower()
+
+    @classmethod
+    def _is_truehd(cls, track: dict[str, Any]) -> bool:
+        normalized = re.sub(r"[^a-z0-9]", "", cls._audio_format(track))
+        return "truehd" in normalized or "mlpfba" in normalized
+
+    @classmethod
+    def _is_ac3(cls, track: dict[str, Any]) -> bool:
+        normalized = re.sub(r"[^a-z0-9]", "", cls._audio_format(track))
+        return normalized in {"ac3", "dolbydigital"} or normalized.startswith("ac3")
+
+    @staticmethod
+    def _is_sd_resolution(resolution: object) -> bool:
+        value = str(resolution or "").strip().lower()
+        if value in {"sd", "480i", "480p", "540p", "576i", "576p"}:
+            return True
+        match = re.search(r"(\d{3,4})", value)
+        return bool(match and int(match.group(1)) < 720)
+
     async def get_additional_checks(self, meta: Meta) -> bool:
         should_continue = True
+
+        if meta.type == "ENCODE":
+            audio_tracks = self._audio_tracks(meta)
+            opus_tracks = [track for track in audio_tracks if "opus" in self._audio_format(track)]
+            if opus_tracks:
+                logger.info(f"{self.tracker}: [bold red]Opus audio is not allowed in encodes.[/bold red]")
+                return False
+
+            if self._is_sd_resolution(meta.resolution):
+                logger.info(f"{self.tracker}: [bold red]SD encodes are not allowed.[/bold red]")
+                return False
+
+        audio_tracks = self._audio_tracks(meta)
+        truehd_count = sum(1 for track in audio_tracks if self._is_truehd(track))
+        ac3_count = sum(1 for track in audio_tracks if self._is_ac3(track))
+        if ac3_count < truehd_count:
+            logger.info(
+                f"{self.tracker}: [bold red]Every TrueHD audio track must have a standalone AC-3 compatibility track "
+                f"({ac3_count} AC-3 for {truehd_count} TrueHD).[/bold red]"
+            )
+            return False
 
         if not meta.is_disc:
             container = meta.container.lower()
