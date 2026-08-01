@@ -205,6 +205,8 @@ async def all_ids(meta: Meta, tvdb_handler: Any, tmdb_manager: TmdbManager) -> M
                 meta.tvdb_episode_data = episodes_data
                 _apply_tvdb_series_metadata(meta, episodes_data, series_name)
                 meta.we_checked_tvdb = True
+            elif episodes_data is None and series_name is None:
+                logger.debug("TVDB unavailable; continuing with TMDB/TVMaze metadata.")
             else:
                 logger.info(f"[yellow]Unexpected TVDb data format: {tvdb_episode_data!r}[/yellow]")
         elif isinstance(tvdb_episode_data, Exception):

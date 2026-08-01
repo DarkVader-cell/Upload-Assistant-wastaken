@@ -111,6 +111,20 @@ class NameManager:
             year = ""
         if meta.no_aka is True:
             alt_title = ""
+        stc_naming = meta.category == "TV" and "SKIPTHECOMMERCIALS" in meta.trackers
+        stc_language = ""
+        if stc_naming:
+            raw_languages = meta.audio_languages or []
+            if isinstance(raw_languages, str):
+                raw_languages = [raw_languages]
+            languages = [str(language).strip() for language in raw_languages if str(language).strip()]
+            unique_languages = list(dict.fromkeys(languages))
+            if len(unique_languages) == 1:
+                stc_language = unique_languages[0]
+            elif len(unique_languages) > 1:
+                stc_language = "MULTI"
+        tv_title_prefix = f"{title} {alt_title} {year}" if stc_naming else f"{title} {year} {alt_title}"
+        tv_season_episode = f"{season}{episode} {stc_language}" if stc_language else f"{season}{episode}"
         if meta.debug:
             logger.debug("[cyan]get_name cat/type")
             logger.debug(f"CATEGORY: {meta.category}")
@@ -157,35 +171,36 @@ class NameManager:
             if type == "DISC":  # Disk
                 if meta.is_disc == "BDMV":
                     name = (
-                        f"{title} {year} {alt_title} {season}{episode} {three_d} {edition} {hybrid} {repack} {resolution} {region} {uhd} {source} {hdr} {video_codec} {audio}"
+                        f"{tv_title_prefix} {tv_season_episode} {three_d} {edition} {hybrid} {repack} {resolution} {region} {uhd} {source} {hdr} {video_codec} {audio}"
                     )
                     potential_missing = ["edition", "region", "distributor"]
                 if meta.is_disc == "DVD":
-                    name = f"{title} {year} {alt_title} {season}{episode}{three_d} {repack} {edition} {region} {source} {dvd_size} {audio}"
+                    name = f"{tv_title_prefix} {tv_season_episode}{three_d} {repack} {edition} {region} {source} {dvd_size} {audio}"
                     potential_missing = ["edition", "distributor"]
                 elif meta.is_disc == "HDDVD":
-                    name = f"{title} {alt_title} {year} {edition} {repack} {resolution} {source} {video_codec} {audio}"
+                    hddvd_prefix = tv_title_prefix if stc_naming else f"{title} {alt_title} {year}"
+                    name = f"{hddvd_prefix} {edition} {repack} {resolution} {source} {video_codec} {audio}"
                     potential_missing = ["edition", "region", "distributor"]
             elif type == "REMUX" and source in ("BluRay", "HDDVD"):  # BluRay Remux
-                name = f"{title} {year} {alt_title} {season}{episode} {episode_title} {part} {three_d} {edition} {hybrid} {repack} {resolution} {uhd} {source} REMUX {hdr} {video_codec} {audio}"  # SOURCE
+                name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {three_d} {edition} {hybrid} {repack} {resolution} {uhd} {source} REMUX {hdr} {video_codec} {audio}"  # SOURCE
                 potential_missing = ["edition", "description"]
             elif type == "REMUX" and source in ("PAL DVD", "NTSC DVD", "DVD"):  # DVD Remux
-                name = f"{title} {year} {alt_title} {season}{episode} {episode_title} {part} {edition} {repack} {source} REMUX {audio}"  # SOURCE
+                name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {edition} {repack} {source} REMUX {audio}"  # SOURCE
                 potential_missing = ["edition", "description"]
             elif type == "ENCODE":  # Encode
-                name = f"{title} {year} {alt_title} {season}{episode} {episode_title} {part} {edition} {hybrid} {repack} {resolution} {uhd} {source} {audio} {hdr} {video_encode}"  # SOURCE
+                name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {edition} {hybrid} {repack} {resolution} {uhd} {source} {audio} {hdr} {video_encode}"  # SOURCE
                 potential_missing = ["edition", "description"]
             elif type == "WEBDL":  # WEB-DL
-                name = f"{title} {year} {alt_title} {season}{episode} {episode_title} {part} {edition} {hybrid} {repack} {resolution} {uhd} {service} WEB-DL {audio} {hdr} {video_encode}"
+                name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {edition} {hybrid} {repack} {resolution} {uhd} {service} WEB-DL {audio} {hdr} {video_encode}"
                 potential_missing = ["edition", "service"]
             elif type == "WEBRIP":  # WEBRip
-                name = f"{title} {year} {alt_title} {season}{episode} {episode_title} {part} {edition} {hybrid} {repack} {resolution} {uhd} {service} WEBRip {audio} {hdr} {video_encode}"
+                name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {edition} {hybrid} {repack} {resolution} {uhd} {service} WEBRip {audio} {hdr} {video_encode}"
                 potential_missing = ["edition", "service"]
             elif type == "HDTV":  # HDTV
-                name = f"{title} {year} {alt_title} {season}{episode} {episode_title} {part} {edition} {repack} {resolution} {source} {audio} {video_encode}"
+                name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {edition} {repack} {resolution} {source} {audio} {video_encode}"
                 potential_missing = []
             elif type == "DVDRIP":
-                name = f"{title} {year} {alt_title} {season} {source} DVDRip {audio} {video_encode}"
+                name = f"{tv_title_prefix} {tv_season_episode} {source} DVDRip {audio} {video_encode}"
                 potential_missing = []
         elif meta.category == "BOOK":
             name = self.extract_book_name(meta)
