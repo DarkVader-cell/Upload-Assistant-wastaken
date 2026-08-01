@@ -521,6 +521,15 @@ class DescriptionBuilder:
         """Returns the screenshot header if applicable."""
         try:
             screenheader = self._get_str_config("screenshot_header", "")
+            # The generic heading adds no information and is visually noisy.
+            # Keep custom tracker-specific headings available, but suppress
+            # the stock Screenshots title wherever an older config still has it.
+            if screenheader.strip().lower() in {
+                "[h2]screenshots[/h2]",
+                "[h3]screenshots[/h3]",
+                "[b]screenshots[/b]",
+            }:
+                return ""
             if screenheader:
                 return screenheader
         except Exception as e:

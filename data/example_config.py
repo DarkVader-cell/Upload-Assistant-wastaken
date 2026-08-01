@@ -373,7 +373,7 @@ config: dict[str, Any] = {
 
         # Providing the option to add a header, in bbcode, above the screenshot section where supported
         # Can be overridden in a per-tracker setting by adding this same config
-        "screenshot_header": "[h2]Screenshots[/h2]",
+        "screenshot_header": "",
 
         # Applicable only to raw discs (Blu-ray/DVD).
         # Providing the option to add a header, in bbcode, above the section featuring screenshots of the Disc menus, where supported
