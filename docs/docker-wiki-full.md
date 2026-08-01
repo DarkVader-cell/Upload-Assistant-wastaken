@@ -69,15 +69,12 @@ Google is your friend
 
 ## How do I update the docker image?
 
-For the persistent Qui/WebUI deployment in this repository, update from the
-checkout so the local image is rebuilt from the current branch:
+For the persistent Qui/WebUI deployment in this repository, update the
+published image and recreate only the Upload Assistant service:
 
 ```bash
 cd /home/artemis/Upload-Assistant-wastaken
-git switch wastaken
-git pull --ff-only origin wastaken
-docker compose up -d --build
-docker compose ps
+./scripts/update-docker.sh
 ```
 
 The `docker-data/` state directories and `/mnt/seeding` bind mount are retained.

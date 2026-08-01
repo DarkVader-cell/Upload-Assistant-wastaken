@@ -291,12 +291,10 @@ In your terminal, run the command for your operating system and follow the on-sc
 - For the persistent Docker/WebUI installation used with Qui, update it from the CLI:
   ```bash
   cd /home/artemis/Upload-Assistant-wastaken
-  git switch wastaken
-  git pull --ff-only origin wastaken
-  docker compose up -d --build
-  docker compose ps
+  ./scripts/update-docker.sh
   ```
-  This updates the image in place while preserving `docker-data/` and the
+  This pulls the current `main` image and recreates only the Upload Assistant
+  service while preserving `docker-data/` and the
   `/mnt/seeding` mount. Check that the service reports `healthy` before using
   Qui again. See [Qui Docker Deployment](docs/qui-docker-deployment.md).
 - For a non-Docker Git installation, navigate into the Upload-Assistant directory and pull the latest changes:

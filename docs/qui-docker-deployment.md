@@ -9,23 +9,20 @@ Run from the repository root:
 
 ```bash
 cd /home/artemis/Upload-Assistant-wastaken
-git switch wastaken
-git pull --ff-only origin wastaken
-docker compose up -d --build
-docker compose ps
+./scripts/update-docker.sh
 ```
 
-To update an already-running installation, use the same commands. The build
-replaces only the container image; the bind-mounted `docker-data/` directories
-and `/mnt/seeding` remain in place. Confirm the service is `healthy` before
-resuming unattended Qui jobs.
+The script switches to `main`, fast-forwards from GitHub, pulls the published
+Wastaken image, and recreates only the Upload Assistant service in `/opt/yams`.
+The bind-mounted `docker-data/` directories and `/mnt/seeding` remain in place.
+Confirm the service is `healthy` before resuming unattended Qui jobs.
 
 Useful maintenance commands:
 
 ```bash
-docker compose logs --tail 200 -f
-docker compose restart
-docker compose down
+docker compose --env-file /opt/yams/.env -f /opt/yams/docker-compose.yaml logs --tail 200 -f upload-assistant
+docker compose --env-file /opt/yams/.env -f /opt/yams/docker-compose.yaml restart upload-assistant
+docker compose --env-file /opt/yams/.env -f /opt/yams/docker-compose.yaml down upload-assistant
 ```
 
 `docker compose down` stops/removes the container but does not remove the
@@ -91,5 +88,3 @@ configuration.
 
 - `dev` is the testing/integration branch.
 - `main` is the promoted stable branch.
-- `wastaken` is retained as the compatibility branch and upstream-sync target.
-- `development` remains the upstream development synchronization branch.
