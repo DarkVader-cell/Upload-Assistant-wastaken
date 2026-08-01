@@ -23,7 +23,15 @@ def test_stc_places_aka_and_language_after_series_title_and_season():
 
     name, *_ = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))
 
-    assert name.startswith("TMDB Title AKA Other Title S01E02 English")  # noqa: S101
+    assert name.startswith("TMDB Title AKA Other Title S01E02")  # noqa: S101
+
+
+def test_stc_omits_english_language_tag():
+    meta = Meta(category="TV", type="WEBDL", title="TMDB Title", season="S01", episode="E01", audio_languages=["English"], trackers=["SKIPTHECOMMERCIALS"])
+
+    name, *_ = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))
+
+    assert "S01E01 English" not in name  # noqa: S101
 
 
 def test_identical_aka_is_omitted():

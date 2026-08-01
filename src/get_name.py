@@ -129,7 +129,8 @@ class NameManager:
             languages = [str(language).strip() for language in raw_languages if str(language).strip()]
             unique_languages = list(dict.fromkeys(languages))
             if len(unique_languages) == 1:
-                stc_language = unique_languages[0]
+                if unique_languages[0].casefold() not in {"english", "eng", "en"}:
+                    stc_language = unique_languages[0]
             elif len(unique_languages) > 1:
                 stc_language = "MULTI"
         tv_title_prefix = f"{title} {alt_title} {year}" if stc_naming else f"{title} {year} {alt_title}"
