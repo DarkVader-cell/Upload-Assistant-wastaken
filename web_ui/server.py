@@ -2848,6 +2848,19 @@ def _build_config_items(
     subsection_map: dict[str, str],
     path: list[str],
 ) -> list[ConfigItem]:
+    # Keep service credentials together in the WebUI.  These keys historically
+    # appeared under whichever all-caps heading happened to precede them in
+    # example_config.py, which made credentials such as TVDB easy to miss.
+    default_credential_keys = {
+        "tmdb_api",
+        "tvdb_api",
+        "tvdb_token",
+        "google_books_api_key",
+        "twitch_client_id",
+        "twitch_client_secret",
+        "mam_api_key",
+        "btn_api",
+    }
     items: list[ConfigItem] = []
     user_dict: dict[str, Any] = _as_dict(user_section) or {}
 
@@ -2878,6 +2891,8 @@ def _build_config_items(
         key_path = [*path, key]
         help_text = comments_map.get("/".join(key_path), [])
         subsection_label = subsection_map.get("/".join(key_path))
+        if path == ["DEFAULT"] and key in default_credential_keys:
+            subsection_label = "API CREDENTIALS"
         if subsection_label != current_subsection:
             flush_subsection()
             current_subsection = subsection_label
