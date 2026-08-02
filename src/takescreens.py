@@ -12,6 +12,7 @@ import sys
 import time
 import traceback
 import urllib.parse
+import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Awaitable, Mapping
@@ -26,6 +27,7 @@ from data import config as data_config
 from src.cleanup import cleanup_manager
 from src.console import logger
 from src.meta import Meta
+from src.screenshot_manifest import clear_group as clear_screenshot_group
 from src.screenshot_manifest import files as manifest_files
 from src.screenshot_manifest import register as register_screenshots
 from src.temp_paths import posters_dir, screenshots_dir
@@ -74,6 +76,23 @@ def _apply_config(config: Mapping[str, Any]) -> None:
 
 
 async def run_ffmpeg(command: Any) -> tuple[int | None, bytes, bytes]:
+    cmd_list = list(command.compile())
+    process_env = os.environ.copy()
+
+    # FFREPORT defaults to a timestamped file in the current working
+    # directory.  Keep each report beside its output, with a unique name so
+    # concurrent or repeated runs do not overwrite an earlier report.
+    output_path = cmd_list[-1] if cmd_list else ""
+    if output_path and output_path not in {"-", "pipe:"} and not output_path.startswith("pipe:"):
+        report_path = Path(output_path).resolve().parent / f"ffmpeg-{uuid.uuid4().hex}.log"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        # FFREPORT uses ':' as a field separator, so escape the drive-letter
+        # colon in Windows paths after converting separators to '/'.
+        report_path_value = report_path.as_posix().replace(":", r"\:")
+        process_env["FFREPORT"] = f"file={report_path_value}:level=32"
+    else:
+        process_env.pop("FFREPORT", None)
+
     # On Linux prefer bundled amd/arm binary when present; otherwise fall back to system ffmpeg.
     if platform.system() == "Linux":
         base_dir = str(Path(__file__).parent.parent)
@@ -90,15 +109,24 @@ async def run_ffmpeg(command: Any) -> tuple[int | None, bytes, bytes]:
         if arch:
             candidate = Path(ff_bin_dir) / arch / "ffmpeg"
             if Path(candidate).exists():
-                cmd_list = list(command.compile())
                 cmd_list[0] = str(candidate)
 
-                process = await asyncio.create_subprocess_exec(*cmd_list, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                process = await asyncio.create_subprocess_exec(
+                    *cmd_list,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=process_env,
+                )
                 stdout, stderr = await process.communicate()
                 return (process.returncode if process.returncode is not None else -1), stdout, stderr
 
     # Fallback: use system/default ffmpeg (command.compile())
-    process = await asyncio.create_subprocess_exec(*command.compile(), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    process = await asyncio.create_subprocess_exec(
+        *cmd_list,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=process_env,
+    )
     stdout, stderr = await process.communicate()
     return process.returncode, stdout, stderr
 
@@ -935,9 +963,9 @@ async def extract_embedded_cover_from_audiobook(meta: Meta, dest_path: str, conf
         return False
 
 
-async def download_poster_from_meta(meta: Meta, cover_path: str, *, force: bool = False) -> bool:
-    poster_url = meta.poster
-    if not poster_url:
+async def download_artwork_from_meta(meta: Meta, artwork_path: str, *, force: bool = False) -> bool:
+    artwork_url = meta.artwork_url
+    if not artwork_url:
         return False
     from src.safe_url import UnsafeURL, assert_public_http_url
 
@@ -948,17 +976,17 @@ async def download_poster_from_meta(meta: Meta, cover_path: str, *, force: bool 
         return False
 
     min_size = 20480
-    if poster_url.startswith("http://books.google.com/") or poster_url.startswith("https://covers.openlibrary.org/b/id/"):
+    if artwork_url.startswith("http://books.google.com/") or artwork_url.startswith("https://covers.openlibrary.org/b/id/"):
         min_size = 10240
-    if not force and Path(cover_path).exists() and Path(cover_path).stat().st_size >= min_size:
-        meta.cover_path = cover_path
+    if not force and Path(artwork_path).exists() and Path(artwork_path).stat().st_size >= min_size:
+        meta.artwork_path = artwork_path
         return True
     try:
         import httpx
 
         cookies = {}
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
-        parsed_poster_url = urllib.parse.urlparse(poster_url)
+        parsed_poster_url = urllib.parse.urlparse(artwork_url)
         poster_host = (parsed_poster_url.hostname or "").lower()
         if poster_host == "myanonamouse.net" or poster_host.endswith(".myanonamouse.net"):
             api_key = (
@@ -971,16 +999,16 @@ async def download_poster_from_meta(meta: Meta, cover_path: str, *, force: bool 
                 cookies["mam_id"] = api_key
 
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(poster_url, cookies=cookies, headers=headers)
+            response = await client.get(artwork_url, cookies=cookies, headers=headers)
             if response.status_code == 200:
                 if len(response.content) < min_size:
                     logger.info(
-                        f"[yellow]Warning: Downloaded poster from {poster_url} is too small ({len(response.content)} bytes < {min_size} bytes) and will be ignored.[/yellow]"
+                        f"[yellow]Warning: Downloaded artwork from {artwork_url} is too small ({len(response.content)} bytes < {min_size} bytes) and will be ignored.[/yellow]"
                     )
                     return False
-                await asyncio.to_thread(Path(cover_path).write_bytes, response.content)
-                meta.cover_path = cover_path
-                logger.info(f"[green]Successfully downloaded poster from {poster_url}[/green]")
+                await asyncio.to_thread(Path(artwork_path).write_bytes, response.content)
+                meta.artwork_path = artwork_path
+                logger.info(f"[green]Successfully downloaded artwork from {artwork_url}[/green]")
                 return True
             logger.warning(f"[yellow]Warning: Failed to download poster, status code {response.status_code}[/yellow]")
     except Exception as e:
@@ -1247,57 +1275,57 @@ async def extract_document_cover(path: str, dest_path: str) -> bool:
 
 async def prepare_book_cover(path: str, folder_id: str, base_dir: str, meta: Meta) -> str | None:
     output_dir = posters_dir(base_dir, folder_id)
-    cover_path = output_dir / "POSTER.png"
+    artwork_path = output_dir / "POSTER.png"
 
-    if Path(cover_path).exists() and Path(cover_path).stat().st_size >= 20480 and not meta.retake:
-        meta.cover_path = str(cover_path)
-        return str(cover_path)
+    if Path(artwork_path).exists() and Path(artwork_path).stat().st_size >= 20480 and not meta.retake:
+        meta.artwork_path = str(artwork_path)
+        return str(artwork_path)
 
-    if await load_local_cover_if_exists(path, str(cover_path)):
-        meta.cover_path = str(cover_path)
-        return str(cover_path)
+    if await load_local_cover_if_exists(path, str(artwork_path)):
+        meta.artwork_path = str(artwork_path)
+        return str(artwork_path)
 
     if meta.audiobook:
-        extracted_confirmed = await extract_embedded_cover_from_audiobook(meta, str(cover_path), confirmed_only=True)
+        extracted_confirmed = await extract_embedded_cover_from_audiobook(meta, str(artwork_path), confirmed_only=True)
         if extracted_confirmed:
-            meta.cover_path = str(cover_path)
+            meta.artwork_path = str(artwork_path)
             logger.debug("[green]Audiobook confirmed cover extracted. Skipping API download.[/green]")
-            return str(cover_path)
+            return str(artwork_path)
 
-        downloaded_poster = await download_poster_from_meta(meta, str(cover_path), force=meta.retake)
-        if downloaded_poster:
-            meta.cover_path = str(cover_path)
-            return str(cover_path)
+        downloaded_artwork = await download_artwork_from_meta(meta, str(artwork_path), force=meta.retake)
+        if downloaded_artwork:
+            meta.artwork_path = str(artwork_path)
+            return str(artwork_path)
 
-        extracted_unconfirmed = await extract_embedded_cover_from_audiobook(meta, str(cover_path), confirmed_only=False)
+        extracted_unconfirmed = await extract_embedded_cover_from_audiobook(meta, str(artwork_path), confirmed_only=False)
         if extracted_unconfirmed:
-            meta.cover_path = str(cover_path)
-            return str(cover_path)
+            meta.artwork_path = str(artwork_path)
+            return str(artwork_path)
         return None
 
     extension = Path(path).suffix.lower().lstrip(".")
     if extension == "epub":
-        extracted_confirmed = await extract_epub_cover(path, str(cover_path), confirmed_only=True)
+        extracted_confirmed = await extract_epub_cover(path, str(artwork_path), confirmed_only=True)
         if extracted_confirmed:
-            meta.cover_path = str(cover_path)
+            meta.artwork_path = str(artwork_path)
             logger.debug("[green]EPUB confirmed cover extracted. Skipping API download.[/green]")
-            return str(cover_path)
+            return str(artwork_path)
 
-    downloaded_poster = await download_poster_from_meta(meta, str(cover_path), force=meta.retake)
-    if downloaded_poster:
-        meta.cover_path = str(cover_path)
-        return str(cover_path)
+    downloaded_artwork = await download_artwork_from_meta(meta, str(artwork_path), force=meta.retake)
+    if downloaded_artwork:
+        meta.artwork_path = str(artwork_path)
+        return str(artwork_path)
 
     if extension == "epub":
-        extracted_unconfirmed = await extract_epub_cover(path, str(cover_path), confirmed_only=False)
+        extracted_unconfirmed = await extract_epub_cover(path, str(artwork_path), confirmed_only=False)
         if extracted_unconfirmed:
-            meta.cover_path = str(cover_path)
-            return str(cover_path)
+            meta.artwork_path = str(artwork_path)
+            return str(artwork_path)
     elif extension in {"pdf", "cbr", "cbz"}:
-        extracted_document_cover = await extract_document_cover(path, str(cover_path))
+        extracted_document_cover = await extract_document_cover(path, str(artwork_path))
         if extracted_document_cover:
-            meta.cover_path = str(cover_path)
-            return str(cover_path)
+            meta.artwork_path = str(artwork_path)
+            return str(artwork_path)
 
     return None
 
@@ -1344,7 +1372,7 @@ async def generate_ebook_screenshots(
 
     prepared_cover = await prepare_book_cover(path, folder_id, base_dir, meta)
     local_found = bool(prepared_cover)
-    downloaded_poster = bool(prepared_cover)
+    prepared_artwork = bool(prepared_cover)
 
     if extension in ["cbr", "cbz"]:
         temp_extract = Path(output_dir) / "temp_compressed_extract"
@@ -1403,15 +1431,15 @@ async def generate_ebook_screenshots(
                 scr_path = await process_compressed_image(img_idx, f"{sanitized_filename}-{i}")
                 screenshots.append(scr_path)
 
-            if not local_found and not downloaded_poster:
+            if not local_found and not prepared_artwork:
                 await process_compressed_image(0, "POSTER")
             if not banner_cached:
                 await process_compressed_image(len(image_files) - 1, "POSTER_BANNER")
             else:
-                meta.banner_path = banner_path
+                meta.artwork_banner_path = str(banner_path)
 
-            meta.cover_path = cover_path
-            meta.banner_path = banner_path
+            meta.artwork_path = str(cover_path)
+            meta.artwork_banner_path = str(banner_path)
 
             compressed_file.close()
 
@@ -1421,12 +1449,12 @@ async def generate_ebook_screenshots(
 
     elif extension in ["pdf", "mobi", "epub"]:
         try:
-            if extension == "epub" and not local_found and not downloaded_poster:
+            if extension == "epub" and not local_found and not prepared_artwork:
                 try:
                     epub_cover_extracted = await extract_epub_cover(path, cover_path, confirmed_only=False)
                     if epub_cover_extracted:
-                        downloaded_poster = True
-                        meta.cover_path = cover_path
+                        prepared_artwork = True
+                        meta.artwork_path = str(cover_path)
                 except Exception as e:
                     logger.debug(f"[yellow]Warning: EPUB cover extraction failed: {e}[/yellow]")
 
@@ -1455,15 +1483,15 @@ async def generate_ebook_screenshots(
                 scr_path = await process_page(page_num, f"{sanitized_filename}-{i}")
                 screenshots.append(scr_path)
 
-            if not local_found and not downloaded_poster:
+            if not local_found and not prepared_artwork:
                 await process_page(0, "POSTER")
             if not banner_cached:
                 await process_page(total_pages - 1, "POSTER_BANNER")
             else:
-                meta.banner_path = banner_path
+                meta.artwork_banner_path = str(banner_path)
 
-            meta.cover_path = cover_path
-            meta.banner_path = banner_path
+            meta.artwork_path = str(cover_path)
+            meta.artwork_banner_path = str(banner_path)
 
             doc.close()
         except Exception as e:
@@ -1485,6 +1513,7 @@ async def screenshots(
     force_screenshots: bool = False,
     manual_frames: str | list[int] | list[str] = "",
     cleanup_after_capture: bool = True,
+    capture_group: str | None = None,
 ) -> list[str] | None:
     if meta.category == "GAME":
         return []
@@ -1514,6 +1543,26 @@ async def screenshots(
     if len(existing_images) >= cutoff and not force_screenshots:
         logger.info(f"[yellow]There are already at least {cutoff} images in the image list. Skipping additional screenshots.")
         return None
+
+    group = capture_group or "main"
+    if num_screens:
+        requested_screens = num_screens
+    elif isinstance(manual_frames, str):
+        requested_screens = len([frame for frame in manual_frames.split(",") if frame.strip()]) if manual_frames else screens
+    elif manual_frames:
+        requested_screens = len(manual_frames)
+    else:
+        requested_screens = screens
+    if meta.retake:
+        clear_screenshot_group(base_dir, folder_id, group)
+    registered_screens = manifest_files(base_dir, folder_id, group)
+    # Metadata enrichment can alter the display title (for example, by adding
+    # punctuation). Reuse the logical capture group rather than deriving
+    # identity from a display-derived filename. This must happen before reading
+    # MediaInfo so an already-complete early capture is a true no-op.
+    if not force_screenshots and not meta.retake and len(registered_screens) >= requested_screens:
+        logger.debug(f"[yellow]Reusing {len(registered_screens)} registered screenshots from group '{group}'.[/yellow]")
+        return [str(screen) for screen in registered_screens[:requested_screens]]
 
     try:
         mi_text = await asyncio.to_thread(Path(f"{base_dir}{'/' + 'tmp' + '/'}{folder_id}/MediaInfo.json").read_text, encoding="utf-8")
@@ -1586,8 +1635,10 @@ async def screenshots(
 
     if num_screens <= 0:
         num_screens = screens - len(existing_images)
+    if not force_screenshots and not meta.retake:
+        num_screens = max(0, num_screens - len(registered_screens))
     if num_screens <= 0:
-        return None
+        return [str(screen) for screen in registered_screens] or None
 
     sanitized_filename = await sanitize_filename(filename)
     screenshot_dir = screenshots_dir(base_dir, folder_id)
@@ -1904,7 +1955,10 @@ async def screenshots(
         unit="frames",
     )
 
-    return valid_results if valid_results else None
+    new_screens = register_screenshots(base_dir, folder_id, valid_results, group) if valid_results else []
+    if not force_screenshots and not meta.retake:
+        return [str(screen) for screen in manifest_files(base_dir, folder_id, group)[:requested_screens]]
+    return [str(screen) for screen in new_screens] or None
 
 
 async def capture_screenshot(args: tuple[int, str, float, str, float, float, float, float, str, bool, Meta]) -> tuple[int, str | None] | None:
@@ -1914,7 +1968,6 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
 
         def set_ffmpeg_threads() -> list[str]:
             threads_value = "1"
-            os.environ["FFREPORT"] = "level=32"  # Reduce ffmpeg logging overhead
             return ["-threads", threads_value]
 
         if width <= 0 or height <= 0:
@@ -2489,8 +2542,9 @@ class TakeScreensManager:
         force_screenshots: bool = False,
         manual_frames: str | list[int] | list[str] = "",
         cleanup_after_capture: bool = True,
+        capture_group: str | None = None,
     ) -> list[str] | None:
-        return await screenshots(path, filename, folder_id, base_dir, meta, num_screens, force_screenshots, manual_frames, cleanup_after_capture)
+        return await screenshots(path, filename, folder_id, base_dir, meta, num_screens, force_screenshots, manual_frames, cleanup_after_capture, capture_group)
 
     async def prepare_book_cover(self, path: str, folder_id: str, base_dir: str, meta: Meta) -> str | None:
         return await prepare_book_cover(path, folder_id, base_dir, meta)

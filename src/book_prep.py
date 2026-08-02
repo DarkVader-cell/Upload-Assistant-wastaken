@@ -49,8 +49,31 @@ from src.meta import Meta
 # File-list resolution
 # ---------------------------------------------------------------------------
 
-BOOK_EXTENSIONS = frozenset({".pdf", ".epub", ".mobi", ".azw", ".azw3", ".cbz", ".cbr"})
-AUDIOBOOK_EXTENSIONS = frozenset({".mp3", ".m4b", ".flac", ".aac", ".m4a", ".ogg", ".wav"})
+BOOK_EXTENSIONS = frozenset(
+    {".pdf", ".epub", ".mobi", ".azw", ".azw3", ".fb2", ".html", ".htm", ".chm", ".djvu", ".doc", ".docx", ".kfx", ".lit", ".pdb", ".txt", ".rtf", ".cbz", ".cbr"}
+)
+AUDIOBOOK_EXTENSIONS = frozenset(
+    {
+        ".mp3",
+        ".m4b",
+        ".flac",
+        ".alac",
+        ".aac",
+        ".m4a",
+        ".ogg",
+        ".opus",
+        ".wav",
+        ".ac3",
+        ".dts",
+        ".aiff",
+        ".ape",
+        ".wv",
+        ".wma",
+        ".aax",
+        ".aaxc",
+    }
+)
+_TEXT_SIDECAR_STEMS = frozenset({"cover", "folder", "index", "info", "readme"})
 
 
 def resolve_book_filelist(
@@ -80,6 +103,9 @@ def resolve_book_filelist(
         if not filelist:
             logger.info("[bold red]No Book or Audiobook files found!")
             sys.exit(1)
+        richer_book_files = [file for file in filelist if Path(file).suffix.lower() in BOOK_EXTENSIONS - {".txt", ".html", ".htm"}]
+        if richer_book_files:
+            filelist = [file for file in filelist if not (Path(file).suffix.lower() in {".txt", ".html", ".htm"} and Path(file).stem.casefold() in _TEXT_SIDECAR_STEMS)]
         videopath = sorted(filelist, key=os.path.getsize, reverse=True)[0]
     else:
         videopath = videoloc
@@ -89,7 +115,7 @@ def resolve_book_filelist(
     meta.imdb_id = 0
 
     primary_ext = Path(videopath).suffix.lower()
-    meta.audiobook = primary_ext in AUDIOBOOK_EXTENSIONS
+    meta.audiobook = bool(meta.audiobook or (primary_ext in AUDIOBOOK_EXTENSIONS) or any(Path(f).suffix.lower() in AUDIOBOOK_EXTENSIONS for f in filelist))
 
     search_term = Path(filelist[0]).name if filelist else ""
     search_file_folder = "file"
@@ -213,6 +239,7 @@ async def gather_book_prep(
         "book_language": bool(meta.book_language),
         "year": "manual_year" in meta and (meta.manual_year or 0) > 0,
         "keywords": bool(meta.keywords),
+        "overview": bool(meta.overview),
     }
 
     # Extract EPUB metadata directly if the file is an EPUB
@@ -524,6 +551,7 @@ async def gather_book_prep(
                             or (key in ("book_language", "book_language_iso") and cli_overrides["book_language"])
                             or (key in ("year", "search_year") and cli_overrides["year"])
                             or (key == "keywords" and cli_overrides["keywords"])
+                            or (key == "overview" and cli_overrides["overview"])
                         ):
                             is_override = True
 
@@ -562,12 +590,13 @@ async def gather_book_prep(
                             or (key in ("book_language", "book_language_iso") and cli_overrides["book_language"])
                             or (key in ("year", "search_year") and cli_overrides["year"])
                             or (key == "keywords" and cli_overrides["keywords"])
+                            or (key == "overview" and cli_overrides["overview"])
                         ):
                             is_override = True
 
-                        # Do not overwrite fields already populated by MAM, except for the poster/cover image (prefer Google Books cover)
+                        # Do not overwrite fields already populated by MAM, except for artwork (prefer Google Books cover)
                         if (
-                            key != "poster"
+                            key != "artwork_url"
                             and mam_data
                             and (key in mam_data or (key == "book_language_iso" and "book_language" in mam_data) or (key == "search_year" and "year" in mam_data))
                         ):
@@ -609,6 +638,7 @@ async def gather_book_prep(
                     or (key in ("book_language", "book_language_iso") and cli_overrides["book_language"])
                     or (key in ("year", "search_year") and cli_overrides["year"])
                     or (key == "keywords" and cli_overrides["keywords"])
+                    or (key == "overview" and cli_overrides["overview"])
                 ):
                     is_override = True
 
@@ -764,8 +794,7 @@ async def get_audiobook_duration(filelist: list[str]) -> tuple[float, str]:
     """Calculate the sum of durations of all audio files in the file list using MediaInfo."""
     from pymediainfo import MediaInfo
 
-    audiobook_extensions = (".mp3", ".m4b", ".flac", ".aac", ".m4a", ".ogg", ".wav")
-    audio_files = [f for f in filelist if f.lower().endswith(audiobook_extensions)]
+    audio_files = [f for f in filelist if Path(f).suffix.lower() in AUDIOBOOK_EXTENSIONS]
 
     if not audio_files:
         return 0.0, ""
@@ -800,8 +829,7 @@ async def get_audiobook_bitrate(filelist: list[str]) -> int | None:
     """Calculate the average bitrate (in kbps) of a sample of audio files (max 5) in the file list using MediaInfo."""
     from pymediainfo import MediaInfo
 
-    audiobook_extensions = (".mp3", ".m4b", ".flac", ".aac", ".m4a", ".ogg", ".wav")
-    audio_files = [f for f in filelist if f.lower().endswith(audiobook_extensions)]
+    audio_files = [f for f in filelist if Path(f).suffix.lower() in AUDIOBOOK_EXTENSIONS]
 
     # Limit to a maximum of 5 files to optimize performance
     audio_files = audio_files[:5]

@@ -170,6 +170,10 @@ config: dict[str, Any] = {
         "img_host_4": "",
         "img_host_5": "",
         "img_host_6": "",
+        # Maximum number of image uploads running at once. Set to 0 to use host defaults.
+        "image_upload_concurrency": 0,
+        # Delay between starting image uploads, in seconds.
+        "image_upload_delay": 0.0,
 
         # image host api keys
         "imgbb_api": "",
@@ -888,6 +892,12 @@ config: dict[str, Any] = {
             "bluray_image_size": "",
             "add_audio_spectrogram": True,
             "inject_delay": 0,
+        },
+        "CATHODERAYTUBE": {
+            # Cookies required (export from https://www.cathode-ray.tube/ to data/cookies/CATHODERAYTUBE.txt).
+            # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
+            "announce_url": "",
+            "anon": True,
         },
         "CINEMATIK": {
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
