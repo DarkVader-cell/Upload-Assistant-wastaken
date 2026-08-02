@@ -54,12 +54,22 @@ jobs:
       - name: Select preferred amd64 self-hosted runner
         id: runner
         env:
-          GH_TOKEN: ${{ github.token }}
+          RUNNER_SELECTION_TOKEN: ${{ secrets.RUNNER_SELECTION_TOKEN }}
         run: |
-          runners="$(curl --fail-with-body --silent --show-error \
+          if [ -z "${RUNNER_SELECTION_TOKEN}" ]; then
+            echo "label=ubuntu-24.04" >> "$GITHUB_OUTPUT"
+            echo "RUNNER_SELECTION_TOKEN is not configured; using hosted amd64."
+            exit 0
+          fi
+
+          if ! runners="$(curl --fail-with-body --silent --show-error \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100")"
+            -H "Authorization: Bearer ${RUNNER_SELECTION_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100")"; then
+            echo "label=ubuntu-24.04" >> "$GITHUB_OUTPUT"
+            echo "Runner discovery failed; using hosted amd64."
+            exit 0
+          fi
 
           if jq -e '.runners[] | select(.status == "online") | .labels[] | select(.name == "windows-docker-primary")' <<<"$runners" >/dev/null; then
             echo "label=windows-docker-primary" >> "$GITHUB_OUTPUT"
