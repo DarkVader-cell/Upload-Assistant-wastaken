@@ -1,6 +1,14 @@
 name: Create and publish Docker images
 
 on:
+  push:
+    branches:
+      - main
+      - dev
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
+      - ".github/fork-sync/**"
   release:
     types:
       - published
@@ -18,6 +26,7 @@ env:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   prepare:
@@ -26,6 +35,7 @@ jobs:
       image_name: ${{ steps.image-name.outputs.image_name }}
       tags: ${{ steps.meta.outputs.tags }}
       labels: ${{ steps.meta.outputs.labels }}
+      amd64_runner: ${{ steps.runner.outputs.label }}
     steps:
       - name: Compute lowercase image name
         id: image-name
@@ -37,9 +47,30 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ steps.image-name.outputs.image_name }}
           tags: |
-            type=raw,value=latest,enable=${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.use_latest_tag == true) }},priority=1000
+            type=raw,value=latest,enable=${{ github.event_name == 'release' || (github.event_name == 'push' && github.ref == 'refs/heads/main') || (github.event_name == 'workflow_dispatch' && inputs.use_latest_tag == true) }},priority=1000
             type=ref,event=tag
             type=ref,event=branch,enable=${{ !inputs.use_latest_tag }}
+
+      - name: Select preferred amd64 self-hosted runner
+        id: runner
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          runners="$(curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runners?per_page=100")"
+
+          if jq -e '.runners[] | select(.status == "online") | .labels[] | select(.name == "windows-docker-primary")' <<<"$runners" >/dev/null; then
+            echo "label=windows-docker-primary" >> "$GITHUB_OUTPUT"
+            echo "Using the online Windows Docker runner."
+          elif jq -e '.runners[] | select(.status == "online") | .labels[] | select(.name == "homelab-docker-fallback")' <<<"$runners" >/dev/null; then
+            echo "label=homelab-docker-fallback" >> "$GITHUB_OUTPUT"
+            echo "Windows runner is offline; using the homelab Docker runner."
+          else
+            echo "label=ubuntu-24.04" >> "$GITHUB_OUTPUT"
+            echo "No configured self-hosted Docker runner is online; using hosted amd64."
+          fi
 
   build:
     needs: prepare
@@ -56,7 +87,7 @@ jobs:
             dockerfile: ./Dockerfile
             arch: amd64
             platform: linux/amd64
-            runner: ubuntu-24.04
+            runner: ${{ needs.prepare.outputs.amd64_runner }}
           - variant: webui
             dockerfile: ./Dockerfile
             arch: arm64
@@ -94,6 +125,7 @@ jobs:
           outputs: type=image,name=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_name }},push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
+        shell: bash
         run: |
           mkdir -p "/tmp/digests/${{ matrix.variant }}"
           digest="${{ steps.build.outputs.digest }}"
