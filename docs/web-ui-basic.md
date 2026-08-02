@@ -17,6 +17,7 @@ python upload.py "/path/to/folder" "/another/path" --webui 127.0.0.1:8080
 - Other optional environment variables used by the Web UI:
   - `UA_WEBUI_USE_SUBPROCESS` — if set (non-empty) the server will run uploads in a subprocess rather than in-process (affects interactive behavior and Rich output recording).
   - `UA_WEBUI_CORS_ORIGINS` — comma-separated list of allowed origins for `/api/*` when remote clients need cross-origin access.
+  - `UA_BROWSE_INDEX_TTL` — fallback full-index refresh interval, in seconds (default: `900`). On Linux, inotify updates additions, moves, and deletions immediately; this interval remains as a safety refresh for missed events and non-Linux systems.
   - `SESSION_SECRET` or `SESSION_SECRET_FILE` — provide a stable session secret (permission handling needed). Do not just use this by default.
 
 Notes:

@@ -30,6 +30,7 @@ from collections.abc import Iterator, Mapping, Sequence
 import web_ui.auth as auth_mod
 from src.webui_progress import ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
 from src.manual_metadata import parse_detached_metadata_request, parse_metadata_submission
+from web_ui.browse_index import BrowseIndex
 
 
 def _module_name(*parts: str) -> str:
@@ -735,6 +736,14 @@ active_processes_lock = threading.Lock()
 
 # Runtime browse roots (set by upload.py when starting web UI)
 _runtime_browse_roots: str | None = None
+
+# Persistent filename index used by the interactive file-browser search.
+# Override the refresh interval with UA_BROWSE_INDEX_TTL (seconds).
+try:
+    _browse_index_ttl = max(30, int(os.environ.get("UA_BROWSE_INDEX_TTL", "900")))
+except (TypeError, ValueError):
+    _browse_index_ttl = 900
+_browse_index = BrowseIndex(Path(__file__).resolve().parent.parent / "tmp" / "browse_index.sqlite3", refresh_seconds=_browse_index_ttl)
 
 # Runtime flags and stored totp
 saved_totp_secret: str | None = None
@@ -4516,99 +4525,53 @@ def browse_search():
                 return False
         return True
 
-    items: list[BrowseItem] = []
-
     try:
-        for root in roots:
-            root_abs = str(Path(root).resolve())
-            if not Path(root_abs).is_dir():
+        indexed_items, indexing = _browse_index.search(roots, query, file_filter, max_results)
+        items: list[BrowseItem] = []
+        for indexed_item in indexed_items:
+            name = str(indexed_item["name"])
+            item_type = str(indexed_item["type"])
+            if not name_matches(name):
+                continue
+            if item_type == "file" and file_filter == "desc" and Path(name.lower()).suffix not in SUPPORTED_DESC_EXTS:
+                continue
+            full_path = Path(str(indexed_item["path"]))
+            try:
+                _assert_safe_resolved_path(full_path)
+            except ValueError:
                 continue
             try:
-                for dirpath, dirnames, filenames in os.walk(root_abs):
-                    # Skip hidden dirs
-                    dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-
-                    # Check dirs
-                    for dirname in dirnames:
-                        if name_matches(dirname):
-                            full_path = Path(dirpath) / dirname
-                            try:
-                                _assert_safe_resolved_path(full_path)
-                            except ValueError:
-                                continue
-                            try:
-                                stat_res = Path(full_path).stat()
-                                mtime = stat_res.st_mtime
-                                size = 0
-                            except Exception:
-                                mtime = 0.0
-                                size = 0
-                            items.append(
-                                {
-                                    "name": dirname,
-                                    "path": str(full_path),
-                                    "type": "folder",
-                                    "children": [],
-                                    "mtime": mtime,
-                                    "size": size,
-                                }
-                            )
-                            if len(items) >= max_results:
-                                break
-
-                    if len(items) >= max_results:
-                        break
-
-                    # Check files
-                    for filename in filenames:
-                        if filename.startswith("."):
-                            continue
-                        if not name_matches(filename):
-                            continue
-                        if file_filter == "desc":
-                            ext = Path(filename.lower()).suffix
-                            if ext not in SUPPORTED_DESC_EXTS:
-                                continue
-                        full_path = Path(dirpath) / filename
-                        try:
-                            _assert_safe_resolved_path(full_path)
-                        except ValueError:
-                            continue
-                        try:
-                            stat_res = Path(full_path).stat()
-                            mtime = stat_res.st_mtime
-                            size = stat_res.st_size
-                        except Exception:
-                            mtime = 0.0
-                            size = 0
-                        items.append(
-                            {
-                                "name": filename,
-                                "path": str(full_path),
-                                "type": "file",
-                                "children": None,
-                                "mtime": mtime,
-                                "size": size,
-                            }
-                        )
-                        if len(items) >= max_results:
-                            break
-
-                    if len(items) >= max_results:
-                        break
-            except PermissionError:
+                stat_res = full_path.stat()
+                mtime = stat_res.st_mtime
+                size = stat_res.st_size if item_type == "file" else 0
+            except (FileNotFoundError, PermissionError, OSError):
+                # The index may briefly contain a path removed since the last
+                # refresh. Ignore it without forcing another disk-wide scan.
                 continue
-            except Exception as e:
-                console.print(f"Error searching in {root}: {e}", markup=False)
-                continue
-
-            if len(items) >= max_results:
-                break
+            items.append(
+                {
+                    "name": name,
+                    "path": str(full_path),
+                    "type": "folder" if item_type == "folder" else "file",
+                    "children": [] if item_type == "folder" else None,
+                    "mtime": mtime,
+                    "size": size,
+                }
+            )
 
         # Sort by folders first and then alphabetically
         items.sort(key=lambda x: (0 if x.get("type") == "folder" else 1, (x.get("name") or "").lower()))
 
-        return jsonify({"success": True, "items": items, "query": query, "count": len(items), "truncated": len(items) >= max_results})
+        return jsonify(
+            {
+                "success": True,
+                "items": items,
+                "query": query,
+                "count": len(items),
+                "truncated": len(items) >= max_results,
+                "indexing": indexing,
+            }
+        )
 
     except Exception as e:
         console.print(f"Error in browse_search: {e}", markup=False)

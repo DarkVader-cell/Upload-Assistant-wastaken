@@ -65,9 +65,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "cogs/redaction.py": {
-    "mtime": 1785459397.8431954,
-    "ast_hash": "ab35ff8ec577d7b5643dd76154ec2fec",
-    "semantic_hash": "ab35ff8ec577d7b5643dd76154ec2fec"
+    "mtime": 1785476559.7200952,
+    "ast_hash": "478b6c300bde7f1b7c5429fcd469dac9",
+    "semantic_hash": ""
   },
   "config-generator.py": {
     "mtime": 1785459397.8441641,
@@ -80,14 +80,14 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "data/example_config.py": {
-    "mtime": 1785459397.845326,
-    "ast_hash": "a021c1a4d363aad112619199ee07352f",
-    "semantic_hash": "a021c1a4d363aad112619199ee07352f"
+    "mtime": 1785581905.6728039,
+    "ast_hash": "c9413e6e24a7c8e1732bd4e95f4425a7",
+    "semantic_hash": ""
   },
   "data/version.py": {
-    "mtime": 1785459397.846089,
-    "ast_hash": "da8e5bbda24439c40ef4218842c0469b",
-    "semantic_hash": "da8e5bbda24439c40ef4218842c0469b"
+    "mtime": 1785580767.3352191,
+    "ast_hash": "647f52522347525d118772ba31d5bdbf",
+    "semantic_hash": ""
   },
   "docker-entrypoint.sh": {
     "mtime": 1785459397.846089,
@@ -140,9 +140,9 @@
     "semantic_hash": "fdc06e3f3ef1a627a46e8cbd322268bd"
   },
   "src/args.py": {
-    "mtime": 1785459397.8522959,
-    "ast_hash": "311ef98fc2308e8ff6d0e1e8292a0670",
-    "semantic_hash": "311ef98fc2308e8ff6d0e1e8292a0670"
+    "mtime": 1785476072.5656745,
+    "ast_hash": "1b3ec696b4e95b93649a8b68003c364a",
+    "semantic_hash": ""
   },
   "src/audio.py": {
     "mtime": 1785459397.8522959,
@@ -175,9 +175,9 @@
     "semantic_hash": "5fd8b72dd3d1239cbfcaa0cadd512f77"
   },
   "src/book_prep.py": {
-    "mtime": 1785459397.855296,
-    "ast_hash": "ee5ea07c6ee4d185d3eb032286911c81",
-    "semantic_hash": "ee5ea07c6ee4d185d3eb032286911c81"
+    "mtime": 1785580767.3382192,
+    "ast_hash": "5655c807ae12647cd21031b00a5ba468",
+    "semantic_hash": ""
   },
   "src/btnid.py": {
     "mtime": 1785459397.855296,
@@ -260,9 +260,9 @@
     "semantic_hash": "00699ccb0ce2081223229e77aa06f8f5"
   },
   "src/get_desc.py": {
-    "mtime": 1785459397.861296,
-    "ast_hash": "a17e50b47983bf6387c56c2f2e64299d",
-    "semantic_hash": "a17e50b47983bf6387c56c2f2e64299d"
+    "mtime": 1785581905.6698039,
+    "ast_hash": "6570588d7a69d909aff2b29ba9b6e6a6",
+    "semantic_hash": ""
   },
   "src/get_disc.py": {
     "mtime": 1785459397.861296,
@@ -270,9 +270,9 @@
     "semantic_hash": "e8e03be0642620199f61be04c6e31f79"
   },
   "src/get_name.py": {
-    "mtime": 1785459397.8623805,
-    "ast_hash": "635c267050472ee5ead16c903dc87bcf",
-    "semantic_hash": "635c267050472ee5ead16c903dc87bcf"
+    "mtime": 1785580767.340219,
+    "ast_hash": "bc954e4f30e80abd3d6a41df4a8ba734",
+    "semantic_hash": ""
   },
   "src/get_source.py": {
     "mtime": 1785459397.8623805,
@@ -320,9 +320,9 @@
     "semantic_hash": "81dfbbe9fc06dd8d8d032c4e89be9972"
   },
   "src/meta.py": {
-    "mtime": 1785459397.864252,
-    "ast_hash": "088d8648d68f440095e6ec45e8d5c8ee",
-    "semantic_hash": "088d8648d68f440095e6ec45e8d5c8ee"
+    "mtime": 1785580767.340219,
+    "ast_hash": "f9337b2dad6a2856fc4f0c8c1e619e5c",
+    "semantic_hash": ""
   },
   "src/metadata_cache.py": {
     "mtime": 1785459397.864252,
@@ -330,9 +330,9 @@
     "semantic_hash": "1bc1d2b1cced16e5c44732fab5f66e82"
   },
   "src/metadata_searching.py": {
-    "mtime": 1785459397.864696,
-    "ast_hash": "45280b5680ba48747ce4bf88fccd0d08",
-    "semantic_hash": "45280b5680ba48747ce4bf88fccd0d08"
+    "mtime": 1785580767.340219,
+    "ast_hash": "dcec42f9eb7164dda8d517f78854780d",
+    "semantic_hash": ""
   },
   "src/music/__init__.py": {
     "mtime": 1785459397.864696,
@@ -375,7 +375,7 @@
     "semantic_hash": "6338c54a07d58d42d6fe5c80bcf7528f"
   },
   "src/prep.py": {
-    "mtime": 1785459397.8660963,
+    "mtime": 1785476706.6205313,
     "ast_hash": "bdf77edd397ed9ca9c90a42ebbb771f8",
     "semantic_hash": "bdf77edd397ed9ca9c90a42ebbb771f8"
   },
@@ -385,9 +385,9 @@
     "semantic_hash": "81ea6fa8646081768ca7524d8bfb87e1"
   },
   "src/prep_helpers.py": {
-    "mtime": 1785459397.8668177,
-    "ast_hash": "a641d5ff3d9b7393c9b802fa1c8a05bc",
-    "semantic_hash": "a641d5ff3d9b7393c9b802fa1c8a05bc"
+    "mtime": 1785580767.3412192,
+    "ast_hash": "bf9d98e93af47942f60ad49df92506b8",
+    "semantic_hash": ""
   },
   "src/qbitwait.py": {
     "mtime": 1785459397.867091,
@@ -395,9 +395,9 @@
     "semantic_hash": "f435f08675c78bb81d8c6ab34b0eeb19"
   },
   "src/queuemanage.py": {
-    "mtime": 1785459397.8675842,
-    "ast_hash": "30a31b5f4a02caec5ede01d1b591091f",
-    "semantic_hash": "30a31b5f4a02caec5ede01d1b591091f"
+    "mtime": 1785473990.3313363,
+    "ast_hash": "4b0cb9b1ab0bb817aa62b9f57c16963d",
+    "semantic_hash": ""
   },
   "src/radarr.py": {
     "mtime": 1785459397.8675842,
@@ -405,9 +405,9 @@
     "semantic_hash": "389299467a6049f0b9bd6ec49748350b"
   },
   "src/region.py": {
-    "mtime": 1785459397.8680577,
-    "ast_hash": "26db14d60fed39b09e1bd70dff9f2fc7",
-    "semantic_hash": "26db14d60fed39b09e1bd70dff9f2fc7"
+    "mtime": 1785580767.342219,
+    "ast_hash": "adafaba218f1198ce4b13bd6f4b5fa8d",
+    "semantic_hash": ""
   },
   "src/rehostimages.py": {
     "mtime": 1785459397.8683043,
@@ -430,14 +430,14 @@
     "semantic_hash": "e4ab5773cb96f7a12eede37770c5397e"
   },
   "src/tags.py": {
-    "mtime": 1785459397.8689208,
-    "ast_hash": "f8072ee7cc8c9aa178b682389a538e7b",
-    "semantic_hash": "f8072ee7cc8c9aa178b682389a538e7b"
+    "mtime": 1785474328.9934947,
+    "ast_hash": "65adb1414487d3a7d03ec076ccd2ee23",
+    "semantic_hash": ""
   },
   "src/takescreens.py": {
-    "mtime": 1785459397.869534,
-    "ast_hash": "8ab32b88672e36f78ce87cc6fa71ebdb",
-    "semantic_hash": "8ab32b88672e36f78ce87cc6fa71ebdb"
+    "mtime": 1785476692.8704941,
+    "ast_hash": "3dd6442c5da83c9aaff4dc5ce818ff7d",
+    "semantic_hash": ""
   },
   "src/temp_paths.py": {
     "mtime": 1785459397.869534,
@@ -460,9 +460,9 @@
     "semantic_hash": "4173a2ba266b9338d0be6547426a543a"
   },
   "src/torrent_clients/qbittorrent.py": {
-    "mtime": 1785459397.8711696,
-    "ast_hash": "2e26d973133c1d36dcaf4aee5bcb62dd",
-    "semantic_hash": "2e26d973133c1d36dcaf4aee5bcb62dd"
+    "mtime": 1785580767.3432193,
+    "ast_hash": "7592765a708bb7100cf9888b84f1605d",
+    "semantic_hash": ""
   },
   "src/torrent_clients/rtorrent.py": {
     "mtime": 1785459397.871617,
@@ -555,14 +555,14 @@
     "semantic_hash": "9f5c4d9f95163c0dc78fc9cfaf676bd1"
   },
   "src/trackers/UNIT3D/__init__.py": {
-    "mtime": 1785459397.8761182,
-    "ast_hash": "6d02caf44787b295a7fa2d2be26c7d28",
-    "semantic_hash": "6d02caf44787b295a7fa2d2be26c7d28"
+    "mtime": 1785580767.3432193,
+    "ast_hash": "6a1b06a9852e0cce60898da33439018c",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/aither.py": {
-    "mtime": 1785459397.8761182,
-    "ast_hash": "c2970fffad54c25b3342fb2811587962",
-    "semantic_hash": "c2970fffad54c25b3342fb2811587962"
+    "mtime": 1785474689.942903,
+    "ast_hash": "21e8cd5aae8aff806171ad10fb9b5554",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/asiancinema.py": {
     "mtime": 1785459397.8763652,
@@ -575,14 +575,14 @@
     "semantic_hash": "cfbce92a7daac2ca8d2c74c261a40074"
   },
   "src/trackers/UNIT3D/blutopia.py": {
-    "mtime": 1785459397.876484,
-    "ast_hash": "0879294e6aa8cd740609d59bffdaf302",
-    "semantic_hash": "0879294e6aa8cd740609d59bffdaf302"
+    "mtime": 1785582164.2107406,
+    "ast_hash": "c099165774601ccdd8fd73b6a26745f4",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/capybarabr.py": {
-    "mtime": 1785459397.876802,
-    "ast_hash": "f8cd895622a158a054d53f0d0137ba96",
-    "semantic_hash": "f8cd895622a158a054d53f0d0137ba96"
+    "mtime": 1785580767.3442192,
+    "ast_hash": "4612199367984ca4c38c7c55d6f8b9ee",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/cinematik.py": {
     "mtime": 1785459397.877,
@@ -645,9 +645,9 @@
     "semantic_hash": "389f47fb543d05cd5f05c022193f0302"
   },
   "src/trackers/UNIT3D/midnightscene.py": {
-    "mtime": 1785459397.8786237,
-    "ast_hash": "9f08f12ea9adc876f07c271cb1dc4e68",
-    "semantic_hash": "9f08f12ea9adc876f07c271cb1dc4e68"
+    "mtime": 1785580767.3442192,
+    "ast_hash": "bbecfb4111c77736fe7f80108dbb12d4",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/oldtoonsworld.py": {
     "mtime": 1785459397.878722,
@@ -655,9 +655,9 @@
     "semantic_hash": "f8952658e348c54dca1c6bad9d758498"
   },
   "src/trackers/UNIT3D/onlyencodes.py": {
-    "mtime": 1785459397.878722,
-    "ast_hash": "67d20fe484fee6273e10ba4ba60e3ac2",
-    "semantic_hash": "67d20fe484fee6273e10ba4ba60e3ac2"
+    "mtime": 1785474766.5234709,
+    "ast_hash": "262e9cc70bdf3e1e75f4fd7240463034",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/peergarden.py": {
     "mtime": 1785459397.8789191,
@@ -665,9 +665,9 @@
     "semantic_hash": "fd9db785d95baf6924a401058f0c71bc"
   },
   "src/trackers/UNIT3D/polishtorrent.py": {
-    "mtime": 1785459397.8789191,
-    "ast_hash": "fac03df4aacc4bc230e54a61b768a99b",
-    "semantic_hash": "fac03df4aacc4bc230e54a61b768a99b"
+    "mtime": 1785580767.3442192,
+    "ast_hash": "ed652d436c96f6532c7601e057c31349",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/portugas.py": {
     "mtime": 1785459397.8789191,
@@ -700,9 +700,9 @@
     "semantic_hash": "33e4605c93e50bb25775aa88e23b98b6"
   },
   "src/trackers/UNIT3D/shareisland.py": {
-    "mtime": 1785459397.8797712,
-    "ast_hash": "19c08858e802009bf948ace149133646",
-    "semantic_hash": "19c08858e802009bf948ace149133646"
+    "mtime": 1785475370.7631474,
+    "ast_hash": "4ee8a11c6cb3f4e9312822b2f0f38908",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/skipthecommercials.py": {
     "mtime": 1785459397.8800523,
@@ -720,9 +720,9 @@
     "semantic_hash": "72f42b90d6012e7953eb1683762e2fc6"
   },
   "src/trackers/UNIT3D/torrentdesi.py": {
-    "mtime": 1785459397.8800523,
-    "ast_hash": "8ebf32095c8d043e36b10b33f6730a53",
-    "semantic_hash": "8ebf32095c8d043e36b10b33f6730a53"
+    "mtime": 1785580767.3442192,
+    "ast_hash": "b812fd06436e927312e6955912b2ca86",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/torrenteros.py": {
     "mtime": 1785459397.8802896,
@@ -730,9 +730,9 @@
     "semantic_hash": "0f57d0465a88e9f17159b48cc71cd47c"
   },
   "src/trackers/UNIT3D/ulcx.py": {
-    "mtime": 1785459397.8802896,
-    "ast_hash": "7a0f3b00c4107ec393dceacdc9bbdb54",
-    "semantic_hash": "7a0f3b00c4107ec393dceacdc9bbdb54"
+    "mtime": 1785474758.5465145,
+    "ast_hash": "fb6c94f8fd8a8007ae24fe35c737f99e",
+    "semantic_hash": ""
   },
   "src/trackers/UNIT3D/utopia.py": {
     "mtime": 1785459397.8802958,
@@ -795,9 +795,9 @@
     "semantic_hash": "3a03bb6d865486e1b5626b63015621c8"
   },
   "src/trackers/beyondhd.py": {
-    "mtime": 1785459397.8830316,
-    "ast_hash": "119a23c1646dd960d62d3ef237e63d7b",
-    "semantic_hash": "119a23c1646dd960d62d3ef237e63d7b"
+    "mtime": 1785475370.761812,
+    "ast_hash": "9c4c1e0d00bd0e1c93fe29497bdf0650",
+    "semantic_hash": ""
   },
   "src/trackers/bithdtv.py": {
     "mtime": 1785459397.8832045,
@@ -815,9 +815,9 @@
     "semantic_hash": "28a09263346d0d77a0917a18473932bd"
   },
   "src/trackers/common.py": {
-    "mtime": 1785459397.8851166,
-    "ast_hash": "d0b413e83236009c4b0c43dbce39a064",
-    "semantic_hash": "d0b413e83236009c4b0c43dbce39a064"
+    "mtime": 1785474190.3708453,
+    "ast_hash": "b8b6df175d080e003bae8d17180ef31f",
+    "semantic_hash": ""
   },
   "src/trackers/digitalcore.py": {
     "mtime": 1785459397.8853815,
@@ -835,9 +835,9 @@
     "semantic_hash": "904913b011927062e2efe0a90a66992d"
   },
   "src/trackers/greatposterwall.py": {
-    "mtime": 1785459397.886153,
-    "ast_hash": "0dcfbb296abdd4b9a67d0b34e3f360ef",
-    "semantic_hash": "0dcfbb296abdd4b9a67d0b34e3f360ef"
+    "mtime": 1785477207.1045299,
+    "ast_hash": "216eb75164bb0aa1e927bcd4745aafb9",
+    "semantic_hash": ""
   },
   "src/trackers/hdbits.py": {
     "mtime": 1785459397.8863978,
@@ -870,9 +870,9 @@
     "semantic_hash": "de7fb416be4068b6e57ed5bb46f60a8a"
   },
   "src/trackers/morethantv.py": {
-    "mtime": 1785459397.8887694,
-    "ast_hash": "3a515d739b2b5efe0bdc8138046d00b7",
-    "semantic_hash": "3a515d739b2b5efe0bdc8138046d00b7"
+    "mtime": 1785477293.2236547,
+    "ast_hash": "9aa1615d866bfa9d69efb25ad786508b",
+    "semantic_hash": ""
   },
   "src/trackers/mteam.py": {
     "mtime": 1785459397.8887694,
@@ -920,9 +920,9 @@
     "semantic_hash": "3b7195d07d8dd694f766b38effb96610"
   },
   "src/trackers/torrenthr.py": {
-    "mtime": 1785459397.8912477,
-    "ast_hash": "471fe5be56d7e9485caa717670bfd9b6",
-    "semantic_hash": "471fe5be56d7e9485caa717670bfd9b6"
+    "mtime": 1785475370.7631474,
+    "ast_hash": "5ef54bf5be67afc3111e3577b94cdcd6",
+    "semantic_hash": ""
   },
   "src/trackers/torrentleech.py": {
     "mtime": 1785459397.8912957,
@@ -980,9 +980,9 @@
     "semantic_hash": "851d913a6e9818856afeeb7267b43089"
   },
   "src/video.py": {
-    "mtime": 1785459397.8942957,
-    "ast_hash": "93f66ee158d5e2d73e97ce1182cd0763",
-    "semantic_hash": "93f66ee158d5e2d73e97ce1182cd0763"
+    "mtime": 1785580767.3452191,
+    "ast_hash": "40e47783ad00812ca7b2406fd1828d8e",
+    "semantic_hash": ""
   },
   "src/vs.py": {
     "mtime": 1785459397.8942957,
@@ -1105,9 +1105,9 @@
     "semantic_hash": "a9bc4c26283538064a07498676b2f0d1"
   },
   "tests/test_midnightscene.py": {
-    "mtime": 1785459397.8962958,
-    "ast_hash": "3b8bd284d1769fa626abdacb4b93563a",
-    "semantic_hash": "3b8bd284d1769fa626abdacb4b93563a"
+    "mtime": 1785580767.3462193,
+    "ast_hash": "e1fd14fdf8b55c08578e21198100c7f4",
+    "semantic_hash": ""
   },
   "tests/test_music_architecture.py": {
     "mtime": 1785459397.8962958,
@@ -1190,9 +1190,9 @@
     "semantic_hash": "c92dc0d1bc5a92b58aa5120902725087"
   },
   "upload.py": {
-    "mtime": 1785459397.8995996,
-    "ast_hash": "456b876cdec22bde19b91520ecd8f2be",
-    "semantic_hash": "456b876cdec22bde19b91520ecd8f2be"
+    "mtime": 1785506227.414442,
+    "ast_hash": "a9b1d7db1d459a83219401381a3d9ef0",
+    "semantic_hash": ""
   },
   "web_ui/__init__.py": {
     "mtime": 1785459397.8995996,
@@ -1210,9 +1210,9 @@
     "semantic_hash": "6d16aba0d5be5ea7775aaca599104977"
   },
   "web_ui/server.py": {
-    "mtime": 1785459397.9012957,
-    "ast_hash": "37d73502a5755d82123507a589f217b4",
-    "semantic_hash": "37d73502a5755d82123507a589f217b4"
+    "mtime": 1785580767.3482192,
+    "ast_hash": "9bee99d1ce637071c4edfd63612a6641",
+    "semantic_hash": ""
   },
   "web_ui/static/js/.eslintrc.js": {
     "mtime": 1785459397.9082956,
@@ -1220,9 +1220,9 @@
     "semantic_hash": "f629d1c5f2c8511ba6bccf1472390991"
   },
   "web_ui/static/js/app.js": {
-    "mtime": 1785459397.909562,
-    "ast_hash": "4f2594df83c5809787e35bc60432cb0d",
-    "semantic_hash": "4f2594df83c5809787e35bc60432cb0d"
+    "mtime": 1785477655.1800065,
+    "ast_hash": "47622cdc53a35723c716b291690185df",
+    "semantic_hash": ""
   },
   "web_ui/static/js/config_app.js": {
     "mtime": 1785459397.9112957,
@@ -1360,14 +1360,14 @@
     "semantic_hash": "286e06780626e4665e46f0b7c12b2842"
   },
   ".github/workflows/docker-image.yml": {
-    "mtime": 1785459397.7782254,
-    "ast_hash": "4b62a0818ff462ea28071b2878941127",
-    "semantic_hash": "4b62a0818ff462ea28071b2878941127"
+    "mtime": 1785477673.3218637,
+    "ast_hash": "b9981e750c8b6ffebe3b917f71eab641",
+    "semantic_hash": ""
   },
   ".github/workflows/pr-validation.yml": {
-    "mtime": 1785459397.7782254,
-    "ast_hash": "f3a3504413fcc1c38df2244beba0a465",
-    "semantic_hash": "f3a3504413fcc1c38df2244beba0a465"
+    "mtime": 1785477673.3208637,
+    "ast_hash": "6253f0f95ade74737daabf4b5daf0328",
+    "semantic_hash": ""
   },
   ".github/workflows/sync-wastaken.yml": {
     "mtime": 1785459906.0412073,
@@ -1375,14 +1375,14 @@
     "semantic_hash": "2eab703b6cfeb0ce5de808e0ed460d9b"
   },
   ".github/workflows/windows-installer.yml": {
-    "mtime": 1785459397.7782965,
-    "ast_hash": "f2007951964e69d931f87887a299d66d",
-    "semantic_hash": "f2007951964e69d931f87887a299d66d"
+    "mtime": 1785477673.3218637,
+    "ast_hash": "fbc75465853a80a52778f56619d419f2",
+    "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1785459397.779021,
-    "ast_hash": "f75712f0d23d60851505625f9bb107c6",
-    "semantic_hash": "f75712f0d23d60851505625f9bb107c6"
+    "mtime": 1785599045.3483925,
+    "ast_hash": "5ce3db7fc80bc61779111d1de445a3f9",
+    "semantic_hash": ""
   },
   "bandit.yaml": {
     "mtime": 1785459397.779021,
@@ -1450,9 +1450,9 @@
     "semantic_hash": "769e58760a3fe149438b042feaf63b03"
   },
   "docs/audionut-porting-ledger.md": {
-    "mtime": 1785471301.707884,
-    "ast_hash": "3239dea5f3743fbf5dfb3f7a4e6cc093",
-    "semantic_hash": "3239dea5f3743fbf5dfb3f7a4e6cc093"
+    "mtime": 1785477293.2236547,
+    "ast_hash": "c760392f94f17fd6107d1771342314c6",
+    "semantic_hash": ""
   },
   "docs/book-upload.md": {
     "mtime": 1785459397.8466628,
@@ -1465,19 +1465,19 @@
     "semantic_hash": "4466b9fe59f096755e36151181659ab9"
   },
   "docs/description-builder.md": {
-    "mtime": 1785459397.847296,
-    "ast_hash": "4cde6aff9a958ec1dd6d9650965a1c1c",
-    "semantic_hash": "4cde6aff9a958ec1dd6d9650965a1c1c"
+    "mtime": 1785475389.4157434,
+    "ast_hash": "bea9d87c1827c2498284089af22b7387",
+    "semantic_hash": ""
   },
   "docs/docker-gui-wiki-full.md": {
-    "mtime": 1785459397.847296,
-    "ast_hash": "b8102ec10b3cab1bfb2781725298284e",
-    "semantic_hash": "b8102ec10b3cab1bfb2781725298284e"
+    "mtime": 1785580767.336219,
+    "ast_hash": "2821d2a5da91215854d0a3bb2d82d723",
+    "semantic_hash": ""
   },
   "docs/docker-wiki-full.md": {
-    "mtime": 1785459397.847296,
-    "ast_hash": "dd3525fa124d461abb4fc108c5861dd7",
-    "semantic_hash": "dd3525fa124d461abb4fc108c5861dd7"
+    "mtime": 1785599069.3503885,
+    "ast_hash": "0743eaf05ecd0319446eb519302642ff",
+    "semantic_hash": ""
   },
   "docs/example-config.md": {
     "mtime": 1785459397.847296,
@@ -1505,9 +1505,9 @@
     "semantic_hash": "0b3b34acc39f1b90cd5956fa9d36abce"
   },
   "docs/unraid-wiki-full.md": {
-    "mtime": 1785459397.8489175,
-    "ast_hash": "f2f4f00d4f62f3f33d21d91c27d35c7d",
-    "semantic_hash": "f2f4f00d4f62f3f33d21d91c27d35c7d"
+    "mtime": 1785580767.337219,
+    "ast_hash": "0da16b06fefc2c5c0b7dc7627e9039ff",
+    "semantic_hash": ""
   },
   "docs/usenet.md": {
     "mtime": 1785459397.8489175,
@@ -1515,9 +1515,9 @@
     "semantic_hash": "108a1720d8f3a78183cfc19e080b2ca7"
   },
   "docs/web-ui-api.md": {
-    "mtime": 1785459397.8489175,
-    "ast_hash": "e2430e8bc3dd37043ce0a5783b04d4ef",
-    "semantic_hash": "e2430e8bc3dd37043ce0a5783b04d4ef"
+    "mtime": 1785506227.412442,
+    "ast_hash": "8f3f7a82ca825f02c23a694f4c8d44cd",
+    "semantic_hash": ""
   },
   "docs/web-ui-basic.md": {
     "mtime": 1785459397.8492959,
@@ -2128,5 +2128,130 @@
     "mtime": 1785459397.9082956,
     "ast_hash": "8005b830cba20c7af5ed595331c7a62f",
     "semantic_hash": "8005b830cba20c7af5ed595331c7a62f"
+  },
+  "scripts/update-docker.sh": {
+    "mtime": 1785599045.3473923,
+    "ast_hash": "7c04562d5876ef12fb9004286d852554",
+    "semantic_hash": ""
+  },
+  "src/custom_streaming_services.py": {
+    "mtime": 1785580767.3382192,
+    "ast_hash": "84339aae365a07d646c1fab4b9bf9cdd",
+    "semantic_hash": ""
+  },
+  "src/manual_metadata.py": {
+    "mtime": 1785476117.5269887,
+    "ast_hash": "9ea4f63684ffc85b6c919dfa0cc3ac37",
+    "semantic_hash": ""
+  },
+  "src/modified_release.py": {
+    "mtime": 1785476723.595576,
+    "ast_hash": "c69870bf03ffe7d603a23b324bde1185",
+    "semantic_hash": ""
+  },
+  "src/queue_policy.py": {
+    "mtime": 1785473989.9003425,
+    "ast_hash": "bf5cfe187459f52041c4f57c2f34fe86",
+    "semantic_hash": ""
+  },
+  "src/safe_url.py": {
+    "mtime": 1785476713.219549,
+    "ast_hash": "a92be938e9f8b5edfe8724d1c66b1d52",
+    "semantic_hash": ""
+  },
+  "tests/test_aither_audio_gate.py": {
+    "mtime": 1785474689.943903,
+    "ast_hash": "5dc905196788975ec690ef33adb37bb7",
+    "semantic_hash": ""
+  },
+  "tests/test_blutopia_rules.py": {
+    "mtime": 1785582187.7587295,
+    "ast_hash": "28aabf7918287b73059637735c151ab1",
+    "semantic_hash": ""
+  },
+  "tests/test_book_detection.py": {
+    "mtime": 1785580767.3452191,
+    "ast_hash": "8164ecffa95fdf0165c0506e78c91449",
+    "semantic_hash": ""
+  },
+  "tests/test_language_equivalence.py": {
+    "mtime": 1785474190.3718452,
+    "ast_hash": "947a9719525992ca9edbaeb20a750c0d",
+    "semantic_hash": ""
+  },
+  "tests/test_manual_category.py": {
+    "mtime": 1785580767.3452191,
+    "ast_hash": "e8e302f6140bb169d4c933f6a40d6cf7",
+    "semantic_hash": ""
+  },
+  "tests/test_modified_release.py": {
+    "mtime": 1785580767.3462193,
+    "ast_hash": "d30c25dbd8d6cc0f25e5dfc0d415b51f",
+    "semantic_hash": ""
+  },
+  "tests/test_ported_features.py": {
+    "mtime": 1785506227.413442,
+    "ast_hash": "8e5318a6b16b8a53cc39c03286ce0ded",
+    "semantic_hash": ""
+  },
+  "tests/test_qbittorrent_proxy_retry.py": {
+    "mtime": 1785580767.3462193,
+    "ast_hash": "05423668aeb7576f94063e718db5b6ac",
+    "semantic_hash": ""
+  },
+  "tests/test_queue_policy.py": {
+    "mtime": 1785473990.7583299,
+    "ast_hash": "24f138c415a18ef9de43e5ae92dd8b9e",
+    "semantic_hash": ""
+  },
+  "tests/test_region_services.py": {
+    "mtime": 1785473724.7081227,
+    "ast_hash": "fde9a5f4a081a0e240f34bff63e8ee89",
+    "semantic_hash": ""
+  },
+  "tests/test_samaritano.py": {
+    "mtime": 1785580767.3462193,
+    "ast_hash": "43417b1205460e3e72b3d519a8d66871",
+    "semantic_hash": ""
+  },
+  "tests/test_screenshot_dimensions.py": {
+    "mtime": 1785474290.367846,
+    "ast_hash": "a2ea57b78cd185130960f5ac7e4cf766",
+    "semantic_hash": ""
+  },
+  "tests/test_screenshot_header.py": {
+    "mtime": 1785581905.6728039,
+    "ast_hash": "eaa43dbe464bb9c2b7a72c867c3efd5f",
+    "semantic_hash": ""
+  },
+  "tests/test_stc_naming.py": {
+    "mtime": 1785580767.3462193,
+    "ast_hash": "cc66b24676461c900783cd8ff31c5770",
+    "semantic_hash": ""
+  },
+  "tests/test_tags.py": {
+    "mtime": 1785474328.994495,
+    "ast_hash": "bbb7552d06ee82970ad57f3b187a76c0",
+    "semantic_hash": ""
+  },
+  "tests/test_torrentdesi_languages.py": {
+    "mtime": 1785580767.3462193,
+    "ast_hash": "7fd8ebcd6e4a74d36767a9c26dcafc32",
+    "semantic_hash": ""
+  },
+  "tests/test_unit3d_search_existing.py": {
+    "mtime": 1785580767.3472192,
+    "ast_hash": "3850d8f1a73c6ffc66ebf81ad8e47a6a",
+    "semantic_hash": ""
+  },
+  "docs/qui-docker-deployment.md": {
+    "mtime": 1785599069.3503885,
+    "ast_hash": "680acd0be7e36fe4c6c9a55b18646048",
+    "semantic_hash": ""
+  },
+  "docs/streaming-services.md": {
+    "mtime": 1785473654.6807802,
+    "ast_hash": "200eda474705cea766d1cd5bde53d528",
+    "semantic_hash": ""
   }
 }
