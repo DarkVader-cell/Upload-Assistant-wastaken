@@ -422,6 +422,11 @@ const argumentCategories = [
         description: "Override detected book title",
       },
       {
+        label: "--book-cover",
+        placeholder: "PATH_OR_URL",
+        description: "Required BOOK cover image path or public image URL",
+      },
+      {
         label: "--book-overview",
         placeholder: "SYNOPSIS",
         description: "Book/Audiobook overview/synopsis (overrides auto-detected value)",
@@ -2099,6 +2104,14 @@ function AudionutsUAGUI() {
           { cache: "no-store", signal: controller.signal },
         );
         if (!response.ok) {
+          // Do not keep showing the previous queue item when the backend has
+          // already moved on (or the session was briefly unavailable).
+          if (response.status === 404 && !cancelled) {
+            setExecutionPreview(null);
+            setProgressItems([]);
+            setExecutionScreenshots([]);
+            setCanAddExecutionScreenshot(false);
+          }
           return;
         }
         const data = await response.json();
