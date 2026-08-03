@@ -21,7 +21,7 @@ jobs:
       - name: Checkout wastaken
         uses: actions/checkout@v4
         with:
-          ref: wastaken
+          ref: dev
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -36,20 +36,20 @@ jobs:
       - name: Merge Wastaken development
         id: sync
         run: |
-          current=$(git rev-parse wastaken)
+          current=$(git rev-parse dev)
           latest=$(git rev-parse wastaken7/development)
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "latest=$latest" >> "$GITHUB_OUTPUT"
 
           if [ "$current" = "$latest" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "wastaken is already current."
+            echo "dev is already current."
             exit 0
           fi
 
           if git merge-base --is-ancestor "$latest" "$current"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "wastaken already contains Wastaken development."
+            echo "dev already contains Wastaken development."
             exit 0
           fi
 
@@ -59,22 +59,22 @@ jobs:
             git merge --abort 2>/dev/null || true
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "diverged=true" >> "$GITHUB_OUTPUT"
-            echo "wastaken contains local changes that cannot be merged automatically."
+            echo "dev contains local changes that cannot be merged automatically."
             exit 1
           fi
 
       - name: Push fast-forward
         if: steps.sync.outputs.changed == 'true'
-        run: git push origin wastaken
+        run: git push origin dev
 
       - name: Report divergence
         if: failure() && steps.sync.outputs.diverged == 'true'
         uses: actions/github-script@v7
         with:
           script: |
-            const title = 'Wastaken sync blocked: wastaken branch diverged';
+            const title = 'Wastaken sync blocked: dev branch diverged';
             const body = [
-              'The hourly sync could not merge `wastaken7/Upload-Assistant:development` into `wastaken` without manual resolution.',
+              'The hourly sync could not merge `wastaken7/Upload-Assistant:development` into `dev` without manual resolution.',
               '',
               `Current branch: \`${{ steps.sync.outputs.current }}\``,
               `Wastaken development: \`${{ steps.sync.outputs.latest }}\``,
