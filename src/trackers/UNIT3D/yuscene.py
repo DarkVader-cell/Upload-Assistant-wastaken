@@ -6,6 +6,7 @@ import cli_ui
 
 from src.console import logger
 from src.meta import Meta
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
 from src.trackers.UNIT3D import UNIT3D
 
@@ -21,6 +22,11 @@ class YUSCENE(UNIT3D):
     display_name = "YUSCENE"
     allows_bloated_audio = True
     base_url = "https://yu-scene.net"
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     banned_groups = (
         "ADDICTION",
         "B3LLUM",
@@ -78,6 +84,7 @@ class YUSCENE(UNIT3D):
 
     def __init__(self, config: Config) -> None:
         super().__init__(config, tracker_name="YUSCENE")
+        self.rehost_images_manager = RehostImagesManager(config)
         self.config = config
         self.common = Common(config)
 

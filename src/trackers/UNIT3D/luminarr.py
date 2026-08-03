@@ -5,6 +5,7 @@ import cli_ui
 
 from src.console import logger
 from src.meta import Meta
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
 from src.trackers.UNIT3D import UNIT3D
 
@@ -18,6 +19,11 @@ class Luminarr(UNIT3D):
     display_name = "Luminarr"
     allows_bloated_audio = True
     base_url = "https://luminarr.me"
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     banned_groups: tuple[str, ...] = ()
     id_url = f"{base_url}/api/torrents/"
     upload_url = f"{base_url}/api/torrents/upload"
@@ -31,6 +37,7 @@ class Luminarr(UNIT3D):
         super().__init__(config, tracker_name="LUMINARR")
         self.config = config
         self.common = Common(config)
+        self.rehost_images_manager = RehostImagesManager(config)
 
     async def get_additional_data(self, meta: Meta) -> dict[str, Any]:
         return {

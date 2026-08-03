@@ -14,6 +14,7 @@ from cogs.redaction import Redaction
 from src.console import logger, prompt_in_thread
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.torrentcreate import TorrentCreator
 from src.trackers.common import Common
 
@@ -29,6 +30,11 @@ class Anthelion:
     tracker = "ANTHELION"
     display_name = "Anthelion"
     source_flag = "ANT"
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     allowed_bloated_audio_languages = ("en",)
     reject_english_original_bloat = True
     banned_groups = (
@@ -115,6 +121,7 @@ class Anthelion:
     def __init__(self, config: Config):
         self.config = config
         self.common = Common(config)
+        self.rehost_images_manager = RehostImagesManager(config)
         self.tracker_config = self.config["TRACKERS"].get(self.tracker, {})
         self.api_key: str = str(self.tracker_config.get("api_key", "")).strip()
 

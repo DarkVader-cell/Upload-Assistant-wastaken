@@ -69,6 +69,35 @@ def test_detached_qui_restore_marks_inflight_jobs_retryable(tmp_path, monkeypatc
     assert webui_server.detached_job_queue == []
 
 
+def test_detached_operation_arguments_are_validated_and_unattended():
+    validated, display = webui_server._validated_detached_args('--trackers "OE, MTV"')
+    assert validated[-1] == "-ua"
+    assert display.endswith("-ua")
+
+
+def test_detached_job_snapshot_exposes_safe_control_capabilities():
+    with webui_server.detached_jobs_lock:
+        webui_server.detached_jobs.clear()
+        webui_server.detached_job_queue.clear()
+        webui_server.detached_jobs["queued-1"] = {
+            "id": "queued-1",
+            "status": "queued",
+            "source_path": "/media/item",
+            "args": "-ua",
+            "command": ["python", "upload.py", "/media/item", "-ua"],
+        }
+        webui_server.detached_job_queue.append("queued-1")
+
+    snapshot = webui_server._detached_job_snapshot()
+    assert snapshot[0]["queue_position"] == 1
+    assert snapshot[0]["can_edit"] is True
+    assert snapshot[0]["can_cancel"] is True
+    assert "command" not in snapshot[0]
+    with webui_server.detached_jobs_lock:
+        webui_server.detached_jobs.clear()
+        webui_server.detached_job_queue.clear()
+
+
 def test_failed_unattended_queue_item_remains_retryable():
     assert not queue_item_has_successful_upload([{"upload_success": False}])
     assert queue_item_has_successful_upload([{"upload_success": True}])

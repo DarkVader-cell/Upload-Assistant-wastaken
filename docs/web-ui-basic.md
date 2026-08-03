@@ -17,7 +17,7 @@ python upload.py "/path/to/folder" "/another/path" --webui 127.0.0.1:8080
 - Other optional environment variables used by the Web UI:
   - `UA_WEBUI_USE_SUBPROCESS` — if set (non-empty) the server will run uploads in a subprocess rather than in-process (affects interactive behavior and Rich output recording).
   - `UA_WEBUI_CORS_ORIGINS` — comma-separated list of allowed origins for `/api/*` when remote clients need cross-origin access.
-  - `UA_BROWSE_INDEX_TTL` — fallback full-index refresh interval, in seconds (default: `900`). On Linux, inotify updates additions, moves, and deletions immediately; this interval remains as a safety refresh for missed events and non-Linux systems.
+  - `UA_BROWSE_INDEX_TTL` — fallback full-index refresh interval, in seconds (default: `900`). On Linux, inotify updates additions, moves, and deletions immediately; this interval remains as a safety refresh for missed events and non-Linux systems. Values below 30 seconds are clamped to 30 seconds.
   - `SESSION_SECRET` or `SESSION_SECRET_FILE` — provide a stable session secret (permission handling needed). Do not just use this by default.
 
 Notes:
@@ -43,6 +43,10 @@ Notes:
 ### File browser
 
 - The left panel shows configured browse roots and filesystem folders. The browse roots are provided either by the runtime path (see `upload.py`) or the environment variable `UA_BROWSE_ROOTS` (comma-separated). The browser only shows configured roots — it will not expose the whole filesystem. Supported video extensions shown in the browser are `.mkv`, `.mp4`, and `.ts`, as well as disc based paths. Everything else is filtered.
+- File browser search uses a persistent SQLite filename index at `tmp/browse_index.sqlite3`, so searches query the index instead of recursively walking the download disks on every keystroke.
+- The first search for a browse root builds the index. Later searches use the existing snapshot while any scheduled refresh runs in the background, so a refresh does not block the UI.
+- On Linux, filesystem changes are tracked with inotify. New, moved, and deleted files update only the affected directory or subtree; a full scan is used only for the periodic safety refresh, missed-event recovery, or platforms without inotify support.
+- If a file disappears between indexing and the search result, it is skipped safely. The search response includes `indexing: true` while a background refresh is active.
 
 ### Argument list
 
@@ -53,6 +57,12 @@ Notes:
 - Select a file or folder from the left panel, add optional CLI arguments in the Arguments field, then click "Execute Upload". The UI calls `/api/execute` and streams output back using Server-Sent Events (SSE). The UI renders Rich HTML fragments from the uploader.
 - If the running process prompts for input the UI shows an input box — responses are sent via the input box at the bottom of the page (calls `/api/input`) for the active session. You can cancel or kill a running job with the "Kill"/"Clear" control (calls `/api/kill`).
 - Execution can run either in-process (preserving Rich output and interactive prompts) or as a subprocess. The runtime mode can be controlled with the environment variable `UA_WEBUI_USE_SUBPROCESS`.
+
+### Unattended Operations control centre
+
+Use **Unattended Operations** to submit the selected files or folders to the durable detached queue. While open, the dashboard refreshes live and lets you view job state and logs, edit arguments before a job starts, cancel or retry jobs, and answer required metadata or ordinary yes/no/text prompts without a terminal.
+
+Detached jobs are serialized and persisted under `tmp/qui_jobs.json`. Settings are changed only before a job starts (or as part of retrying a failed/interrupted job); a running process is not rewritten underneath itself. Keep the Web UI authenticated and bound to a trusted interface because this dashboard can control uploads and send input to active processes.
 
 ### Config editor
 

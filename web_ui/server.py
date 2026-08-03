@@ -1330,8 +1330,18 @@ def _submit_auth_ok() -> tuple[bool, tuple[Any, int] | None]:
 def _detached_job_snapshot(limit: int = 100) -> list[dict[str, Any]]:
     with detached_jobs_lock:
         jobs = list(detached_jobs.values())
+        queue_positions = {job_id: index + 1 for index, job_id in enumerate(detached_job_queue)}
     jobs.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
-    return [_json_safe({key: value for key, value in job.items() if key != "command"}) for job in jobs[:limit]]
+    snapshots: list[dict[str, Any]] = []
+    for job in jobs[:limit]:
+        snapshot = {key: value for key, value in job.items() if key != "command"}
+        job_id = str(job.get("id", ""))
+        snapshot["queue_position"] = queue_positions.get(job_id)
+        snapshot["can_edit"] = str(job.get("status")) in {"queued", "interrupted", "failed"}
+        snapshot["can_cancel"] = str(job.get("status")) in {"queued", "starting", "running", "waiting_for_input", "waiting_for_metadata"}
+        snapshot["can_retry"] = str(job.get("status")) in {"failed", "interrupted"}
+        snapshots.append(_json_safe(snapshot))
+    return snapshots
 
 
 def _persist_detached_jobs_locked() -> None:
@@ -1383,12 +1393,13 @@ def _restore_detached_jobs() -> None:
             if status == "queued":
                 restored_queue.append(job_id)
                 job["message"] = "Recovered after WebUI restart; queued for unattended execution"
-            elif status in {"running", "waiting_for_metadata"}:
+            elif status in {"running", "waiting_for_input", "waiting_for_metadata"}:
                 job["status"] = "interrupted"
                 job["message"] = "Interrupted by WebUI restart; retained for safe retry"
                 job["recovery_available"] = True
                 job["finished_at"] = datetime.now(UTC).isoformat()
                 job["metadata_request"] = None
+                job["prompt_request"] = None
             detached_jobs[job_id] = job
         detached_job_queue.extend(restored_queue)
         with contextlib.suppress(OSError, TypeError, ValueError):
@@ -1412,6 +1423,7 @@ def _retry_detached_job(job_id: str) -> bool:
                 "return_code": None,
                 "error": None,
                 "metadata_request": None,
+                "prompt_request": None,
                 "recovery_available": False,
             }
         )
@@ -1462,13 +1474,24 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
     base_dir = Path(__file__).resolve().parent.parent
     log_path = base_dir / "tmp" / f"ua-{job_id}.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    with detached_jobs_lock:
+        if str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled":
+            return
     started_at = datetime.now(UTC).isoformat()
-    _set_detached_job(job_id, status="running", started_at=started_at, log_path=str(log_path), message="Running upload")
+    _set_detached_job(
+        job_id,
+        status="running",
+        started_at=started_at,
+        log_path=str(log_path),
+        message="Running upload",
+        metadata_request=None,
+        prompt_request=None,
+    )
 
     process: subprocess.Popen[str] | None = None
     try:
         command = cast(list[str], job["command"])
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # noqa: S603 - command is built from validated CLI arguments
             command,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -1480,6 +1503,11 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
         )
         with active_processes_lock:
             active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}
+        with detached_jobs_lock:
+            cancelled_before_read = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
+        if cancelled_before_read and process.poll() is None:
+            with contextlib.suppress(Exception):
+                process.kill()
         _set_detached_job(job_id, process_active=True)
 
         with log_path.open("a", encoding="utf-8", errors="replace") as log_file:
@@ -1494,19 +1522,51 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
                             status="waiting_for_metadata",
                             message="Waiting for IMDb/TMDb IDs in Operations",
                             metadata_request=metadata_request,
+                            prompt_request=None,
                         )
                         log_file.write("Waiting for metadata IDs from Web UI\n")
                     else:
                         log_file.write(clean_line)
+                        if _looks_like_subprocess_prompt(clean_line):
+                            prompt_type = "yes_no" if clean_line.rstrip().lower().endswith(("(y/n)", "(y/n):", "[y/n]", "[y/n]:")) else "text"
+                            _set_detached_job(
+                                job_id,
+                                status="waiting_for_input",
+                                message="Waiting for input in Operations",
+                                prompt_request={"text": clean_line.rstrip(), "input_type": prompt_type},
+                                metadata_request=None,
+                            )
                     log_file.flush()
 
         return_code = process.wait()
         finished_at = datetime.now(UTC).isoformat()
-        status = "completed" if return_code == 0 else "failed"
-        _set_detached_job(job_id, status=status, finished_at=finished_at, return_code=return_code, message=f"Exited with code {return_code}", metadata_request=None)
+        with detached_jobs_lock:
+            was_cancelled = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
+        if not was_cancelled:
+            status = "completed" if return_code == 0 else "failed"
+            _set_detached_job(
+                job_id,
+                status=status,
+                finished_at=finished_at,
+                return_code=return_code,
+                message=f"Exited with code {return_code}",
+                metadata_request=None,
+                prompt_request=None,
+            )
     except Exception as error:
         finished_at = datetime.now(UTC).isoformat()
-        _set_detached_job(job_id, status="failed", finished_at=finished_at, error=str(error), message="Detached upload failed", metadata_request=None)
+        with detached_jobs_lock:
+            was_cancelled = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
+        if not was_cancelled:
+            _set_detached_job(
+                job_id,
+                status="failed",
+                finished_at=finished_at,
+                error=str(error),
+                message="Detached upload failed",
+                metadata_request=None,
+                prompt_request=None,
+            )
         with contextlib.suppress(Exception), log_path.open("a", encoding="utf-8", errors="replace") as log_file:
             log_file.write(f"\nDetached upload failed: {error}\n{traceback.format_exc()}\n")
     finally:
@@ -4070,13 +4130,15 @@ def qui_submit():
                 "log_path": str(base_dir / "tmp" / f"ua-{job_id}.log"),
                 "recovery_available": False,
                 "process_active": False,
+                "metadata_request": None,
+                "prompt_request": None,
             }
             with detached_jobs_lock:
                 detached_jobs[job_id] = job
                 detached_job_queue.append(job_id)
                 _persist_detached_jobs_locked()
             created.append({key: value for key, value in job.items() if key != "command"})
-        except Exception as error:  # noqa: PERF203
+        except Exception as error:
             errors.append({"path": str(raw_path), "error": str(error)})
 
     if created:
@@ -4130,6 +4192,125 @@ def qui_retry(job_id: str):
     return jsonify({"success": True, "job_id": job_id, "status": "queued"}), 202
 
 
+def _detached_job_by_id(job_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        return dict(job) if job else None
+
+
+def _validated_detached_args(raw_args: object, append_unattended: object = True) -> tuple[list[str], str]:
+    args = str(raw_args or "")
+    append = str(append_unattended).strip().lower() not in {"0", "false", "no", "off"}
+    parsed_args = shlex.split(args)
+    if append and "-ua" not in parsed_args and "--unattended" not in parsed_args:
+        parsed_args.append("-ua")
+    validated_args = _validate_upload_assistant_args(parsed_args)
+    return validated_args, " ".join(validated_args)
+
+
+@app.route("/api/qui/update/<job_id>", methods=["POST"])
+def qui_update(job_id: str):
+    """Update arguments for a detached job before it starts or after a failure."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    job = _detached_job_by_id(job_id)
+    if job is None:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+    if str(job.get("status")) not in {"queued", "failed", "interrupted"}:
+        return jsonify({"success": False, "error": "Only queued, failed, or interrupted jobs can be edited"}), 409
+    data = _as_dict(request.get_json(silent=True)) or {}
+    try:
+        validated_args, args_text = _validated_detached_args(data.get("args", ""), data.get("append_unattended", True))
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid upload arguments"}), 400
+
+    base_dir = Path(__file__).resolve().parent.parent
+    command = [sys.executable, "-u", str(base_dir / "upload.py"), str(job["source_path"]), *validated_args]
+    updates: dict[str, Any] = {"args": args_text, "command": command, "error": None, "message": "Arguments updated"}
+    if str(job.get("status")) in {"failed", "interrupted"}:
+        updates.update({"status": "queued", "started_at": None, "finished_at": None, "return_code": None, "recovery_available": False})
+        with detached_jobs_lock:
+            current = detached_jobs.get(job_id)
+            if current is None:
+                return jsonify({"success": False, "error": "Job not found"}), 404
+            current.update(updates)
+            detached_job_queue.append(job_id)
+            _persist_detached_jobs_locked()
+        _start_detached_worker()
+    else:
+        with detached_jobs_lock:
+            current = detached_jobs.get(job_id)
+            if current is None:
+                return jsonify({"success": False, "error": "Job not found"}), 404
+            current.update(updates)
+            _persist_detached_jobs_locked()
+    return jsonify({"success": True, "job_id": job_id, "args": args_text, "status": "queued" if str(job.get("status")) in {"failed", "interrupted"} else str(job.get("status"))})
+
+
+@app.route("/api/qui/cancel/<job_id>", methods=["POST"])
+def qui_cancel(job_id: str):
+    """Cancel a queued job or terminate its active detached subprocess."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    if _detached_job_by_id(job_id) is None:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if job is None:
+            return jsonify({"success": False, "error": "Job not found"}), 404
+        status = str(job.get("status"))
+        if status == "queued":
+            detached_job_queue[:] = [queued_id for queued_id in detached_job_queue if queued_id != job_id]
+            job.update({"status": "cancelled", "message": "Cancelled before execution", "finished_at": datetime.now(UTC).isoformat(), "recovery_available": False})
+            _persist_detached_jobs_locked()
+            return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
+        if status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata"}:
+            return jsonify({"success": False, "error": "Job is not active"}), 409
+
+    with active_processes_lock:
+        process_info = active_processes.get(job_id, {})
+        process = process_info.get("process")
+    if isinstance(process, subprocess.Popen) and process.poll() is None:
+        with contextlib.suppress(Exception):
+            process.kill()
+    _set_detached_job(job_id, status="cancelled", message="Cancelled by user", finished_at=datetime.now(UTC).isoformat(), recovery_available=False, prompt_request=None, metadata_request=None)
+    return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
+
+
+@app.route("/api/qui/input/<job_id>", methods=["POST"])
+def qui_input(job_id: str):
+    """Answer a detached job's currently blocked stdin prompt."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    job = _detached_job_by_id(job_id)
+    if job is None:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+    if str(job.get("status")) not in {"waiting_for_input", "waiting_for_metadata"}:
+        return jsonify({"success": False, "error": "Job is not waiting for input"}), 409
+    data = _as_dict(request.get_json(silent=True)) or {}
+    raw_input = data.get("input", data.get("value", ""))
+    answer = ("y" if raw_input else "n") if isinstance(raw_input, bool) else str(raw_input or "").strip()
+    if not answer or len(answer) > 4000 or "\n" in answer or "\r" in answer:
+        return jsonify({"success": False, "error": "Input must be a non-empty single line"}), 400
+    with active_processes_lock:
+        process_info = active_processes.get(job_id)
+        process = process_info.get("process") if process_info else None
+    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
+        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    try:
+        process.stdin.write(answer + "\n")
+        process.stdin.flush()
+    except (BrokenPipeError, OSError) as error:
+        return jsonify({"success": False, "error": f"Unable to send input: {error}"}), 409
+    _set_detached_job(job_id, status="running", message="Input received; upload resumed", prompt_request=None, metadata_request=None)
+    return jsonify({"success": True, "job_id": job_id})
+
+
 @app.route("/api/qui/metadata/<job_id>", methods=["POST"])
 def qui_metadata(job_id: str):
     """Submit metadata IDs to resume a detached upload checkpoint."""
@@ -4139,8 +4320,17 @@ def qui_metadata(job_id: str):
     request_data = _waiting_metadata_request(job_id)
     if request_data is None:
         return jsonify({"success": False, "error": "Job is not waiting for metadata"}), 409
+    raw_payload = _as_dict(request.get_json(silent=True)) or {}
+    if "input" in raw_payload and not ("tmdb_id" in raw_payload or "imdb_id" in raw_payload):
+        input_text = str(raw_payload.get("input") or "")
+        tokens = [token.strip() for token in re.split(r"[,;\s]+", input_text) if token.strip()]
+        raw_payload = {
+            "tmdb_id": next((token for token in tokens if re.fullmatch(r"(?i)(?:movie|tv)/\d+", token)), ""),
+            "imdb_id": next((token for token in tokens if re.fullmatch(r"(?i)tt\d+", token)), ""),
+            "category": request_data.get("category", ""),
+        }
     try:
-        payload = parse_metadata_submission(request.get_json(silent=True), request_data.get("category"))
+        payload = parse_metadata_submission(raw_payload, request_data.get("category"))
     except ValueError as error:
         return jsonify({"success": False, "error": str(error)}), 400
 

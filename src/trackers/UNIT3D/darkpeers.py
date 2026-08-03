@@ -9,6 +9,7 @@ from src.languages import languages_manager
 from src.meta import Meta
 from src.music.models import MusicRelease
 from src.music.validation import MusicValidator, ValidationLevel
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.tmdb import TmdbManager
 from src.trackers.UNIT3D import UNIT3D
 
@@ -22,6 +23,11 @@ class DarkPeers(UNIT3D):
     display_name = "DarkPeers"
     allows_bloated_audio = True
     base_url = "https://darkpeers.org"
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     banned_groups = (
         "ARCADE",
         "aXXo",
@@ -99,6 +105,7 @@ class DarkPeers(UNIT3D):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config, tracker_name="DARKPEERS")
+        self.rehost_images_manager = RehostImagesManager(config)
         self.config = config
         self.tmdb_manager = TmdbManager(config)
 

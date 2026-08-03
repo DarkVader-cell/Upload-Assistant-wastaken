@@ -4,6 +4,7 @@ from typing import Any, cast
 from src.console import logger
 from src.languages import languages_manager
 from src.meta import Meta
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
 from src.trackers.UNIT3D import UNIT3D
 
@@ -16,6 +17,11 @@ class Aither(UNIT3D):
     tracker = "AITHER"
     display_name = "Aither"
     base_url = "https://aither.cc"
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     banned_groups: tuple[str, ...] = ()
     banned_url = f"{base_url}/api/blacklists/releasegroups"
     claims_url = f"{base_url}/api/internals/claim"
@@ -31,6 +37,7 @@ class Aither(UNIT3D):
 
     def __init__(self, config: dict[str, Any]):
         super().__init__(config, tracker_name="AITHER")
+        self.rehost_images_manager = RehostImagesManager(config)
         self.config = config
         self.common = Common(config)
 

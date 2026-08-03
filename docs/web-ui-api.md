@@ -110,6 +110,18 @@ process stopped.
 - Description: explicitly requeue a detached job in `failed` or `interrupted` state
 - Response: `{"success": true, "job_id": "...", "status": "queued"}` or a conflict if the job is not retryable
 
+### Unattended Operations control endpoints
+
+The Web UI's **Unattended Operations** dashboard uses these authenticated endpoints:
+
+- `GET /api/qui/status?limit=200` returns durable job snapshots, queue positions, prompt/checkpoint data, and capability flags (`can_edit`, `can_cancel`, and `can_retry`).
+- `POST /api/qui/update/<job_id>` updates validated CLI arguments for a queued job. Failed and interrupted jobs are updated and requeued in one operation.
+- `POST /api/qui/cancel/<job_id>` removes a queued job or terminates its active detached subprocess.
+- `POST /api/qui/input/<job_id>` sends a single-line response to an ordinary detached stdin prompt, for example `{"input":"y"}`.
+- `POST /api/qui/metadata/<job_id>` resumes a metadata checkpoint. The dashboard accepts `{"input":"movie/123, tt456"}` and converts it to validated TMDb/IMDb fields; API clients may also send structured `tmdb_id`, `imdb_id`, and `category` fields.
+
+The existing retry and log endpoints remain available. State-changing calls require an authenticated Web UI session with CSRF and same-origin validation, or a valid bearer token where the API authentication policy permits it.
+
 ### /api/input
 
 - Methods: POST
@@ -135,6 +147,15 @@ process stopped.
 - Query params: path (filesystem path within configured browse roots)
 - Description: lists files and subfolders in resolved path; skips unsupported video extensions and hidden files
 - Response: {"items": [...], "success": true, "path": "...", "count": N}
+
+### /api/browse_search
+
+- Methods: GET
+- Auth: requires either a valid Bearer API token or a logged-in web session with CSRF and same-origin validation.
+- Query params: `q` (required search text), `filter` (`video` or `desc`, default: `video`), `max_results` (optional, capped at 500).
+- Description: searches the persistent browse filename index without recursively scanning configured roots for each request. Search terms are matched as ordered whole tokens within file or folder names.
+- Index behavior: the first search for a root performs the initial scan. Subsequent refreshes run in the background. On Linux, inotify applies file and directory additions, moves, and deletions incrementally; the `UA_BROWSE_INDEX_TTL` interval provides periodic safety refreshes and supports non-Linux systems.
+- Response: `{"items": [...], "success": true, "query": "...", "count": N, "truncated": false, "indexing": false}`. `indexing` is `true` while a background index refresh is running.
 
 ---
 

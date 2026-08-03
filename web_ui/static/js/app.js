@@ -1429,7 +1429,13 @@ function AudionutsUAGUI() {
 
   // Mobile state
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
-  const [activePanel, setActivePanel] = useState("main"); // 'main' | 'files' | 'args'
+  const [activePanel, setActivePanel] = useState("main"); // 'main' | 'files' | 'args' | 'operations'
+  const [operationsOpen, setOperationsOpen] = useState(false);
+  const [detachedJobs, setDetachedJobs] = useState([]);
+  const [operationsLoading, setOperationsLoading] = useState(false);
+  const [operationDrafts, setOperationDrafts] = useState({});
+  const [operationInput, setOperationInput] = useState({});
+  const [operationLog, setOperationLog] = useState({});
 
   // File Browser search states
   const [fileBrowserSearch, setFileBrowserSearch] = useState("");
@@ -1451,6 +1457,158 @@ function AudionutsUAGUI() {
   const [descFileError, setDescFileError] = useState("");
   const [descBrowserCollapsed, setDescBrowserCollapsed] = useState(false);
   const [descLinkFocused, setDescLinkFocused] = useState(false);
+
+  const loadDetachedJobs = useCallback(async () => {
+    setOperationsLoading(true);
+    try {
+      const response = await apiFetch(`${API_BASE}/qui/status?limit=200`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) {
+        setDetachedJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      }
+    } catch (error) {
+      console.error("Failed to load unattended jobs:", error);
+    } finally {
+      setOperationsLoading(false);
+    }
+  }, [API_BASE]);
+
+  useEffect(() => {
+    if (!operationsOpen && activePanel !== "operations") return undefined;
+    loadDetachedJobs();
+    const timer = window.setInterval(loadDetachedJobs, 2500);
+    return () => window.clearInterval(timer);
+  }, [activePanel, loadDetachedJobs, operationsOpen]);
+
+  useEffect(() => {
+    if (activePanel === "operations") setOperationsOpen(true);
+  }, [activePanel]);
+
+  const operationRequest = async (url, options = {}) => {
+    const response = await apiFetch(url, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Operation failed");
+    }
+    return data;
+  };
+
+  const submitUnattendedSelection = async () => {
+    const paths = selectedPaths.map((item) => item.path).filter(Boolean);
+    if (!paths.length && selectedPath) paths.push(selectedPath);
+    if (!paths.length) {
+      window.alert("Select one or more files or folders first.");
+      return;
+    }
+    try {
+      await operationRequest(`${API_BASE}/qui/submit`, {
+        method: "POST",
+        body: JSON.stringify({ paths, args: customArgs, append_unattended: true }),
+      });
+      setOperationsOpen(true);
+      setActivePanel("operations");
+      await loadDetachedJobs();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  const performJobAction = async (jobId, action, body = {}) => {
+    try {
+      if (action === "log") {
+        const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(jobId)}?bytes=30000`, { cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success) throw new Error(data?.error || "Unable to load log");
+        setOperationLog((previous) => ({ ...previous, [jobId]: data.log || "" }));
+      } else {
+        await operationRequest(`${API_BASE}/qui/${action}/${encodeURIComponent(jobId)}`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        await loadDetachedJobs();
+      }
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  const renderOperationsPanel = (overlay = false) => {
+    const panel = (
+      <div className={`${overlay ? "w-full max-w-6xl max-h-[90vh] overflow-y-auto" : "h-full overflow-y-auto"} rounded-xl border p-4 ${isDarkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold">Unattended Operations</h2>
+            <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              Live control for queued uploads, blocked prompts, retries, and logs. Polls every 2.5 seconds while open.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={submitUnattendedSelection} className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
+              Queue selected ({selectedPaths.length || (selectedPath ? 1 : 0)})
+            </button>
+            <button onClick={loadDetachedJobs} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>
+              {operationsLoading ? "Refreshing…" : "Refresh"}
+            </button>
+            {overlay && <button onClick={() => { setOperationsOpen(false); setActivePanel("main"); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>Close</button>}
+          </div>
+        </div>
+        {!detachedJobs.length ? (
+          <div className={`rounded-lg border border-dashed p-8 text-center text-sm ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>No unattended jobs yet.</div>
+        ) : (
+          <div className="space-y-3">
+            {detachedJobs.map((job) => {
+              const status = String(job.status || "unknown");
+              const editable = Boolean(job.can_edit);
+              const prompt = job.prompt_request || job.metadata_request;
+              const draft = operationDrafts[job.id] ?? job.args ?? "";
+              return (
+                <div key={job.id} className={`rounded-lg border p-3 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status === "completed" ? "bg-emerald-500/20 text-emerald-400" : status === "failed" || status === "cancelled" ? "bg-rose-500/20 text-rose-400" : status.startsWith("waiting") ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}>{status}</span>
+                        <span className="text-xs font-mono">{job.id}</span>
+                        {job.queue_position && <span className="text-[11px] opacity-60">queue #{job.queue_position}</span>}
+                      </div>
+                      <p className="mt-1 break-all text-sm font-medium">{job.source_path}</p>
+                      <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{job.message || ""}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => performJobAction(job.id, "log")} className={`rounded border px-2 py-1 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}>Log</button>
+                      {job.can_retry && <button onClick={() => performJobAction(job.id, "retry")} className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">Retry</button>}
+                      {job.can_cancel && <button onClick={() => performJobAction(job.id, "cancel")} className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-700">Cancel</button>}
+                    </div>
+                  </div>
+                  {editable && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <input value={draft} onChange={(event) => setOperationDrafts((previous) => ({ ...previous, [job.id]: event.target.value }))} className={`min-w-[240px] flex-1 rounded border px-2 py-1.5 text-xs font-mono ${isDarkMode ? "border-gray-600 bg-gray-800 text-gray-100" : "border-gray-300 bg-white text-gray-900"}`} aria-label={`Arguments for ${job.id}`} />
+                      <button onClick={() => performJobAction(job.id, "update", { args: draft, append_unattended: true })} className="rounded bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700">Save settings{status === "failed" || status === "interrupted" ? " & retry" : ""}</button>
+                    </div>
+                  )}
+                  {prompt && (status === "waiting_for_input" || status === "waiting_for_metadata") && (
+                    <div className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}>
+                      <p className="text-xs font-semibold">Input required</p>
+                      <p className="mt-1 whitespace-pre-wrap text-xs">{prompt.text || "Metadata IDs are required to continue."}</p>
+                      <div className="mt-2 flex gap-2">
+                        <input value={operationInput[job.id] || ""} onChange={(event) => setOperationInput((previous) => ({ ...previous, [job.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] }); }} className={`flex-1 rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`} placeholder={prompt.input_type === "yes_no" ? "y or n" : "Enter response"} />
+                        <button onClick={() => performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] })} className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Send</button>
+                      </div>
+                    </div>
+                  )}
+                  {operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{operationLog[job.id]}</pre>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+    if (!overlay) return panel;
+    return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">{panel}</div>;
+  };
 
   const richOutputRef = useRef(null);
   const lastFullHashRef = useRef("");
@@ -4458,6 +4616,7 @@ function AudionutsUAGUI() {
             Upload-Assistant
           </h1>
           <div className="flex items-center gap-2">
+            <button onClick={() => { setOperationsOpen(true); setActivePanel("operations"); }} className={`rounded-lg px-2 py-1 text-xs font-semibold ${isDarkMode ? "bg-purple-900/50 text-purple-200 hover:bg-purple-800" : "bg-purple-100 text-purple-700 hover:bg-purple-200"}`} title="Open unattended operations">Ops</button>
             {renderThemePalette()}
             <a
               href={`${APP_BASE}/config`}
@@ -5118,6 +5277,7 @@ function AudionutsUAGUI() {
             ),
             isExecuting ? "Media" : "Arguments",
           )}
+          {navButton("operations", <span className="text-sm font-bold">◉</span>, "Operations")}
           {isExecuting &&
             navButton(
               "screenshots",
@@ -5475,6 +5635,7 @@ function AudionutsUAGUI() {
 
                   {/* Controls */}
                   <div className="flex items-center gap-3">
+                    <button onClick={() => setOperationsOpen(true)} className={`rounded-lg px-3 py-2 text-xs font-semibold ${isDarkMode ? "bg-purple-900/50 text-purple-200 hover:bg-purple-800" : "bg-purple-100 text-purple-700 hover:bg-purple-200"}`} title="Open unattended operations">Unattended Operations</button>
                     {renderThemePalette()}
                     <a
                       href={`${APP_BASE}/config`}
@@ -5988,6 +6149,7 @@ function AudionutsUAGUI() {
           </>
         )}
       </div>
+      {operationsOpen && renderOperationsPanel(true)}
     </div>
   );
 }

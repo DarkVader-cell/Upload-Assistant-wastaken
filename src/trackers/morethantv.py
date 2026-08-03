@@ -35,8 +35,11 @@ class MoreThanTV:
     display_name = "MoreThanTV"
     reject_english_original_bloat = True
     source_flag = "MTV"
-    approved_image_hosts = ("imgbox", "imgbb")
-    image_host_policy = ImageHostPolicy({"ibb.co": "imgbb", "imgbox.com": "imgbox"}, approved_image_hosts)
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     banned_groups = (
         "[Oj]",
         "3LTON",

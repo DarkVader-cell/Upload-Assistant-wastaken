@@ -5,6 +5,7 @@ from typing import Any
 from src.console import logger
 from src.meta import Meta
 from src.music.sources import DiscogsEnricher
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
 from src.trackers.UNIT3D import UNIT3D
 
@@ -20,6 +21,11 @@ class LST(UNIT3D):
     display_name = "LST"
     allows_bloated_audio = True
     base_url = "https://lst.gg"
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {"ibb.co": "imgbb", "imgbox.com": "imgbox", "onlyimage.org": "onlyimage", "ptscreens.com": "ptscreens", "img.passtheima.ge": "passtheimage"},
+        approved_image_hosts,
+    )
     banned_groups = ()
     banned_url = f"{base_url}/api/bannedReleaseGroups"
     id_url = f"{base_url}/api/torrents/"
@@ -32,6 +38,7 @@ class LST(UNIT3D):
 
     def __init__(self, config: Config) -> None:
         super().__init__(config, tracker_name="LST")
+        self.rehost_images_manager = RehostImagesManager(config)
         self.config: Config = config
         self.common = Common(config)
 
