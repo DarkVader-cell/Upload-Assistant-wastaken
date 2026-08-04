@@ -83,9 +83,9 @@ class TrackerStatusManager:
                         break
                     cli_ui.error("Invalid IMDB ID format. Expected format: tt1234567")
 
-        async def process_single_tracker(tracker_name: str, shared_meta: Meta) -> tuple[str, dict[str, bool], str | None, Any]:
+        async def process_single_tracker(tracker_name: str, shared_meta: Meta) -> tuple[str, dict[str, Any], str | None, Any]:
             local_meta = copy.deepcopy(shared_meta)  # Ensure each task gets its own copy of meta
-            local_tracker_status = {"banned": False, "skipped": False, "dupe": False, "upload": False, "other": False}
+            local_tracker_status: dict[str, Any] = {"banned": False, "skipped": False, "dupe": False, "upload": False, "other": False, "skip_reason": ""}
             display_name = None
             tracker_class = None
 
@@ -100,6 +100,7 @@ class TrackerStatusManager:
                 tracker_class = tracker_class_map[tracker_name](config=self.config)
                 if tracker_name in {"TORRENTHR", "PASSTHEPOPCORN"} and local_meta.get("imdb_id", 0) == 0:
                     local_tracker_status["skipped"] = True
+                    local_tracker_status["skip_reason"] = "missing IMDb ID"
 
                 if not local_tracker_status["skipped"]:
                     result = await tracker_setup.check_banned_group(tracker_class.tracker, tracker_class.banned_groups, local_meta)
@@ -107,6 +108,7 @@ class TrackerStatusManager:
 
                 if local_meta["tracker_status"][tracker_name].get("skip_upload"):
                     local_tracker_status["skipped"] = True
+                    local_tracker_status["skip_reason"] = "tracker status marked upload as skipped"
                 elif "skipped" not in local_meta and not local_tracker_status["skipped"]:
                     local_tracker_status["skipped"] = False
 
@@ -127,6 +129,7 @@ class TrackerStatusManager:
                     if book_missing:
                         logger.info(f"[yellow]{tracker_name}: Skipping upload because required BOOK fields are missing: {', '.join(book_missing)}[/yellow]")
                         local_tracker_status["skipped"] = True
+                        local_tracker_status["skip_reason"] = f"missing required BOOK fields: {', '.join(book_missing)}"
 
                 # Check for missing required GAME fields in unattended mode
                 elif local_meta.get("category") == "GAME" and local_meta.get("unattended", False):
@@ -139,10 +142,13 @@ class TrackerStatusManager:
                     if game_missing:
                         logger.info(f"[yellow]{tracker_name}: Skipping upload because required GAME fields are missing: {', '.join(game_missing)}[/yellow]")
                         local_tracker_status["skipped"] = True
+                        local_tracker_status["skip_reason"] = f"missing required GAME fields: {', '.join(game_missing)}"
 
                 if not local_tracker_status["banned"] and not local_tracker_status["skipped"]:
                     claimed = await tracker_setup.get_torrent_claims(local_meta, tracker_name)
                     local_tracker_status["skipped"] = bool(claimed)
+                    if claimed:
+                        local_tracker_status["skip_reason"] = "tracker claim/request check rejected the release"
 
                     if tracker_name not in {"PASSTHEPOPCORN"} and not local_tracker_status["skipped"]:
                         if hasattr(tracker_class, "get_additional_checks"):
@@ -155,6 +161,7 @@ class TrackerStatusManager:
                             if not should_continue:
                                 local_tracker_status["skipped"] = True
                                 local_meta.skipping = tracker_name
+                                local_tracker_status["skip_reason"] = "tracker-specific media requirements failed"
 
                         if not local_tracker_status["skipped"]:
                             try:
@@ -169,6 +176,7 @@ class TrackerStatusManager:
                                 if local_meta.get("unattended", False):
                                     local_tracker_status["skipped"] = True
                                     local_meta.skipping = tracker_name
+                                    local_tracker_status["skip_reason"] = f"duplicate search failed: {e}"
                                     dupes = []
                                 else:
                                     try:
@@ -182,6 +190,7 @@ class TrackerStatusManager:
                                         else:
                                             local_tracker_status["skipped"] = True
                                             local_meta.skipping = tracker_name
+                                            local_tracker_status["skip_reason"] = "duplicate search was declined"
                                             dupes = []
                                     except EOFError:
                                         logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
@@ -202,6 +211,7 @@ class TrackerStatusManager:
                             if not should_continue:
                                 local_tracker_status["skipped"] = True
                                 local_meta.skipping = tracker_name
+                                local_tracker_status["skip_reason"] = "tracker-specific media requirements failed"
 
                         if not local_tracker_status["skipped"]:
                             try:
@@ -214,6 +224,7 @@ class TrackerStatusManager:
                                 if local_meta.get("unattended", False):
                                     local_tracker_status["skipped"] = True
                                     local_meta.skipping = tracker_name
+                                    local_tracker_status["skip_reason"] = f"duplicate search failed: {e}"
                                     dupes = []
                                 else:
                                     try:
@@ -224,6 +235,7 @@ class TrackerStatusManager:
                                         else:
                                             local_tracker_status["skipped"] = True
                                             local_meta.skipping = tracker_name
+                                            local_tracker_status["skip_reason"] = "duplicate search was declined"
                                             dupes = []
                                     except EOFError:
                                         logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
@@ -284,6 +296,7 @@ class TrackerStatusManager:
 
                     elif "skipping" in local_meta:
                         local_tracker_status["skipped"] = True
+                        local_tracker_status["skip_reason"] = str(local_meta.get("skipping") or "tracker-specific check failed")
 
                     if tracker_name == "MORETHANTV" and not local_tracker_status["banned"] and not local_tracker_status["skipped"] and not local_tracker_status["dupe"]:
                         tracker_config = self.trackers_config.get(tracker_name, {})
@@ -339,6 +352,8 @@ class TrackerStatusManager:
                 pass
             elif status["skipped"]:
                 skipped_trackers.append(tracker_name)
+                reason = str(status.get("skip_reason") or "unspecified tracker condition")
+                logger.info(f"[yellow]{tracker_name}: skipped before upload ({reason})[/yellow]")
             elif status["dupe"]:
                 dupe_trackers.append(tracker_name)
             else:
