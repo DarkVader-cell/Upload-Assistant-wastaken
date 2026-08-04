@@ -268,6 +268,18 @@ class DescriptionBuilder:
         val = self.config["DEFAULT"].get(key, default)
         return str(val) if val is not None else default
 
+    @staticmethod
+    def _manual_audio_language_values(meta: Meta) -> list[str]:
+        """Return explicitly supplied audio-language overrides in display order."""
+        raw_languages = meta.manual_audio_languages
+        if not raw_languages:
+            return []
+        values = [raw_languages] if isinstance(raw_languages, str) else raw_languages
+        result: list[str] = []
+        for value in values:
+            result.extend(part.strip() for part in str(value).split(",") if part.strip())
+        return list(dict.fromkeys(result))
+
     async def get_custom_header(self) -> str:
         """Returns a custom header if configured."""
         try:
@@ -1113,11 +1125,30 @@ class DescriptionBuilder:
                 desc_parts.append(desc_header + "\n")
 
         # Language
-        if languages:
+        manual_audio_languages = self._manual_audio_language_values(meta)
+        if languages or manual_audio_languages:
             try:
                 if not meta.language_checked:
                     await languages_manager.process_desc_language(meta, self.tracker)
-                if meta.audio_languages and meta.write_audio_languages:
+                if manual_audio_languages:
+                    override_text = ", ".join(manual_audio_languages)
+                    desc_parts.append(f"[code]Audio Language/s (manual override): {override_text}[/code]")
+
+                    # Keep the raw MediaInfo untouched, but make the discrepancy
+                    # explicit when its audio language can be read. This prevents
+                    # a manual correction from looking like an accidental mismatch.
+                    parsed_info = await languages_manager.parsed_mediainfo(meta)
+                    detected_audio_languages = list(
+                        dict.fromkeys(
+                            str(track.get("language", "")).strip()
+                            for track in parsed_info.get("audio", [])
+                            if str(track.get("language", "")).strip()
+                        )
+                    )
+                    if detected_audio_languages:
+                        detected_text = ", ".join(detected_audio_languages)
+                        desc_parts.append(f"[code]MediaInfo audio language/s: {detected_text} (overridden above)[/code]")
+                elif meta.audio_languages and meta.write_audio_languages:
                     desc_parts.append(f"[code]Audio Language/s: {', '.join(meta.audio_languages)}[/code]")
 
                 if meta.subtitle_languages and meta.write_subtitle_languages:

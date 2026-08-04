@@ -51,6 +51,7 @@ Notes:
 ### Argument list
 
 - The right panel (resizable) shows all of the available arguments that can be used. Click an argument to add that argument to the `additional arguments` list.
+- Under **Language**, use `--audio-language` to override an incorrect or missing MediaInfo audio-language tag. Enter one language (for example, `Tamil`) or multiple comma-separated/space-separated languages. The override is used for tracker checks and title generation, and the upload description automatically records both the override and the original MediaInfo language when it is available. The raw MediaInfo block remains unchanged.
 
 ### Running an upload (interactive)
 

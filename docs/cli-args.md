@@ -95,7 +95,7 @@ Note: if a manual TMDb or IMDb id is present in the incoming `meta` before parsi
 - `-dist`, `--distributor [NAME ...]`: Disc distributor (Criterion, BFI, etc.).
 - `-edition`, `--edition`, `--repack [TEXT ...]`: Edition/repack string.
 - `-ol`, `--original-language LANG`: Set original audio language.
-- `-al`, `--audio-language LANG [...]`: Override MediaInfo audio language detection. Accepts comma-separated or space-separated languages and is used for audio classification, tracker checks, title shaping, and descriptions.
+- `-al`, `--audio-language LANG [...]`: Override MediaInfo audio language detection. Accepts comma-separated or space-separated languages and is used for audio classification, tracker checks, and title shaping. The generated description automatically includes the override and, when available, the language reported by the original MediaInfo for transparency; the embedded MediaInfo itself is not modified.
 - `-oil`, `--only-if-languages [LANG ...]`: Require at least one language to upload (comma-separated list in a single string is supported).
 
 ### TV fields

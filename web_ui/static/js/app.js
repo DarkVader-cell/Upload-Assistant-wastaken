@@ -367,7 +367,7 @@ const argumentCategories = [
         label: "--audio-language",
         placeholder: "Tamil or Tamil,English",
         description:
-          "Override MediaInfo audio language(s) for tracker checks, title, and description",
+          "Override MediaInfo audio language(s) for tracker checks and title; adds an explicit override note to the description",
       },
       {
         label: "--only-if-languages",
