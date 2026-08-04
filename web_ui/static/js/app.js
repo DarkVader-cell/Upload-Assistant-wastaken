@@ -2763,9 +2763,13 @@ function AudionutsUAGUI() {
   const sortItems = (items) => {
     if (!items) return [];
     return [...items].sort((a, b) => {
-      const aIsDir = a.type === "folder" ? 0 : 1;
-      const bIsDir = b.type === "folder" ? 0 : 1;
-      if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      // Date sorting must compare every entry together. Keeping folders first
+      // here makes a newer file appear below an older download directory.
+      if (sortBy !== "date") {
+        const aIsDir = a.type === "folder" ? 0 : 1;
+        const bIsDir = b.type === "folder" ? 0 : 1;
+        if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      }
 
       let valA, valB;
       if (sortBy === "name") {
