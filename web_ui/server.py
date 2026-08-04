@@ -1685,8 +1685,7 @@ def _looks_like_subprocess_prompt(buffer: str) -> bool:
     if "running:" in lowered:
         return False
     return (
-        stripped.endswith(":")
-        or stripped.endswith("?")
+        stripped.endswith("?")
         or lowered.endswith("(y/n)")
         or lowered.endswith("(y/n):")
         or " enter " in f" {lowered} "
