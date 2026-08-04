@@ -1805,7 +1805,12 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                     if not host_order and allowed_hosts:
                         host_order = list(allowed_hosts)
 
-                    start_index = host_order.index(current_img_host) if current_img_host in host_order else 0
+                    # Unattended retries may inherit the host selected by a previous
+                    # fallback attempt. Start from the first compatible configured
+                    # host so a stale/dead fallback host cannot suppress earlier
+                    # healthy hosts (for example, imgbox returning HTTP 502 while
+                    # imgbb remains available).
+                    start_index = 0 if meta.unattended else (host_order.index(current_img_host) if current_img_host in host_order else 0)
                     image_list_count = 0
 
                     for idx in range(start_index, len(host_order)):
