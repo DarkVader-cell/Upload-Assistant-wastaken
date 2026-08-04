@@ -294,9 +294,9 @@ class TrackerStatusManager:
                                 if trumpable_id_after_dupe_check:
                                     meta[f"{tracker_name}_trumpable_id"] = trumpable_id_after_dupe_check
 
-                    elif "skipping" in local_meta:
+                    elif local_meta.get("skipping") == tracker_name:
                         local_tracker_status["skipped"] = True
-                        local_tracker_status["skip_reason"] = str(local_meta.get("skipping") or "tracker-specific check failed")
+                        local_tracker_status["skip_reason"] = "tracker-specific check failed"
 
                     if tracker_name == "MORETHANTV" and not local_tracker_status["banned"] and not local_tracker_status["skipped"] and not local_tracker_status["dupe"]:
                         tracker_config = self.trackers_config.get(tracker_name, {})
