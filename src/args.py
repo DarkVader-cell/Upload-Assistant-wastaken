@@ -279,6 +279,15 @@ class Args:
         parser.add_argument("--dual-audio", dest="dual_audio", action="store_true", required=False, help="Add Dual-Audio to the title")
         parser.add_argument("-ol", "--original-language", dest="manual_language", nargs=1, required=False, help="Set original audio language")
         parser.add_argument(
+            "-al",
+            "--audio-language",
+            "--audio-language-override",
+            dest="manual_audio_languages",
+            nargs="+",
+            required=False,
+            help="Override detected audio language(s), comma-separated or space-separated",
+        )
+        parser.add_argument(
             "-oil",
             "--only-if-languages",
             dest="has_languages",

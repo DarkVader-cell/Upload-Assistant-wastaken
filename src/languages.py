@@ -25,6 +25,18 @@ class LanguagesManager:
                 deduped.append(value)
         return deduped
 
+    @staticmethod
+    def _manual_audio_languages(meta: Meta) -> list[str]:
+        """Return explicitly supplied audio languages in display-ready form."""
+        raw = meta.manual_audio_languages
+        if not raw:
+            return []
+        values = [raw] if isinstance(raw, str) else raw
+        languages: list[str] = []
+        for value in values:
+            languages.extend(part.strip() for part in str(value).split(",") if part.strip())
+        return LanguagesManager._dedupe_preserve_order(languages)
+
     async def parse_blu_ray(self, meta: Meta) -> dict[str, Any]:
         try:
             bd_summary_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/BD_SUMMARY_00.txt"
@@ -202,9 +214,12 @@ class LanguagesManager:
         if meta.is_disc != "BDMV":
             try:
                 parsed_info = await self.parsed_mediainfo(meta)
-                audio_languages: list[str] = cast(list[str], meta.audio_languages or [])
+                manual_audio_languages = self._manual_audio_languages(meta)
+                audio_languages: list[str] = manual_audio_languages or cast(list[str], meta.audio_languages or [])
                 subtitle_languages: list[str] = cast(list[str], meta.subtitle_languages or [])
                 meta.audio_languages = audio_languages
+                if manual_audio_languages:
+                    meta.write_audio_languages = True
                 meta.subtitle_languages = subtitle_languages
                 if "write_audio_languages" not in meta:
                     meta.write_audio_languages = False
@@ -354,7 +369,10 @@ class LanguagesManager:
                 meta.language_checked = False
             if "bluray_audio_skip" not in meta:
                 meta.bluray_audio_skip = False
-            existing_audio_languages: list[str] = meta.audio_languages or []
+            manual_audio_languages = self._manual_audio_languages(meta)
+            existing_audio_languages: list[str] = manual_audio_languages or (meta.audio_languages or [])
+            if manual_audio_languages:
+                meta.write_audio_languages = True
             existing_subtitle_languages: list[str] = [meta.subtitle_languages] if isinstance(meta.subtitle_languages, str) else (meta.subtitle_languages or [])
             try:
                 bluray = await self.parse_blu_ray(meta)

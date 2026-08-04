@@ -230,6 +230,7 @@ class Meta:
     manual_episode: str | int | None = None
     manual_frames: str | list[int] | list[str] | None = None
     manual_language: str | dict[str, Any] | None = None
+    manual_audio_languages: list[str] | str | None = None
     manual_multi: bool = False
     manual_platform: str | None = None
     manual_season: str | int | None = None
