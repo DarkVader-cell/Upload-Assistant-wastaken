@@ -85,6 +85,10 @@ class TrackerStatusManager:
 
         async def process_single_tracker(tracker_name: str, shared_meta: Meta) -> tuple[str, dict[str, Any], str | None, Any]:
             local_meta = copy.deepcopy(shared_meta)  # Ensure each task gets its own copy of meta
+            # ``skipping`` is legacy tracker-local state.  A failed tracker can
+            # leave it populated on the shared metadata, which must not prevent
+            # other trackers from running their duplicate checks.
+            local_meta.skipping = None
             local_tracker_status: dict[str, Any] = {"banned": False, "skipped": False, "dupe": False, "upload": False, "other": False, "skip_reason": ""}
             display_name = None
             tracker_class = None
@@ -260,7 +264,11 @@ class TrackerStatusManager:
                             "EN: [yellow]Warning: You requested an anonymous upload, but AMIGOSSHARE does not support this option.[/yellow][red] The upload will not be anonymous.[/red]"
                         )
 
-                    if ("skipping" not in local_meta or local_meta["skipping"] is None) and not local_tracker_status["skipped"]:
+                    # The per-tracker status is authoritative here.  Do not
+                    # consult the legacy ``meta.skipping`` marker: it may have
+                    # been set by a different tracker (for example, a failed
+                    # MORETHANTV lookup) before this task was started.
+                    if not local_tracker_status["skipped"]:
                         dupes = cast(list[Any], await dupe_checker.filter_dupes(dupes, local_meta, tracker_name))
 
                         # Run dupe check first so it can modify local_meta (e.g., set cross-seed values)
@@ -293,10 +301,6 @@ class TrackerStatusManager:
                                     meta.trump_reason = trump_reason
                                 if trumpable_id_after_dupe_check:
                                     meta[f"{tracker_name}_trumpable_id"] = trumpable_id_after_dupe_check
-
-                    elif local_meta.get("skipping") == tracker_name:
-                        local_tracker_status["skipped"] = True
-                        local_tracker_status["skip_reason"] = "tracker-specific check failed"
 
                     if tracker_name == "MORETHANTV" and not local_tracker_status["banned"] and not local_tracker_status["skipped"] and not local_tracker_status["dupe"]:
                         tracker_config = self.trackers_config.get(tracker_name, {})
