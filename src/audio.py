@@ -403,8 +403,26 @@ async def _get_audio_v2(
 
                     # First pass: collect all audio languages and set flags
                     non_eng_non_orig_languages: list[str] = []
-                    for t in audio_tracks:
-                        audio_language = str(t.get("Language") or "")
+                    manual_audio_languages = meta.manual_audio_languages
+                    if isinstance(manual_audio_languages, str):
+                        manual_audio_languages = [part.strip() for part in manual_audio_languages.split(",") if part.strip()]
+                    elif isinstance(manual_audio_languages, list):
+                        manual_audio_languages = [
+                            part.strip() for value in manual_audio_languages for part in str(value).split(",") if part.strip()
+                        ]
+                    else:
+                        manual_audio_languages = []
+
+                    for track_index, t in enumerate(audio_tracks):
+                        if manual_audio_languages:
+                            if len(manual_audio_languages) == 1:
+                                audio_language = manual_audio_languages[0]
+                            elif track_index < len(manual_audio_languages):
+                                audio_language = manual_audio_languages[track_index]
+                            else:
+                                audio_language = str(t.get("Language") or "")
+                        else:
+                            audio_language = str(t.get("Language") or "")
                         logger.debug(f"DEBUG: Audio Language = {audio_language}")
                         audio_language = audio_language.lower().strip()
                         if audio_language.startswith("en"):
