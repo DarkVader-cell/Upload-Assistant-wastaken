@@ -1,6 +1,6 @@
 import asyncio
 
-from cogs.redaction import Redaction
+from src.cogs.redaction import Redaction
 from src.manual_metadata import metadata_request, parse_metadata_submission, should_request_metadata
 from src.modified_release import MODIFIED_RELEASE_REASON, detect_modified_release
 from src.safe_url import UnsafeURL, assert_public_http_url
