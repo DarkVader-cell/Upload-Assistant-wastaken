@@ -984,7 +984,7 @@ async def download_artwork_from_meta(meta: Meta, artwork_path: str, *, force: bo
     from src.safe_url import UnsafeURL, assert_public_http_url
 
     try:
-        await assert_public_http_url(poster_url)
+        await assert_public_http_url(artwork_url)
     except UnsafeURL as error:
         logger.warning(f"[yellow]Skipping unsafe poster URL: {error}[/yellow]")
         return False
