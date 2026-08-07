@@ -116,8 +116,13 @@ class Redaction:
 
                 val = val[:start] + redacted_str + val[end:]
 
+            # Redact common inline HTTP headers copied into logs.
+            val = re.sub(r"(\bAuthorization\s*:\s*(?:Bearer|Basic)\s+)[^,\s]+", r"\1[REDACTED]", val, flags=re.I)
+            val = re.sub(r"(\bCookie\s*:\s*).*?(?=\s+https?://|$)", r"\1[REDACTED]", val, flags=re.I)
             # Redact passkeys in announce URLs (e.g. /<passkey>/announce)
             val = re.sub(r"(?<=/)[a-zA-Z0-9]{10,}(?=/announce)", "[REDACTED]", val)
+            # Also cover trackers that place the passkey after /announce/.
+            val = re.sub(r"(?<=/announce/)[a-zA-Z0-9]{10,}(?=[/?#\s]|$)", "[REDACTED]", val, flags=re.I)
             # Redact content between /proxy/ and /api (e.g. /proxy/<secret>/api)
             val = re.sub(r"(?<=/proxy/)[^/]+(?=/api)", "[REDACTED]", val)
             # Redact query params like ?passkey=... or &token=...
