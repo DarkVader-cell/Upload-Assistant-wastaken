@@ -8,12 +8,12 @@ from pathlib import Path
 from typing import Any, cast
 
 import aiofiles
+import cli_ui
 import httpx
 from bs4 import BeautifulSoup
 from pymediainfo import MediaInfo
-from rich.prompt import Prompt
 
-from src.console import logger
+from src.console import logger, prompt_in_thread
 from src.cookie_auth import CookieAuthUploader, CookieValidator
 from src.exceptions import *  # noqa F403
 from src.meta import Meta
@@ -145,8 +145,9 @@ class AlphaRatio:
         heading = "[color=green][size=6]"
         subheading = "[color=red][size=4]"
         heading_end = "[/size][/color]"
-        async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/DESCRIPTION.txt", encoding="utf8") as f:
-            base = await f.read()
+        from src.description_review import get_base_description
+
+        base = get_base_description(meta)
         base = re.sub(r"\[center\]\[spoiler=Scene NFO:\].*?\[/center\]", "", base, flags=re.DOTALL)
         base = re.sub(r"\[center\]\[spoiler=FraMeSToR NFO:\].*?\[/center\]", "", base, flags=re.DOTALL)
         description = ""
@@ -368,7 +369,7 @@ class AlphaRatio:
                 meta.skipping = f"{self.tracker}"
                 return False
             while cover is None:
-                cover = Prompt.ask("No Cover was found. Please input a link to a cover:", default="")
+                cover = await prompt_in_thread(cli_ui.ask_string, "No Cover was found. Please input a link to a cover:", default="") or ""
                 if not re.match(r"https?://.*\.(jpg|png|gif)$", cover):
                     logger.info(f"{self.tracker}: [red]Invalid image link. Please enter a link that ends with .jpg, .png, or .gif.")
                     cover = None

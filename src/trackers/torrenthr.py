@@ -203,11 +203,9 @@ class TorrentHR:
     async def edit_desc(self, meta: Meta) -> bool:
         pronfo = False
         bbcode = BBCODE()
-        async with aiofiles.open(
-            f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/DESCRIPTION.txt",
-            encoding="utf-8",
-        ) as base_file:
-            base = await base_file.read()
+        from src.description_review import get_base_description
+
+        base = get_base_description(meta)
 
         desc_parts: list[str] = []
         tag_value = meta.tag
@@ -274,7 +272,7 @@ class TorrentHR:
             ordered_images.append(image)
 
         image_list: list[str] = []
-        image_api_key = str(self.config["TRACKERS"]["TORRENTHR"].get("img_api", "")).strip()
+        image_api_key = str(self.config["TRACKERS"][self.tracker].get("img_api", "")).strip()
         if ordered_images and not image_api_key:
             logger.info(f"{self.tracker}: [yellow]image API key is not configured, skipping screenshot rehost")
 
@@ -324,14 +322,14 @@ class TorrentHR:
         if (meta.is_disc) == "BDMV":
             async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/BD_SUMMARY_00.txt") as bd_file:
                 desc_parts.append(f"[nfo]{await bd_file.read()}[/nfo]")
-        elif self.config["TRACKERS"]["TORRENTHR"].get("pronfo_api_key"):
+        elif self.config["TRACKERS"][self.tracker].get("pronfo_api_key"):
             # ProNFO
-            pronfo_url = f"https://www.pronfo.com/api/v1/access/upload/{self.config['TRACKERS']['TORRENTHR'].get('pronfo_api_key', '')}"
+            pronfo_url = f"https://www.pronfo.com/api/v1/access/upload/{self.config['TRACKERS'][self.tracker].get('pronfo_api_key', '')}"
             async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/MEDIAINFO.txt") as mi_file:
                 data = {
                     "content": await mi_file.read(),
-                    "theme": self.config["TRACKERS"]["TORRENTHR"].get("pronfo_theme", "gray"),
-                    "rapi": self.config["TRACKERS"]["TORRENTHR"].get("pronfo_rapi_id"),
+                    "theme": self.config["TRACKERS"][self.tracker].get("pronfo_theme", "gray"),
+                    "rapi": self.config["TRACKERS"][self.tracker].get("pronfo_rapi_id"),
                 }
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.post(pronfo_url, data=data)

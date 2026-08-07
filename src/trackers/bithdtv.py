@@ -8,6 +8,7 @@ import httpx
 
 from src.cogs.redaction import Redaction
 from src.console import logger
+from src.description_review import get_base_description
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
 from src.trackers.common import Common
@@ -103,7 +104,7 @@ class BitHDTV:
             parsed_data: dict[str, Any] | None = cast(dict[str, Any] | None, parsed) if isinstance(parsed, dict) else None
             data_block: dict[str, Any] | None = parsed_data.get("data") if parsed_data else None
             if isinstance(data_block, dict) and "view" in data_block:
-                my_announce_url = self.config["TRACKERS"]["BITHDTV"].get("my_announce_url")
+                my_announce_url = self.config["TRACKERS"][self.tracker].get("my_announce_url")
                 if my_announce_url:
                     await common.create_torrent_ready_to_seed(meta, self.tracker, self.source_flag, my_announce_url, str(data_block["view"]))
                     return True
@@ -179,8 +180,7 @@ class BitHDTV:
         return {"2160p": "4", "1080p": "3", "1080i": "2", "720p": "1"}.get(resolution, "10")
 
     async def edit_desc(self, meta: Meta) -> None:
-        async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/DESCRIPTION.txt", encoding="utf-8") as base_file:
-            base = await base_file.read()
+        base = get_base_description(meta)
         parts: list[str] = [base.replace("[img=250]", "[img=250x250]")]
         images = meta.image_list or []
         if len(images) > 0:

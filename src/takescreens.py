@@ -2,7 +2,6 @@
 import asyncio
 import contextlib
 import gc
-import glob
 import json
 import os
 import platform
@@ -48,6 +47,29 @@ def compile_ffmpeg_command(command: Any) -> list[str]:
     return [str(argument) for argument in command.compile()]
 
 
+def get_ffmpeg_output_path(command: Any, cmd_list: list[str]) -> str:
+    """Return ffmpeg-python's output filename without relying on argument order."""
+    nodes = [getattr(command, "node", None)]
+    visited: set[int] = set()
+
+    while nodes:
+        node = nodes.pop()
+        if node is None or id(node) in visited:
+            continue
+        visited.add(id(node))
+
+        kwargs = getattr(node, "kwargs", {})
+        filename = kwargs.get("filename") if isinstance(kwargs, dict) else None
+        if filename is not None:
+            return str(filename)
+
+        incoming_edges = getattr(node, "incoming_edges", ())
+        nodes.extend(edge.upstream_node for edge in incoming_edges if getattr(edge, "upstream_node", None) is not None)
+
+    # Keep compatibility with lightweight command doubles used by callers.
+    return cmd_list[-1] if cmd_list else ""
+
+
 algorithm = "mobius"
 desat = 10.0
 
@@ -82,6 +104,29 @@ def _apply_config(config: Mapping[str, Any]) -> None:
         desat = 10.0
 
 
+def discard_smallest_capture_result(capture_results: list[str]) -> str | None:
+    """Delete and remove the smallest image produced by this capture batch."""
+    smallest: str | None = None
+    smallest_size = float("inf")
+    for image in capture_results:
+        try:
+            image_size = Path(image).stat().st_size
+        except FileNotFoundError:
+            logger.info(f"[red]File not found: {image}[/red]")
+            continue
+        if image_size < smallest_size:
+            smallest = image
+            smallest_size = image_size
+
+    if smallest is None:
+        return None
+
+    logger.debug(f"[yellow]Removing smallest image: {smallest} ({smallest_size} bytes)[/yellow]")
+    Path(smallest).unlink()
+    capture_results.remove(smallest)
+    return smallest
+
+
 async def run_ffmpeg(command: Any) -> tuple[int | None, bytes, bytes]:
     cmd_list = compile_ffmpeg_command(command)
     process_env = os.environ.copy()
@@ -89,7 +134,7 @@ async def run_ffmpeg(command: Any) -> tuple[int | None, bytes, bytes]:
     # FFREPORT defaults to a timestamped file in the current working
     # directory.  Keep each report beside its output, with a unique name so
     # concurrent or repeated runs do not overwrite an earlier report.
-    output_path = cmd_list[-1] if cmd_list else ""
+    output_path = get_ffmpeg_output_path(command, cmd_list)
     if output_path and output_path not in {"-", "pipe:"} and not output_path.startswith("pipe:"):
         report_path = Path(output_path).resolve().parent / f"ffmpeg-{uuid.uuid4().hex}.log"
         report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -153,24 +198,45 @@ def round_to_even(value: float) -> int:
     return rounded
 
 
-def par_scaled_dimensions(width: float, height: float, w_sar: float, h_sar: float) -> tuple[int, int] | None:
-    """Return a meaningful PAR-corrected size, snapping rounding noise to source dimensions."""
-    if w_sar == 1 and h_sar == 1:
-        return None
+def _as_bool(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "1", "yes", "on"}:
+            return True
+        if normalized in {"false", "0", "no", "off"}:
+            return False
+    return default
 
-    scaled_w = round_to_even(width * w_sar)
-    scaled_h = round_to_even(height * h_sar)
-    stored_w = round_to_even(width)
-    stored_h = round_to_even(height)
 
-    if abs(scaled_w - stored_w) <= 4:
-        scaled_w = stored_w
-    if abs(scaled_h - stored_h) <= 4:
-        scaled_h = stored_h
+def should_scale_screenshots_for_par(config: Mapping[str, Any] | None = None) -> bool:
+    """Return whether screenshots should be converted to square-pixel dimensions."""
+    settings = default_config if config is None else config
+    return _as_bool(settings.get("scale_screenshots_for_par"), default=False)
 
-    if scaled_w == stored_w and scaled_h == stored_h:
-        return None
-    return scaled_w, scaled_h
+
+def screenshot_par_scale_factors(
+    width: float,
+    height: float,
+    pixel_aspect_ratio: float,
+    display_aspect_ratio: float,
+    apply_par_scaling: bool | None = None,
+) -> tuple[float, float]:
+    """Return the width and height scale factors for a screenshot.
+
+    Screenshots retain their MediaInfo-reported coded dimensions by default.
+    PAR correction remains available for non-square-pixel sources when a user
+    explicitly enables ``scale_screenshots_for_par``.
+    """
+    if apply_par_scaling is None:
+        apply_par_scaling = should_scale_screenshots_for_par()
+    if not apply_par_scaling or pixel_aspect_ratio == 1:
+        return 1.0, 1.0
+    if pixel_aspect_ratio < 1:
+        new_height = display_aspect_ratio * height
+        return 1.0, width / new_height
+    return pixel_aspect_ratio, 1.0
 
 
 async def disc_screenshots(
@@ -361,7 +427,7 @@ async def disc_screenshots(
                     else:
                         logger.info(f"[red]Image {image_path} with size {image_size} bytes: does not meet size requirements for {img_host}, retaking.")
                         retake = True
-                elif img_host and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "passtheimage", "seedpool_cdn", "sharex", "utppm"]:
+                elif img_host and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "passtheimage", "seedpool_cdn", "sharex", "utppm"]:
                     logger.debug(f"[green]Image {image_path} meets size requirements for {img_host}.[/green]")
                 else:
                     logger.info(f"[red]Unknown image host or image doesn't meet requirements for host: {img_host}, retaking.")
@@ -391,7 +457,7 @@ async def disc_screenshots(
                                 valid_image = True
                         elif (
                             img_host
-                            and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "passtheimage", "seedpool_cdn", "sharex", "utppm"]
+                            and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "passtheimage", "seedpool_cdn", "sharex", "utppm"]
                             and new_size > 75000
                         ):
                             logger.info(f"[green]Successfully retaken screenshot for: {image_path} ({new_size} bytes)[/green]")
@@ -465,7 +531,7 @@ async def capture_disc_task(index: int, file: str, ss_time: str, image_path: str
             # Get the resolution and convert it to integer
             resol = int("".join(filter(str.isdigit, (meta.resolution if meta.resolution is not None else "1080p"))))
             font_size = round(text_size * resol / 1080)
-            border_width = round(2 * resol/1080)
+            border_width = round(2 * resol / 1080)
             x_all = round(10 * resol / 1080)
 
             # Scale vertical spacing based on font size
@@ -475,7 +541,9 @@ async def capture_disc_task(index: int, file: str, ss_time: str, image_path: str
             y_hdr = y_type + line_spacing
 
             # Frame number
-            vf_filters.append(f"drawtext=text='Frame Number\\: {frame_number}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_number}:borderw={border_width}:bordercolor=black")
+            vf_filters.append(
+                f"drawtext=text='Frame Number\\: {frame_number}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_number}:borderw={border_width}:bordercolor=black"
+            )
 
             # Frame type
             vf_filters.append(f"drawtext=text='Frame Type\\: {frame_type}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_type}:borderw={border_width}:bordercolor=black")
@@ -551,7 +619,6 @@ async def dvd_screenshots(
         return
 
     ifo_mi = MediaInfo.parse(f"{meta.discs[disc_num]['path']}/VTS_{meta.discs[disc_num]['main_set'][0][:2]}_0.IFO", mediainfo_options={"inform_version": "1"})
-    sar = 1.0
     w_sar = 1.0
     h_sar = 1.0
     par: float = 1.0
@@ -574,15 +641,7 @@ async def dvd_screenshots(
             width = float(track.width)
             height = float(track.height)
             frame_rate = float(track.frame_rate)
-    if par < 1:
-        new_height: float = dar * height
-        sar = width / new_height
-        w_sar = 1.0
-        h_sar = sar
-    else:
-        sar = par
-        w_sar = sar
-        h_sar = 1.0
+    w_sar, h_sar = screenshot_par_scale_factors(width, height, par, dar)
 
     async def _is_vob_good(n: int, loops: int, _num_screens: int) -> tuple[float, float]:
         max_loops = 6
@@ -681,25 +740,7 @@ async def dvd_screenshots(
     capture_results = [r[1] for r in filtered_results if r[1] is not None]
 
     if capture_results and len(capture_results) > num_screens:
-        smallest = None
-        smallest_size = float("inf")
-        matching_files = [str(p) for p in screenshot_dir.glob(f"{glob.escape(sanitized_disc_name)}-*")]
-        normal_screens = [Path(f).name for f in matching_files if re.match(r"^-\d+\.png$", Path(f).name[len(sanitized_disc_name) :])]
-        for screens in normal_screens:
-            screen_path = screenshot_dir / screens
-            try:
-                screen_size = Path(screen_path).stat().st_size
-                if screen_size < smallest_size:
-                    smallest_size = screen_size
-                    smallest = screen_path
-            except FileNotFoundError:
-                logger.info(f"[red]File not found: {screen_path}[/red]")  # Handle potential edge cases
-                continue
-
-        if smallest:
-            logger.debug(f"[yellow]Removing smallest image: {smallest} ({smallest_size} bytes)[/yellow]")
-            Path(smallest).unlink()
-            capture_results.remove(smallest)
+        discard_smallest_capture_result(capture_results)
 
     valid_results: list[str] = []
     remaining_retakes: list[str] = []
@@ -825,7 +866,7 @@ async def capture_dvd_screenshot(task: tuple[int, str, str, str, Meta, float, fl
             # Get the resolution and convert it to integer
             resol = int("".join(filter(str.isdigit, (meta.resolution if meta.resolution is not None else "576p"))))
             font_size = round(text_size * resol / 576)
-            border_width = round(2 * resol/576)
+            border_width = round(2 * resol / 576)
             x_all = round(10 * resol / 576)
 
             # Scale vertical spacing based on font size
@@ -834,7 +875,9 @@ async def capture_dvd_screenshot(task: tuple[int, str, str, str, Meta, float, fl
             y_type = y_number + line_spacing
 
             # Frame number
-            vf_filters.append(f"drawtext=text='Frame Number\\: {frame_number}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_number}:borderw={border_width}:bordercolor=black")
+            vf_filters.append(
+                f"drawtext=text='Frame Number\\: {frame_number}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_number}:borderw={border_width}:bordercolor=black"
+            )
 
             # Frame type
             vf_filters.append(f"drawtext=text='Frame Type\\: {frame_type}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_type}:borderw={border_width}:bordercolor=black")
@@ -1623,16 +1666,7 @@ async def screenshots(
         dar = safe_float(video_track.get("DisplayAspectRatio"), 16.0 / 9.0, "DisplayAspectRatio")
         frame_rate = safe_float(video_track.get("FrameRate"), 24.0, "FrameRate")
 
-        if par == 1:
-            sar = w_sar = h_sar = 1.0
-        elif par < 1:
-            new_height = dar * height
-            sar = width / new_height
-            w_sar = 1.0
-            h_sar = sar
-        else:
-            sar = w_sar = par
-            h_sar = 1
+        w_sar, h_sar = screenshot_par_scale_factors(width, height, par, dar)
     except Exception as e:
         logger.error(f"[red]Error processing MediaInfo.json: {e}")
         if meta.debug:
@@ -1839,7 +1873,7 @@ async def screenshots(
                     else:
                         logger.info(f"[red]Image {image_path} with size {image_size} bytes: does not meet size requirements for {img_host}, retaking.")
                         retake = True
-                elif img_host and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "passtheimage", "seedpool_cdn", "sharex", "utppm"]:
+                elif img_host and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "passtheimage", "seedpool_cdn", "sharex", "utppm"]:
                     logger.debug(f"[green]Image {image_path} meets size requirements for {img_host}.[/green]")
                 else:
                     logger.info(f"[red]Unknown image host or image doesn't meet requirements for host: {img_host}, retaking.")
@@ -1888,7 +1922,7 @@ async def screenshots(
                                     valid_image = True
                             elif (
                                 img_host
-                                and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "passtheimage", "seedpool_cdn", "sharex", "utppm"]
+                                and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "passtheimage", "seedpool_cdn", "sharex", "utppm"]
                                 and new_size > 75000
                             ):
                                 logger.info(f"[green]Successfully retaken screenshot for: {screenshot_path} ({new_size} bytes)[/green]")
@@ -1930,7 +1964,7 @@ async def screenshots(
                             valid_image = True
                     elif (
                         img_host
-                        and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "passtheimage", "seedpool_cdn", "sharex", "utppm"]
+                        and img_host in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "passtheimage", "seedpool_cdn", "sharex", "utppm"]
                         and new_size > 75000
                     ):
                         valid_image = True
@@ -2186,7 +2220,7 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
             # Get the resolution and convert it to integer
             resol = int("".join(filter(str.isdigit, (meta.resolution if meta.resolution is not None else "1080p"))))
             font_size = round(text_size * resol / 1080)
-            border_width = round(2 * resol/1080)
+            border_width = round(2 * resol / 1080)
             x_all = round(10 * resol / 1080)
 
             # Scale vertical spacing based on font size
@@ -2196,7 +2230,9 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
             y_hdr = y_type + line_spacing
 
             # Frame number
-            vf_filters.append(f"drawtext=text='Frame Number\\: {frame_number}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_number}:borderw={border_width}:bordercolor=black")
+            vf_filters.append(
+                f"drawtext=text='Frame Number\\: {frame_number}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_number}:borderw={border_width}:bordercolor=black"
+            )
 
             # Frame type
             vf_filters.append(f"drawtext=text='Frame Type\\: {frame_type}':fontcolor=white:fontsize={font_size}:x={x_all}:y={y_type}:borderw={border_width}:bordercolor=black")

@@ -18,89 +18,10 @@ class CapybaraBR(UNIT3D):
     display_name = "CapybaraBR"
     base_url = "https://capybarabr.com"
     allows_bloated_audio = True
-    banned_groups = (
-        "4K4U",
-        "afm72",
-        "Alcaide_Kira",
-        "AROMA",
-        "ASM",
-        "Bandi",
-        "BiTOR",
-        "BLUDV",
-        "Bluespots",
-        "BOLS",
-        "CaNNIBal",
-        "Comando",
-        "d3g",
-        "DepraveD",
-        "EMBER",
-        "Emmid",
-        "FGT",
-        "FreetheFish",
-        "Garshasp",
-        "Ghost",
-        "Grym",
-        "HDS",
-        "Hi10",
-        "HiQVE",
-        "Hiro360",
-        "ImE",
-        "ION10",
-        "iVy",
-        "Judas",
-        "LAMA",
-        "Langbard",
-        "Lapumia",
-        "LION",
-        "MeGusta",
-        "Memoriadatv",
-        "MONOLITH",
-        "MRCS",
-        "NaNi",
-        "Natty",
-        "nikt0",
-        "OEPlus",
-        "OFT",
-        "OsC",
-        "Panda",
-        "PANDEMONiUM",
-        "PHOCiS",
-        "PiRaTeS",
-        "PYC",
-        "r00t",
-        "Ralphy",
-        "RARBG",
-        "RetroPeeps",
-        "RZeroX",
-        "S74Ll10n",
-        "SAMPA",
-        "Sicario",
-        "SiCFoI",
-        "Silence",
-        "SkipTT",
-        "SM737",
-        "SPDVD",
-        "STUTTERSHIT",
-        "SWTYBLZ",
-        "t3nzin",
-        "TAoE",
-        "TEKNO3D",
-        "Telly",
-        "TGx",
-        "Tigole",
-        "TSP",
-        "TSPxL",
-        "TWA",
-        "UnKn0wn",
-        "VXT",
-        "Vyndros",
-        "W32",
-        "Will1869",
-        "x0r",
-        "YIFY",
-        "YTS.MX",
-        "YTS",
-    )
+    banned_groups: tuple[str, ...] = ()
+    banned_url = f"{base_url}/api/banned-groups"
+    banned_groups_auth_mode = "api_token"
+    banned_groups_response_key = "groups"
     id_url = f"{base_url}/api/torrents/"
     upload_url = f"{base_url}/api/torrents/upload"
     search_url = f"{base_url}/api/torrents/filter"
@@ -275,6 +196,14 @@ class CapybaraBR(UNIT3D):
                 aka_clean = meta.aka.replace("AKA", "").strip()
                 title = meta.title
                 cbr_name = cbr_name.replace(meta.aka, "").replace(title, aka_clean).strip()
+
+            if self.tracker == "CAPYBARABR" and meta.type == "DVDRIP":
+                title = meta.aka.replace("AKA", "").strip() if meta.original_language == "pt" and meta.aka else meta.title
+                episode = f"{meta.season}{meta.episode}" if category == "TV" else ""
+                audio = str(meta.audio).replace("DD+ ", "DDP").replace("DD ", "DD").replace("AAC ", "AAC").replace("FLAC ", "FLAC")
+                cbr_name = " ".join(part for part in (title, str(meta.year or ""), episode, meta.resolution, "DVDRip", audio, meta.video_encode) if part)
+                if meta.tag:
+                    cbr_name += meta.tag
 
             tag_lower = "" if not meta.tag else meta.tag.lower()
             invalid_tags = ["nogrp", "nogroup", "unknown", "-unk-"]
