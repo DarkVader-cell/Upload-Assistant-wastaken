@@ -198,6 +198,26 @@ def round_to_even(value: float) -> int:
     return rounded
 
 
+def par_scaled_dimensions(width: float, height: float, w_sar: float, h_sar: float) -> tuple[int, int] | None:
+    """Return a meaningful PAR-corrected size, snapping rounding noise to source dimensions."""
+    if w_sar == 1 and h_sar == 1:
+        return None
+
+    scaled_w = round_to_even(width * w_sar)
+    scaled_h = round_to_even(height * h_sar)
+    stored_w = round_to_even(width)
+    stored_h = round_to_even(height)
+
+    if abs(scaled_w - stored_w) <= 4:
+        scaled_w = stored_w
+    if abs(scaled_h - stored_h) <= 4:
+        scaled_h = stored_h
+
+    if scaled_w == stored_w and scaled_h == stored_h:
+        return None
+    return scaled_w, scaled_h
+
+
 def _as_bool(value: Any, default: bool = False) -> bool:
     if isinstance(value, bool):
         return value
