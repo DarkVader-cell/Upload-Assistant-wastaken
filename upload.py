@@ -50,6 +50,8 @@ from src.modified_release import detect_modified_release
 from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
+from src.runtime.context import ExecutionContext
+from src.runtime.pipeline import FunctionStage, Pipeline, StageResult
 from src.takescreens import TakeScreensManager, download_artwork_from_meta
 from src.temp_paths import artwork_dir, screenshots_dir
 from src.torrentcreate import TorrentCreator
@@ -1099,7 +1101,7 @@ def book_screens(meta: Meta, min_successful_uploads: int) -> tuple[int, int]:
     return actual_screens, capped_min
 
 
-async def process_meta(meta: Meta, base_dir: str) -> bool:
+async def _process_meta_legacy(meta: Meta, base_dir: str) -> bool:
     """Process the metadata for each queued path."""
     if not meta.imghost:
         meta.imghost = config["DEFAULT"]["img_host_1"]
@@ -2039,6 +2041,29 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
     return True
 
 
+async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionContext | None = None) -> bool:
+    """Run release preparation through the shared observable pipeline.
+
+    The compatibility stage deliberately delegates to the established
+    implementation. Subsequent refactors can extract one stage at a time while
+    keeping this public function, ordering, and boolean result unchanged.
+    """
+    if execution_context is None:
+        async with ExecutionContext.create(base_dir, config) as owned_context:
+            return await process_meta(meta, base_dir, owned_context)
+
+    succeeded = False
+
+    async def prepare_release(_context: ExecutionContext, release_meta: Meta) -> StageResult:
+        nonlocal succeeded
+        succeeded = await _process_meta_legacy(release_meta, base_dir)
+        return StageResult.completed() if succeeded else StageResult.stopped("release preparation failed")
+
+    pipeline = Pipeline([FunctionStage("prepare_release", prepare_release)])
+    await pipeline.run(execution_context, meta)
+    return succeeded
+
+
 async def cleanup_screenshot_temp_files(meta: Meta) -> None:
     """Cleanup temporary screenshot files to prevent orphaned files in case of failures."""
     screenshot_path = screenshots_dir(meta.base_dir, meta.uuid)
@@ -2167,7 +2192,7 @@ def extract_changelog(content: str, to_version: str) -> str | None:
     return None
 
 
-async def update_notification(base_dir: str) -> str:
+async def update_notification(base_dir: str, execution_context: ExecutionContext | None = None) -> str:
     version_file = Path(base_dir) / "data" / "version.py"
     remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/master/data/version.py"
 
@@ -2181,7 +2206,22 @@ async def update_notification(base_dir: str) -> str:
     if not notice:
         return local_version
 
-    remote_version, remote_content = get_remote_version(remote_version_url)
+    if execution_context is None:
+        remote_version, remote_content = await asyncio.to_thread(get_remote_version, remote_version_url)
+    else:
+        try:
+            http_client = await execution_context.http.client("update-notification", request_timeout=30.0)
+            response = await http_client.get(remote_version_url)
+            if response.status_code == 200:
+                remote_content = response.text
+                match = re.search(r'__version__\s*=\s*"([^"]+)"', remote_content)
+                remote_version = match.group(1) if match else None
+            else:
+                logger.error(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
+                remote_version, remote_content = None, None
+        except Exception as error:
+            logger.info(f"[red]An error occurred while fetching the remote version file: {error}")
+            remote_version, remote_content = None, None
     if not remote_version:
         return local_version
 
@@ -2200,7 +2240,13 @@ async def update_notification(base_dir: str) -> str:
     return local_version
 
 
-async def do_the_thing(base_dir: str) -> None:
+async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None = None) -> None:
+    if execution_context is None:
+        metrics_enabled = bool(config.get("DEFAULT", {}).get("runtime_metrics", False))
+        async with ExecutionContext.create(base_dir, config, metrics_enabled=metrics_enabled) as owned_context:
+            await do_the_thing(base_dir, owned_context)
+        return
+
     # Reload config from disk so that changes made via the WebUI config
     # editor (or manual file edits between runs) are picked up.  The
     # module-level ``config`` dict is imported once at startup and would
@@ -2270,7 +2316,7 @@ async def do_the_thing(base_dir: str) -> None:
             break
 
     meta.ua_name = "Upload-Assistant"
-    meta.current_version = await update_notification(base_dir)
+    meta.current_version = await update_notification(base_dir, execution_context)
 
     # Do not add an Upload Assistant identity/signature to generated descriptions.
     meta.ua_signature = ""
@@ -2550,7 +2596,7 @@ async def do_the_thing(base_dir: str) -> None:
             logger.info(f"[green]Gathering info for {Path(path).name}")
 
             try:
-                meta_success = await process_meta(meta, base_dir)
+                meta_success = await process_meta(meta, base_dir, execution_context)
             finally:
                 await cancel_and_drain_early_artifact_tasks(meta.uuid)
             if not meta_success:
