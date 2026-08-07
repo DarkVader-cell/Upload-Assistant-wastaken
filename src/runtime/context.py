@@ -11,6 +11,7 @@ from typing import Any
 from src.metadata_cache import MetadataCache, cache_for
 from src.runtime.http import HttpClientPool
 from src.runtime.metrics import RuntimeMetrics
+from src.runtime.subprocesses import SubprocessManager
 
 _CURRENT_CONTEXT: contextvars.ContextVar[ExecutionContext | None] = contextvars.ContextVar(
     "upload_assistant_execution_context",
@@ -27,11 +28,18 @@ class ExecutionContext:
     metrics: RuntimeMetrics = field(default_factory=RuntimeMetrics)
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
     http: HttpClientPool = field(init=False)
+    subprocesses: SubprocessManager = field(init=False)
     _context_token: contextvars.Token[ExecutionContext | None] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.base_dir = self.base_dir.resolve()
         self.http = HttpClientPool(self.metrics)
+        default = self.config.get("DEFAULT", {}) if isinstance(self.config, dict) else {}
+        try:
+            concurrency = int(default.get("subprocess_concurrency", 4)) if isinstance(default, dict) else 4
+        except (TypeError, ValueError):
+            concurrency = 4
+        self.subprocesses = SubprocessManager(concurrency, self.metrics)
 
     @classmethod
     def create(
@@ -55,6 +63,7 @@ class ExecutionContext:
             raise asyncio.CancelledError
 
     async def close(self) -> None:
+        await self.subprocesses.close()
         await self.http.close()
 
     async def __aenter__(self) -> ExecutionContext:

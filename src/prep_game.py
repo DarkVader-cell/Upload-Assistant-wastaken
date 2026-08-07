@@ -1,5 +1,4 @@
 # Upload Assistant © 2026 Audionut & wastaken7 — Licensed under UAPL v1.0
-import asyncio
 import contextlib
 import datetime
 import html
@@ -21,6 +20,7 @@ from src.console import logger
 from src.igdb import IGDBAPI
 from src.meta import Meta
 from src.metadata_cache import cache_for, is_cache_miss
+from src.runtime.subprocesses import run_shared_subprocess
 from src.temp_paths import artwork_dir
 
 
@@ -172,10 +172,9 @@ async def list_archive_contents_with_7z(archive_path: str, binary_path: str) -> 
     contents = []
     try:
         cmd = [binary_path, "l", "-slt", archive_path]
-        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, _ = await process.communicate()
-        if process.returncode == 0:
-            for line in stdout.decode("utf-8", errors="replace").splitlines():
+        result = await run_shared_subprocess(cmd)
+        if result.returncode == 0:
+            for line in result.stdout.decode("utf-8", errors="replace").splitlines():
                 if line.startswith("Path = ") and len(line) > 7:
                     path_val = line[7:].strip()
                     # Skip if it is the archive name itself (7z lists archive header)

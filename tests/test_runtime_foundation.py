@@ -1,12 +1,14 @@
 # ruff: noqa: S101
 
 import asyncio
+import sys
 
 from src.meta import Meta
 from src.metadata_cache import cache_for
 from src.runtime.context import ExecutionContext, current_execution_context
 from src.runtime.http import HttpClientPool, shared_http_client
 from src.runtime.pipeline import FunctionStage, Pipeline, StageResult, StageStatus
+from src.runtime.subprocesses import SubprocessManager
 
 
 def test_metadata_cache_reuses_compatible_instances(tmp_path):
@@ -83,5 +85,21 @@ def test_execution_context_scopes_shared_http_clients(tmp_path):
             async with shared_http_client("provider") as first, shared_http_client("provider") as second:
                 assert first is second
         assert current_execution_context() is None
+
+    asyncio.run(run())
+
+
+def test_subprocess_manager_captures_output_and_rejects_use_after_close():
+    async def run() -> None:
+        manager = SubprocessManager(concurrency=1)
+        result = await manager.run([sys.executable, "-c", "print('ready')"])
+        assert result.returncode == 0
+        assert result.stdout.strip() == b"ready"
+        await manager.close()
+        try:
+            await manager.run([sys.executable, "-c", "pass"])
+        except RuntimeError:
+            return
+        raise AssertionError("closed subprocess manager accepted work")
 
     asyncio.run(run())

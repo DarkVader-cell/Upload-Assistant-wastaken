@@ -19,6 +19,7 @@ from rich.progress import BarColumn, TaskID, TaskProgressColumn, TextColumn
 
 from src.console import console, logger, progress_display
 from src.meta import Meta
+from src.runtime.subprocesses import run_shared_subprocess
 from src.webui_progress import complete_progress, has_progress_callback, publish_progress
 
 
@@ -147,16 +148,15 @@ async def run_command_with_logging(cmd: list[str], description: str) -> None:
 
     logger.debug(f"[cyan]Running command: {redacted_str}[/cyan]")
     try:
-        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, stderr = await process.communicate()
+        result = await run_shared_subprocess(cmd)
 
-        if process.returncode != 0:
-            logger.error(f"[red]Error running {description} (exit code {process.returncode}):[/red]")
-            if stdout:
-                logger.info(f"[red]STDOUT:[/red]\n{stdout.decode(errors='replace')}")
-            if stderr:
-                logger.info(f"[red]STDERR:[/red]\n{stderr.decode(errors='replace')}")
-            raise RuntimeError(f"Command '{redacted_str}' failed with exit code {process.returncode}")
+        if result.returncode != 0:
+            logger.error(f"[red]Error running {description} (exit code {result.returncode}):[/red]")
+            if result.stdout:
+                logger.info(f"[red]STDOUT:[/red]\n{result.stdout.decode(errors='replace')}")
+            if result.stderr:
+                logger.info(f"[red]STDERR:[/red]\n{result.stderr.decode(errors='replace')}")
+            raise RuntimeError(f"Command '{redacted_str}' failed with exit code {result.returncode}")
 
     except Exception as e:
         raise RuntimeError(f"Failed to execute command '{redacted_str}': {e}") from e
