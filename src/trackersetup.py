@@ -101,6 +101,7 @@ from src.trackers.UNIT3D.znth import Zenith
 from src.trackers.USENET.curupira import Curupira
 from src.trackers.USENET.drunkenslug import DrunkenSlug
 from src.trackers.USENET.suio import Suio
+from src.trackers.adapter import TrackerRegistry
 
 JsonDict = dict[str, Any]
 example_config: dict[str, Any]
@@ -109,12 +110,12 @@ example_config: dict[str, Any]
 class TrackerSetup:
     def __init__(self, config: dict[str, Any]):
         self.config: dict[str, Any] = config
+        self.registry = tracker_registry
 
     def _create_tracker_instance(self, tracker: str) -> Any | None:
-        tracker_class = tracker_class_map.get(tracker.upper())
-        if tracker_class is None:
+        if tracker.upper() not in self.registry:
             return None
-        return tracker_class(self.config)
+        return self.registry.create(tracker, self.config)
 
     def filter_unsupported_trackers(self, meta: Meta) -> None:
         category = meta.category
@@ -127,7 +128,7 @@ class TrackerSetup:
 
         supported_trackers: list[str] = []
         for tracker_name in trackers:
-            tracker_class = tracker_class_map.get(tracker_name.upper())
+            tracker_class = self.registry.get(tracker_name.upper())
             if not tracker_class:
                 supported_trackers.append(tracker_name)
                 continue
@@ -1428,6 +1429,8 @@ tracker_class_map: dict[str, Any] = {
     "ZENITH": Zenith,
 }
 
+tracker_registry = TrackerRegistry(tracker_class_map)
+
 
 def get_tracker_comment_hosts(config: dict[str, Any]) -> dict[str, tuple[str, ...]]:
     """Return tracker domains usable when parsing torrent-comment URLs.
@@ -1468,6 +1471,6 @@ def get_tracker_comment_hosts(config: dict[str, Any]) -> dict[str, tuple[str, ..
     return tracker_hosts
 
 
-api_trackers: set[str] = {name for name, cls in tracker_class_map.items() if getattr(cls, "auth_type", None) == "unit3d_api"}
-other_api_trackers: set[str] = {name for name, cls in tracker_class_map.items() if getattr(cls, "auth_type", None) == "other_api"}
-http_trackers: set[str] = {name for name, cls in tracker_class_map.items() if getattr(cls, "auth_type", None) == "cookies"}
+api_trackers: set[str] = tracker_registry.by_auth_type("unit3d_api")
+other_api_trackers: set[str] = tracker_registry.by_auth_type("other_api")
+http_trackers: set[str] = tracker_registry.by_auth_type("cookies")

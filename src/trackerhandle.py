@@ -22,6 +22,7 @@ from src.qbitwait import Wait
 from src.rehostimages import check_tracker_image_hosts
 from src.trackers.passthepopcorn import PassThePopcorn
 from src.trackers.torrenthr import TorrentHR
+from src.trackers.adapter import TrackerRegistry
 from src.trackersetup import TrackerSetup
 
 type StatusDict = dict[str, Any]
@@ -70,6 +71,7 @@ async def process_trackers(
     other_api_trackers: Sequence[str],
     upload_target: str = "tracker",
 ) -> None:
+    registry = TrackerRegistry(tracker_class_map)
     tracker_setup = TrackerSetup(config=config)
     tracker_setup_any = cast(Any, tracker_setup)
     enabled_trackers = list(cast(Sequence[str], tracker_setup_any.trackers_enabled(meta)))
@@ -142,7 +144,7 @@ async def process_trackers(
 
         tracker_class: Any = None
         if tracker not in {"MANUAL", "TORRENTHR", "PASSTHEPOPCORN"}:
-            tracker_class = tracker_class_map[tracker](config=config)
+            tracker_class = registry.create(tracker, config)
         if meta.name.endswith("DUPE?"):
             meta.name = meta.name.replace(" DUPE?", "")
 
@@ -310,7 +312,7 @@ async def process_trackers(
                 for manual_tracker in enabled_trackers:
                     if manual_tracker != "MANUAL":
                         manual_tracker = manual_tracker.replace(" ", "").upper().strip()
-                        tracker_class = tracker_class_map[manual_tracker](config=config)
+                        tracker_class = registry.create(manual_tracker, config)
                         try:
                             await check_tracker_image_hosts(meta, tracker_class)
                             if manual_tracker in api_trackers:
