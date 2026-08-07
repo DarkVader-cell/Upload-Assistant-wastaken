@@ -6,6 +6,7 @@ import httpx
 
 from src.console import logger
 from src.metadata_cache import MetadataCache, cache_for, is_cache_miss
+from src.runtime.http import shared_http_client
 
 openlibrary_color_str = "[#e1d8c1]OpenLibrary[/#e1d8c1]"
 
@@ -54,7 +55,7 @@ class OpenLibraryManager:
         logger.debug(f"[cyan]{openlibrary_color_str}: Searching API for Work ID: {work_id}[/cyan]")
 
         try:
-            async with httpx.AsyncClient(follow_redirects=True) as client:
+            async with shared_http_client("openlibrary", follow_redirects=True, factory=httpx.AsyncClient) as client:
                 resp = await client.get(url, timeout=10.0)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -125,7 +126,7 @@ class OpenLibraryManager:
         logger.debug(f"[cyan]{openlibrary_color_str}: Searching API for ISBN: {clean_isbn}[/cyan]")
 
         try:
-            async with httpx.AsyncClient(follow_redirects=True) as client:
+            async with shared_http_client("openlibrary", follow_redirects=True, factory=httpx.AsyncClient) as client:
                 resp = await client.get(url, timeout=10.0)
                 if resp.status_code == 200:
                     res_data = resp.json()

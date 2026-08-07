@@ -7,6 +7,7 @@ import httpx
 from src.book_prep import is_valid_book_language, resolve_book_language
 from src.console import logger
 from src.metadata_cache import cache_for, is_cache_miss
+from src.runtime.http import shared_http_client
 
 google_color_str = "[#4285f4]G[/#4285f4][#ea4335]o[/#ea4335][#fbbc05]o[/#fbbc05][#4285f4]g[/#4285f4][#34a853]l[/#34a853][#ea4335]e[/#ea4335] [#4285f4]Books[/#4285f4]"
 
@@ -119,7 +120,7 @@ class GoogleBooksManager:
         logger.debug(f"[cyan]{google_color_str}: Searching API for ISBN: {clean_isbn}[/cyan]")
 
         try:
-            async with httpx.AsyncClient(follow_redirects=True) as client:
+            async with shared_http_client("google-books", follow_redirects=True, factory=httpx.AsyncClient) as client:
                 resp = await client.get(url, timeout=10.0)
                 if resp.status_code == 200:
                     data = resp.json()

@@ -10,6 +10,7 @@ import httpx
 
 from src.console import logger
 from src.metadata_cache import cache_for, is_cache_miss
+from src.runtime.http import shared_http_client
 
 
 class IGDBAPI:
@@ -35,7 +36,7 @@ class IGDBAPI:
         url = "https://id.twitch.tv/oauth2/token"
         params = {"client_id": self.client_id, "client_secret": self.client_secret, "grant_type": "client_credentials"}
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with shared_http_client("igdb-oauth", request_timeout=10.0, factory=httpx.AsyncClient) as client:
                 resp = await client.post(url, params=params)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -75,7 +76,7 @@ class IGDBAPI:
         query = f'search "{title}"; fields name, summary, storyline, first_release_date, rating, rating_count, cover.url, screenshots.url, genres.name, platforms.name, involved_companies.company.name, involved_companies.developer, involved_companies.publisher, websites.url, websites.type, external_games.url, external_games.external_game_source, external_games.uid, language_supports.language.name, language_supports.language_support_type.name; limit 5;'
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with shared_http_client("igdb", request_timeout=10.0, factory=httpx.AsyncClient) as client:
                 resp = await client.post(url, headers=headers, content=query)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -111,7 +112,7 @@ class IGDBAPI:
         query = f"where id = {igdb_id_str}; fields name, summary, storyline, first_release_date, rating, rating_count, cover.url, screenshots.url, genres.name, platforms.name, involved_companies.company.name, involved_companies.developer, involved_companies.publisher, websites.url, websites.type, external_games.url, external_games.external_game_source, external_games.uid, language_supports.language.name, language_supports.language_support_type.name;"
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with shared_http_client("igdb", request_timeout=10.0, factory=httpx.AsyncClient) as client:
                 resp = await client.post(url, headers=headers, content=query)
                 if resp.status_code == 200:
                     data = resp.json()
@@ -151,7 +152,7 @@ class IGDBAPI:
         query = f'where external_games.external_game_source = 1 & external_games.uid = "{steam_id_str}"; fields name, summary, storyline, first_release_date, rating, rating_count, cover.url, screenshots.url, genres.name, platforms.name, involved_companies.company.name, involved_companies.developer, involved_companies.publisher, websites.url, websites.type, external_games.url, external_games.external_game_source, external_games.uid, language_supports.language.name, language_supports.language_support_type.name;'
 
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with shared_http_client("igdb", request_timeout=10.0, factory=httpx.AsyncClient) as client:
                 resp = await client.post(url, headers=headers, content=query)
                 if resp.status_code == 200:
                     data = resp.json()

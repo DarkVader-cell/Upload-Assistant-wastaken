@@ -4,8 +4,8 @@ import asyncio
 
 from src.meta import Meta
 from src.metadata_cache import cache_for
-from src.runtime.context import ExecutionContext
-from src.runtime.http import HttpClientPool
+from src.runtime.context import ExecutionContext, current_execution_context
+from src.runtime.http import HttpClientPool, shared_http_client
 from src.runtime.pipeline import FunctionStage, Pipeline, StageResult, StageStatus
 
 
@@ -70,5 +70,18 @@ def test_pipeline_preserves_order_observes_results_and_stops(tmp_path):
         assert observed == [("first", StageStatus.COMPLETED), ("stop", StageStatus.STOPPED)]
         assert context.metrics.snapshot()["timings"]
         await context.close()
+
+    asyncio.run(run())
+
+
+def test_execution_context_scopes_shared_http_clients(tmp_path):
+    async def run() -> None:
+        context = ExecutionContext.create(tmp_path, {})
+        assert current_execution_context() is None
+        async with context:
+            assert current_execution_context() is context
+            async with shared_http_client("provider") as first, shared_http_client("provider") as second:
+                assert first is second
+        assert current_execution_context() is None
 
     asyncio.run(run())

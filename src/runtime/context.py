@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -10,6 +11,11 @@ from typing import Any
 from src.metadata_cache import MetadataCache, cache_for
 from src.runtime.http import HttpClientPool
 from src.runtime.metrics import RuntimeMetrics
+
+_CURRENT_CONTEXT: contextvars.ContextVar[ExecutionContext | None] = contextvars.ContextVar(
+    "upload_assistant_execution_context",
+    default=None,
+)
 
 
 @dataclass(slots=True)
@@ -21,6 +27,7 @@ class ExecutionContext:
     metrics: RuntimeMetrics = field(default_factory=RuntimeMetrics)
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
     http: HttpClientPool = field(init=False)
+    _context_token: contextvars.Token[ExecutionContext | None] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.base_dir = self.base_dir.resolve()
@@ -51,7 +58,18 @@ class ExecutionContext:
         await self.http.close()
 
     async def __aenter__(self) -> ExecutionContext:
+        self._context_token = _CURRENT_CONTEXT.set(self)
         return self
 
     async def __aexit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
-        await self.close()
+        try:
+            await self.close()
+        finally:
+            if self._context_token is not None:
+                _CURRENT_CONTEXT.reset(self._context_token)
+                self._context_token = None
+
+
+def current_execution_context() -> ExecutionContext | None:
+    """Return the context owned by the current async task, when available."""
+    return _CURRENT_CONTEXT.get()

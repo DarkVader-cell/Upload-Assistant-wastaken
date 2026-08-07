@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from typing import Any, TypeVar
 
 import httpx
@@ -111,3 +112,36 @@ class HttpClientPool:
 
     async def __aexit__(self, _exc_type: object, _exc: object, _traceback: object) -> None:
         await self.close()
+
+
+@asynccontextmanager
+async def shared_http_client(
+    name: str,
+    *,
+    request_timeout: float | httpx.Timeout = 30.0,
+    headers: Mapping[str, str] | None = None,
+    follow_redirects: bool = False,
+    verify: bool = True,
+    factory: Callable[..., httpx.AsyncClient] = httpx.AsyncClient,
+) -> AsyncIterator[httpx.AsyncClient]:
+    """Use the active execution pool, with an owned-client compatibility fallback."""
+    from src.runtime.context import current_execution_context
+
+    context = current_execution_context()
+    if context is not None:
+        yield await context.http.client(
+            name,
+            request_timeout=request_timeout,
+            headers=headers,
+            follow_redirects=follow_redirects,
+            verify=verify,
+        )
+        return
+
+    async with factory(
+        timeout=request_timeout,
+        headers=dict(headers or {}),
+        follow_redirects=follow_redirects,
+        verify=verify,
+    ) as client:
+        yield client
