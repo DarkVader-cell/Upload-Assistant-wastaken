@@ -63,6 +63,8 @@ Notes:
 
 Use **Unattended Operations** to submit the selected files or folders to the durable detached queue. While open, the dashboard refreshes live and lets you view job state and logs, edit arguments before a job starts, cancel or retry jobs, and answer required metadata or ordinary yes/no/text prompts without a terminal.
 
+The dashboard also refreshes runtime health every 15 seconds. It summarizes artifact reuse, resumable stage checkpoints, observed providers, and required external tools, and displays per-job stage/percentage progress when available. A degraded status means one or more configured dependencies needs attention; it does not hide or stop otherwise valid queued work.
+
 Detached jobs are serialized and persisted under `tmp/qui_jobs.json`. Settings are changed only before a job starts (or as part of retrying a failed/interrupted job); a running process is not rewritten underneath itself. Keep the Web UI authenticated and bound to a trusted interface because this dashboard can control uploads and send input to active processes.
 
 ### Config editor

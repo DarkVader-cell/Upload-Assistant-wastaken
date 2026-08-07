@@ -87,7 +87,7 @@ services:
       - /path/to/appdata/Upload-Assistant/webui-auth:/root/.config/upload-assistant:rw
     stop_grace_period: 15s
     healthcheck:
-      test: ["CMD", "curl", "-sf", "http://localhost:5000/api/health"]
+      test: ["CMD", "upload-assistant-healthcheck"]
       interval: 30s
       timeout: 5s
       start_period: 10s

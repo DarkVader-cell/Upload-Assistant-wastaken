@@ -21,6 +21,7 @@
   - [6. Interactive Screenshot Review Workflow](#6-interactive-screenshot-review-workflow)
   - [7. Persistent TTL-Based Metadata Cache](#7-persistent-ttl-based-metadata-cache)
   - [8. Modern Web UI & Real-Time Engine](#8-modern-web-ui--real-time-engine)
+  - [9. Resumable and Observable Runtime](#9-resumable-and-observable-runtime)
 - [Supported Sites](#supported-sites)
 - [Setup Guide](#setup-guide)
   - [Step 1: Install Required Tools](#step-1-install-required-tools)
@@ -93,6 +94,13 @@ This branch introduces new media categories and automation features not present 
 
 - **Full Parity Web UI**: Modern interface providing full feature parity with CLI options (`--webui`).
 - **Real-Time Execution & Presets**: Live log streams, real-time preparation preview, preset saving, and interactive screenshot management.
+
+### 9. Resumable and Observable Runtime
+
+- **Faster retries and queues**: Content-addressed artifacts, atomic stage checkpoints, pooled provider clients, adaptive scheduling, and safe parallel unattended preparation avoid repeated work while keeping uploads ordered.
+- **Plan before execution**: `--plan` / `--dry-run-plan` and `POST /api/plan` show stages, cache hits, expected external calls, trackers, and warnings without mutating files or clients.
+- **Operations visibility**: The Web UI reports runtime health, artifact reuse, resumable stages, provider telemetry, external-tool availability, and detached-job progress. Qui clients can consume cursor-based events, compact summaries, and bulk retry controls.
+- **Upstream-friendly extensions**: The opt-in versioned extension API adds trackers, metadata providers, pipeline stages, and health checks outside upstream-owned modules.
 
 ## Supported Sites
 
@@ -300,6 +308,10 @@ In your terminal, run the command for your operating system and follow the on-sc
 **Additional Resources:**
 
 - Check out our [Wiki Help Page](docs/home.md).
+- Runtime design and upstream-sync boundaries: [Architecture](docs/architecture.md).
+- Implemented workflow optimizations: [Feature Roadmap](docs/feature-roadmap.md).
+- Third-party integration contract: [Extension API](docs/extensions.md).
+- Web UI endpoints and automation examples: [Web UI API](docs/web-ui-api.md).
 - Windows installation and basic commands: see [Windows Install](docs/windows-install.md).
 - Need a no-root Linux or seedbox setup? See [Seedbox / Linux Install](docs/seedbox.md).
 - Found an issue or need help? Please [open a GitHub Issue](https://github.com/wastaken7/Upload-Assistant/issues) so we can track and resolve it.

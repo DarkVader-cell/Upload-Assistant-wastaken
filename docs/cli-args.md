@@ -46,6 +46,9 @@ This option is available in the CLI only. In the Web UI, select paths with the b
 
 - `--queue QUEUE_NAME`: Process an entire folder (including files/subfolders) in a named queue.
 - `-lq`, `--limit-queue N`: Limit the amount of sucessfull uploads processed when running the queue (default `0` unlimited).
+- `--plan`, `--dry-run-plan`: Print the execution stages, reusable artifacts/checkpoints, selected trackers, expected external calls, estimated work, and warnings without preparing or uploading anything.
+- `--no-resume`: Ignore saved stage checkpoints for this run. Content-addressed artifacts may still be reused when enabled.
+- `--queue-prepare-concurrency N`: Override `DEFAULT.queue_prepare_concurrency` for unattended regular queues. Independent workspaces prepare concurrently, while tracker uploads and torrent-client mutations remain ordered. Interactive, site-upload, argument-line, and basename-colliding queues stay sequential.
 - `-sc`, `--site-check`: Search trackers for suitable uploads and create a log file (no uploading).
 - `-su`, `--site-upload TRACKER`: Process site searches and upload to a single tracker (the tracker identifier is normalized to uppercase).
 - `--unit3d`: Parse a text output file from `UNIT3D-Upload-Checker`.
