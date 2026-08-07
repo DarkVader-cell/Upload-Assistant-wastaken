@@ -2,6 +2,7 @@
 .git
 .gitignore
 .github
+graphify-out
 
 # Python bytecode & caches
 **/__pycache__
@@ -10,10 +11,14 @@
 *.egg-info
 .mypy_cache
 .ruff_cache
+.pytest_cache
+.coverage
+coverage.xml
 
-# Virtual environments (host-side; the image builds its own at /venv)
+# Virtual environments (host-side; the image builds its own at /opt/venv)
 venv
 .venv
+**/node_modules
 
 # IDE / editor
 .vscode
@@ -24,16 +29,31 @@ venv
 
 # Docker files (not needed inside the image)
 docker-compose.yml
+docker-compose.local.yml
 Dockerfile
 .dockerignore
 
 # Documentation (not needed at runtime)
 docs
+benchmarks
 
 # Runtime artifacts that should not leak into the build context
 tmp
+docker-data
 *.torrent
 *.log
+
+# Host configuration, credentials, and mutable application state
+data/config.py
+data/session_secret
+data/sessions
+data/*.db
+data/*.sqlite*
+data/cookies/*
+!data/cookies/README.md
+
+# Platform-specific binaries that cannot run in Linux containers
+bin/MI/windows
 
 # OS junk
 Thumbs.db
@@ -43,3 +63,4 @@ Thumbs.db
 tests
 .bandit.yaml
 bandit.yaml
+uv.lock

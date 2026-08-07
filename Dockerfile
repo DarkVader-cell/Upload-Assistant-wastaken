@@ -1,106 +1,111 @@
 # syntax=docker/dockerfile:1.7
-FROM python:3.14
 
-# ── System dependencies ──────────────────────────────────────────────
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    git \
-    g++ \
-    cargo \
-    ffmpeg \
-    mediainfo \
-    rustc \
-    nano \
-    ca-certificates \
-    curl \
-    gosu && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    update-ca-certificates
+ARG PYTHON_IMAGE=python:3.14-slim
 
-# ── Python environment ──────────────────────────────────────────────
-# Ensure Python output is sent straight to the container logs (no buffering)
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Build Python packages away from the runtime image. Native dependencies must
+# provide wheels for both published architectures; pure-Python source packages
+# can still build without downloading a compiler toolchain.
+FROM ${PYTHON_IMAGE} AS python-deps
 
-RUN python -m venv /venv
-ENV PATH="/venv/bin:$PATH"
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_INPUT=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}"
 
+RUN python -m venv "${VIRTUAL_ENV}"
+COPY --link requirements.txt /tmp/requirements.txt
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install --upgrade pip==25.3 wheel==0.45.1 requests==2.32.5
+    python -m pip install --upgrade pip==25.3 wheel==0.45.1 \
+    && python -m pip install --prefer-binary -r /tmp/requirements.txt \
+    && python -m pip check \
+    && find "${VIRTUAL_ENV}" -type d -name __pycache__ -prune -exec rm -rf '{}' + \
+    && find "${VIRTUAL_ENV}" -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
-# ── Application setup ────────────────────────────────────────────────
+# Binary downloads have their own stable stages, so changing application source
+# or Python requirements does not force another download.
+FROM ${PYTHON_IMAGE} AS binary-fetch-base
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_INPUT=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /Upload-Assistant
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m pip install requests==2.33.0 aiofiles==25.1.0 httpx==0.28.1
+
+FROM binary-fetch-base AS dvd-mediainfo
+COPY --link bin/get_dvd_mediainfo_docker.py bin/
+RUN python bin/get_dvd_mediainfo_docker.py
+
+FROM binary-fetch-base AS mkbrr
+COPY --link bin/__init__.py bin/get_mkbrr.py bin/
+RUN python -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"
+
+FROM binary-fetch-base AS bdinfo
+COPY --link bin/get_bdinfo_docker.py bin/
+RUN python bin/get_bdinfo_docker.py
+
+# The final image contains only the runtime interpreter, application, downloaded
+# helper binaries, and packages that are required while Upload Assistant runs.
+FROM ${PYTHON_IMAGE} AS runtime
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:${PATH}"
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    rm -f /etc/apt/apt.conf.d/docker-clean \
+    && apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        ffmpeg \
+        gosu \
+        mediainfo \
+    && update-ca-certificates
+
+ENV MPLCONFIGDIR=/Upload-Assistant/tmp/matplotlib \
+    TMPDIR=/Upload-Assistant/tmp \
+    XDG_CACHE_HOME=/Upload-Assistant/tmp/.cache
+
 WORKDIR /Upload-Assistant
 
-# Copy the downloader scripts before the application source. Their expensive
-# binary-download layers remain cached when ordinary Python source changes.
-# This downloads specialized MediaInfo binaries for DVD processing with language support
-COPY bin/get_dvd_mediainfo_docker.py bin/
-RUN python3 bin/get_dvd_mediainfo_docker.py
+COPY --from=python-deps --link /opt/venv /opt/venv
+COPY --link upload.py config-generator.py requirements.txt LICENSE README.md ./
+COPY --link cogs ./cogs
+COPY --link --chown=1000:1000 data ./data
+COPY --link src ./src
+COPY --link web_ui ./web_ui
+COPY --link --chown=1000:1000 bin ./bin
 
-# Copy the Python requirements file and install Python dependencies
-COPY requirements.txt .
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install -r requirements.txt
+# Overlay only the binary matching the target architecture. Multi-platform
+# builds therefore do not carry binaries for every supported architecture.
+COPY --from=dvd-mediainfo --link --chown=1000:1000 /Upload-Assistant/bin/MI/linux ./bin/MI/linux
+COPY --from=mkbrr --link --chown=1000:1000 /Upload-Assistant/bin/mkbrr ./bin/mkbrr
+COPY --from=bdinfo --link --chown=1000:1000 /Upload-Assistant/bin/bdinfo ./bin/bdinfo
 
-# Download architecture-specific binaries before copying the rest of the
-# application, so source-only changes do not invalidate these layers.
-COPY bin/get_mkbrr.py bin/get_bdinfo_docker.py bin/
-RUN python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"
-RUN python3 bin/get_bdinfo_docker.py
+COPY --link --chmod=755 scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --link --chmod=755 scripts/docker-healthcheck.py /usr/local/bin/upload-assistant-healthcheck
 
-# Copy the rest of the application after the stable binary layers.
-COPY . .
+# Keep defaults outside the data mount and make writable paths usable by both
+# the normal UID and NAS/Unraid PUID/PGID configurations.
+RUN set -eux; \
+    mkdir -p defaults tmp; \
+    cp -a data defaults/; \
+    find defaults -type d -name __pycache__ -prune -exec rm -rf '{}' +; \
+    chmod 1777 tmp
 
-# Preserve the built-in data/ directory outside the mount-point so that
-# volume mounts over /Upload-Assistant/data/ don't hide critical files
-# (__init__.py, version.py, example-config.py, templates/).
-# At runtime the app restores any missing files from this copy.
-RUN rm -rf /Upload-Assistant/defaults \
-    && mkdir -p /Upload-Assistant/defaults \
-    && cp -a data /Upload-Assistant/defaults/ \
-    && find /Upload-Assistant/defaults/ -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-
-# Ensure downloaded binaries are executable
-RUN find bin/mkbrr -name "mkbrr" -print0 | xargs -0 chmod +x && \
-    find bin/bdinfo -name "bdinfo" -print0 | xargs -0 chmod +x
-
-# ── Permissions ──────────────────────────────────────────────────────
-# Give UID 1000 ownership (runtime binary updates need chmod) and let
-# any other UID (e.g. Unraid 99:100) read/execute.
-RUN chown -R 1000:1000 /Upload-Assistant/bin/mkbrr \
-    && chown -R 1000:1000 /Upload-Assistant/bin/MI \
-    && chown -R 1000:1000 /Upload-Assistant/bin/bdinfo \
-    && chown -R 1000:1000 /Upload-Assistant/data \
-    && chmod -R o+rX /Upload-Assistant/bin/mkbrr \
-    && chmod -R o+rX /Upload-Assistant/bin/MI \
-    && chmod -R o+rX /Upload-Assistant/bin/bdinfo
-
-# Create tmp directory; world-writable so any UID can use it
-RUN mkdir -p /Upload-Assistant/tmp && chmod 1777 /Upload-Assistant/tmp
-ENV TMPDIR=/Upload-Assistant/tmp
-
-# ── Runtime metadata ─────────────────────────────────────────────────
-# Document the WebUI port (informational only; does not publish the port)
 EXPOSE 5000
-
-# Let Docker send SIGTERM for graceful shutdown (Python handles it in upload.py)
 STOPSIGNAL SIGTERM
 
-# Health check for WebUI mode — ignored when running CLI
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:5000/api/health || exit 1
+    CMD ["upload-assistant-healthcheck"]
 
-# ── Entrypoint ───────────────────────────────────────────────────────
-# The entrypoint script handles directory permissions and optional
-# privilege-drop via PUID/PGID environment variables.
-# Pass arguments via CMD or `docker run ... <args>`.
-#   WebUI : docker run ... image --webui 0.0.0.0:5000
-#   CLI   : docker run ... image /data/content --trackers BHD
-COPY scripts/docker-entrypoint.sh /usr/local/bin/
-RUN sed -i 's/\r$//' /usr/local/bin/docker-entrypoint.sh \
-    && chmod +x /usr/local/bin/docker-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
-
-# Default: show help when no arguments are provided
 CMD ["-h"]

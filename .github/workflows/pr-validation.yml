@@ -96,7 +96,33 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: ${{ matrix.platform }}
+          tags: upload-assistant-pr:${{ matrix.arch }}
           provenance: false
           cache-from: type=gha,scope=pr-webui-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=pr-webui-${{ matrix.arch }}
+          load: true
           push: false
+
+      - name: Validate Docker runtime and image size
+        shell: bash
+        run: |
+          image="upload-assistant-pr:${{ matrix.arch }}"
+          size="$(docker image inspect "$image" --format '{{.Size}}')"
+          max_size=1500000000
+          echo "Image size: $size bytes (limit: $max_size bytes)"
+          test "$size" -le "$max_size"
+          docker run --rm --entrypoint python "$image" -c "import flask, httpx, numpy, PIL; print('Python runtime imports OK')"
+          docker run --rm --entrypoint sh "$image" -c '
+            command -v ffmpeg >/dev/null
+            command -v mediainfo >/dev/null
+            command -v gosu >/dev/null
+            command -v curl >/dev/null
+            command -v upload-assistant-healthcheck >/dev/null
+            test "$(find /Upload-Assistant/bin/mkbrr -type f -name mkbrr -perm /111 | wc -l)" -eq 1
+            test "$(find /Upload-Assistant/bin/bdinfo -type f -name bdinfo -perm /111 | wc -l)" -eq 1
+            test -x /Upload-Assistant/bin/MI/linux/mediainfo
+            test ! -e /Upload-Assistant/data/config.py
+            ! command -v cargo >/dev/null
+            ! command -v rustc >/dev/null
+            ! command -v g++ >/dev/null
+          '

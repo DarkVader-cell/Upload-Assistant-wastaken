@@ -18,6 +18,33 @@ The Docker images are built for multiple architectures:
 
 Docker will automatically pull the correct image for your system architecture.
 
+## Building locally
+
+The image uses independent stages for Python dependencies, architecture-specific
+helper binaries, and the final runtime. BuildKit reuses those stages when only
+application source changes, and the final image does not contain compilers or
+other build toolchains.
+
+```bash
+docker build -t upload-assistant:local .
+```
+
+Normal rebuilds should keep Docker's cache enabled. Requirements and helper
+binaries are intentionally copied before application source so source-only
+changes rebuild only the small application layers. Native Python dependencies
+must provide wheels on both `amd64` and `arm64`; CI checks both architectures.
+
+To inspect the uncompressed local image size:
+
+```bash
+docker image inspect upload-assistant:local --format '{{.Size}} bytes'
+```
+
+The Docker context excludes host configuration, cookies, sessions,
+`docker-data/`, Graphify output, Node modules, tests, caches, and platform-specific
+Windows binaries. Keep mutable configuration and credentials in mounted volumes;
+they are never required to build the image.
+
 ## Usage?
 
 ```
