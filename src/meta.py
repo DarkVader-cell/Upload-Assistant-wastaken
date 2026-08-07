@@ -100,6 +100,7 @@ class Meta:
     description_template_content: str | None = None
     description_template: str | None = None
     description: str = ""
+    dry_run_plan: bool = False
     developer: str | None = None
     directors: list[str] | None = None
     discs_missing_certificate: list[Any] = field(default_factory=list)
@@ -287,6 +288,7 @@ class Meta:
     no_tracker_match: bool = False
     no_year: bool = False
     nohash: bool = False
+    no_resume: bool = False
     non_disc_has_pcm_audio_tracks: bool = False
     not_anime: bool = False
     nsfw: bool | None = None
@@ -318,6 +320,7 @@ class Meta:
     piece_size_constraints_enabled: str | bool = False
     platform: str = ""
     potential_missing: list[Any] = field(default_factory=list)
+    prepare_only: bool = False
     prefer_small_pieces: bool = False
     print_tracker_links: bool = True
     print_tracker_messages: bool = False
@@ -333,6 +336,7 @@ class Meta:
     qbit_cat: str | None = None
     qbit_tag: str | None = None
     queue: str = ""
+    queue_prepare_concurrency: int = 0
     quickie_search: bool = False
     randomized: int = 0
     regex_secondary_title: str = ""

@@ -28,36 +28,42 @@ class TrackerAdapter(Protocol):
 class TrackerRegistry(Mapping[str, TrackerFactory]):
     """Normalized view over the legacy mutable tracker class dictionary."""
 
-    def __init__(self, factories: Mapping[str, Any]) -> None:
+    def __init__(self, factories: Mapping[str, Any], extensions: Mapping[str, Any] | None = None) -> None:
         self._factories = factories
+        self._extensions: dict[str, Any] = {}
+        for name, factory in (extensions or {}).items():
+            normalized = self.normalize(name)
+            if normalized in self._factories:
+                raise ValueError(f"Extension tracker {normalized} conflicts with a built-in tracker")
+            self._extensions[normalized] = factory
 
     @staticmethod
     def normalize(name: str) -> str:
         return name.replace(" ", "").upper().strip()
 
     def __getitem__(self, name: str) -> TrackerFactory:
-        return self._factories[self.normalize(name)]
+        normalized = self.normalize(name)
+        if normalized in self._factories:
+            return self._factories[normalized]
+        return self._extensions[normalized]
 
     def __iter__(self) -> Iterator[str]:
-        return iter(self._factories)
+        return iter(dict.fromkeys((*self._factories, *self._extensions)))
 
     def __len__(self) -> int:
-        return len(self._factories)
+        return len(set(self._factories) | set(self._extensions))
 
     def create(self, name: str, config: dict[str, Any]) -> TrackerAdapter:
         factory = self[name]
         return factory(config=config)
 
     def by_auth_type(self, auth_type: str) -> set[str]:
-        return {
-            name
-            for name, factory in self._factories.items()
-            if getattr(factory, "auth_type", None) == auth_type
-        }
+        return {name for name in self if getattr(self[name], "auth_type", None) == auth_type}
 
     def supports(self, name: str, category: str) -> bool | None:
-        factory = self._factories.get(self.normalize(name))
-        if factory is None:
+        try:
+            factory = self[name]
+        except KeyError:
             return None
         supported = getattr(factory, "supported_categories", None)
         if supported is None:

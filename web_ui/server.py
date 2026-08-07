@@ -35,6 +35,8 @@ from src.manual_metadata import parse_detached_metadata_request, parse_metadata_
 from web_ui.browse_index import BrowseIndex
 from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
 from web_ui.services.presets import load_argument_presets, save_argument_presets
+from web_ui.services.qui_sync import QuiEventBroker, create_qui_sync_blueprint, progress_from_log_line
+from web_ui.services.runtime_api import create_runtime_api_blueprint
 
 
 def _module_name(*parts: str) -> str:
@@ -1143,6 +1145,7 @@ detached_job_queue: list[str] = []
 detached_jobs_lock = threading.Lock()
 detached_worker_thread: threading.Thread | None = None
 DETACHED_JOB_STATE_PATH = Path(__file__).resolve().parent.parent / "tmp" / "qui_jobs.json"
+QUI_EVENT_BROKER = QuiEventBroker()
 
 # Local store for consoles we've wrapped to avoid assigning attributes on Console
 _ua_console_store: dict[int, dict[str, Any]] = {}
@@ -1338,6 +1341,7 @@ def _set_detached_job(job_id: str, **updates: Any) -> None:
             job.update(updates)
             with contextlib.suppress(OSError, TypeError, ValueError):
                 _persist_detached_jobs_locked()
+            QUI_EVENT_BROKER.publish("job.updated", job_id, job)
 
 
 def _restore_detached_jobs() -> None:
@@ -1383,6 +1387,7 @@ def _retry_detached_job(job_id: str) -> bool:
         detached_job_queue.append(job_id)
         with contextlib.suppress(OSError, TypeError, ValueError):
             _persist_detached_jobs_locked()
+        QUI_EVENT_BROKER.publish("job.retried", job_id, job)
     _start_detached_worker()
     return True
 
@@ -1414,12 +1419,8 @@ def _detached_worker() -> None:
                 return
             job_id = detached_job_queue.pop(0)
             job = dict(detached_jobs.get(job_id) or {})
-            if job:
-                job["status"] = "starting"
-                job["message"] = "Starting upload"
-                with contextlib.suppress(OSError, TypeError, ValueError):
-                    _persist_detached_jobs_locked()
         if job:
+            _set_detached_job(job_id, status="starting", message="Starting upload", queue_position=None)
             _run_detached_job(job_id, job)
 
 
@@ -1468,6 +1469,8 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
             if process.stdout is not None:
                 for line in process.stdout:
                     clean_line = strip_ansi(line)
+                    if progress := progress_from_log_line(clean_line):
+                        _set_detached_job(job_id, progress=progress)
                     metadata_request = parse_detached_metadata_request(clean_line.rstrip("\r\n"))
                     if metadata_request is not None:
                         _set_detached_job(
@@ -3544,13 +3547,6 @@ def config_page():
         return "<pre>Internal server error</pre>", 500
 
 
-@app.route("/api/health")
-@limiter.limit("70 per hour", key_func=get_remote_address)
-def health():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy", "success": True, "message": "Upload-Assistant Web UI is running"})
-
-
 @app.route("/api/csrf_token")
 def csrf_token():
     """Return the per-session CSRF token for use by the frontend."""
@@ -4118,6 +4114,7 @@ def qui_submit():
                 detached_jobs[job_id] = job
                 detached_job_queue.append(job_id)
                 _persist_detached_jobs_locked()
+            QUI_EVENT_BROKER.publish("job.queued", job_id, job)
             created.append({key: value for key, value in job.items() if key != "command"})
         except Exception as error:
             errors.append({"path": str(raw_path), "error": str(error)})
@@ -4222,6 +4219,7 @@ def qui_update(job_id: str):
                 return jsonify({"success": False, "error": "Job not found"}), 404
             current.update(updates)
             _persist_detached_jobs_locked()
+    QUI_EVENT_BROKER.publish("job.arguments_updated", job_id, current)
     return jsonify({"success": True, "job_id": job_id, "args": args_text, "status": "queued" if str(job.get("status")) in {"failed", "interrupted"} else str(job.get("status"))})
 
 
@@ -4242,6 +4240,7 @@ def qui_cancel(job_id: str):
             detached_job_queue[:] = [queued_id for queued_id in detached_job_queue if queued_id != job_id]
             job.update({"status": "cancelled", "message": "Cancelled before execution", "finished_at": datetime.now(UTC).isoformat(), "recovery_available": False})
             _persist_detached_jobs_locked()
+            QUI_EVENT_BROKER.publish("job.cancelled", job_id, dict(job))
             return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
         if status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata"}:
             return jsonify({"success": False, "error": "Job is not active"}), 409
@@ -6245,8 +6244,9 @@ def internal_error(e: Exception):
     return jsonify({"error": "Internal server error", "success": False}), 500
 
 
+app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, broker=QUI_EVENT_BROKER, snapshots=_detached_job_snapshot, retry_job=_retry_detached_job))
+app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=Path(__file__).resolve().parent.parent))
+
+
 # Keep these helpers referenced so static analysis does not flag them as unused.
-_ = _cfg_delete
-_ = _json_load_list
-_ = _maybe_log_api_access
-_ = _rate_limit_exceeded
+_ = (_cfg_delete, _json_load_list, _maybe_log_api_access, _rate_limit_exceeded)

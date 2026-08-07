@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from typing import Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import httpx
 
 from src.runtime.metrics import RuntimeMetrics
+
+if TYPE_CHECKING:
+    from src.runtime.scheduler import AdaptiveScheduler
 
 T = TypeVar("T")
 
@@ -24,8 +28,9 @@ def _stable_mapping(value: Mapping[str, str] | None) -> str:
 class HttpClientPool:
     """Own and reuse compatible ``httpx.AsyncClient`` instances per execution."""
 
-    def __init__(self, metrics: RuntimeMetrics | None = None) -> None:
+    def __init__(self, metrics: RuntimeMetrics | None = None, scheduler: AdaptiveScheduler | None = None) -> None:
         self.metrics = metrics or RuntimeMetrics()
+        self.scheduler = scheduler
         self._clients: dict[tuple[object, ...], httpx.AsyncClient] = {}
         self._inflight: dict[str, asyncio.Task[Any]] = {}
         self._lock = asyncio.Lock()
@@ -57,11 +62,30 @@ class HttpClientPool:
         async with self._lock:
             client = self._clients.get(key)
             if client is None:
+                async def request_started(request: httpx.Request) -> None:
+                    if self.scheduler is not None:
+                        await self.scheduler.wait_ready(name)
+                    request.extensions["ua_started_at"] = time.perf_counter()
+
+                async def response_received(response: httpx.Response) -> None:
+                    if self.scheduler is None:
+                        return
+                    started = response.request.extensions.get("ua_started_at")
+                    elapsed = time.perf_counter() - float(started) if isinstance(started, int | float) else 0.0
+                    self.scheduler.record(
+                        name,
+                        elapsed,
+                        success=response.is_success,
+                        status=response.status_code,
+                        headers=response.headers,
+                    )
+
                 client = httpx.AsyncClient(
                     timeout=timeout_config,
                     headers=dict(headers or {}),
                     follow_redirects=follow_redirects,
                     verify=verify,
+                    event_hooks={"request": [request_started], "response": [response_received]},
                 )
                 self._clients[key] = client
                 self.metrics.increment("http.clients.created")

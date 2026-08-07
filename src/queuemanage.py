@@ -37,6 +37,49 @@ async def _read_text_lines(path: str) -> list[str]:
 
 class QueueManager:
     @staticmethod
+    async def plan_queue(path: str, meta: Meta, paths: Sequence[str], base_dir: str) -> QueueList:
+        """Resolve queue inputs without prompts or writes for dry-run planning."""
+        allowed_extensions = [".mkv", ".mp4", ".ts"]
+        queue: QueueList
+
+        if meta.site_upload:
+            queue, _ = await QueueManager.process_site_upload_queue(meta, base_dir)
+        elif path.endswith(".txt") and not meta.unit3d:
+            queue_items: list[QueueItem] = []
+            for line in await _read_text_lines(path):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                args = [value[1:-1] if len(value) > 1 and value[0] == value[-1] and value[0] in "\"'" else value for value in shlex.split(stripped, posix=False)]
+                if args:
+                    queue_items.append({"path": args[0], "args": args, "line": stripped})
+            queue = queue_items
+        elif path.endswith(".txt") and meta.unit3d:
+            queue = await QueueManager.extract_safe_file_locations(path)
+        elif path.endswith(".log") and meta.debug:
+            queue = cast(list[str], await _read_json_file(path))
+        elif meta.queue:
+            queue_log = Path(base_dir) / "tmp" / f"{meta.queue}_queue.log"
+            if queue_log.is_file():
+                queue = cast(list[str], await _read_json_file(str(queue_log)))
+            elif Path(path).exists():
+                queue = await QueueManager.gather_files_recursive(path, allowed_extensions=allowed_extensions)
+            else:
+                queue = await QueueManager.resolve_queue_with_glob_or_split(path, paths, allowed_extensions=allowed_extensions)
+        elif len(paths) > 1:
+            queue = list(dict.fromkeys(paths))
+        elif Path(path).exists():
+            queue = [path]
+        else:
+            queue = await QueueManager.resolve_queue_with_glob_or_split(path, paths, allowed_extensions=allowed_extensions)
+
+        if meta.queue and queue and all(isinstance(item, str) for item in queue):
+            processed_log = await QueueManager.get_log_file(base_dir, meta.queue)
+            processed = await QueueManager.load_processed_files(processed_log)
+            queue = [item for item in cast(list[str], queue) if item not in processed]
+        return queue
+
+    @staticmethod
     async def process_site_upload_queue(meta: Meta, base_dir: str) -> tuple[list[QueueItem], str | None]:
         site_upload = meta.site_upload
         if not site_upload:
@@ -704,6 +747,10 @@ class QueueManager:
 
 async def process_site_upload_queue(meta: Meta, base_dir: str) -> tuple[list[QueueItem], str | None]:
     return await QueueManager.process_site_upload_queue(meta, base_dir)
+
+
+async def plan_queue(path: str, meta: Meta, paths: Sequence[str], base_dir: str) -> QueueList:
+    return await QueueManager.plan_queue(path, meta, paths, base_dir)
 
 
 async def process_site_upload_item(queue_item: Mapping[str, Any], meta: Meta) -> str:

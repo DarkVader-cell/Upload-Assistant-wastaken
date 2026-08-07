@@ -50,8 +50,11 @@ from src.modified_release import detect_modified_release
 from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
+from src.runtime.artifacts import preparation_key
 from src.runtime.context import ExecutionContext
-from src.runtime.pipeline import FunctionStage, Pipeline, StageResult
+from src.runtime.pipeline import FunctionStage, Pipeline, StageResult, StageStatus
+from src.runtime.planner import build_execution_plan, preparation_pipeline_signature
+from src.runtime.queue import SafeParallelPreparation
 from src.takescreens import TakeScreensManager, download_artwork_from_meta
 from src.temp_paths import artwork_dir, screenshots_dir
 from src.torrentcreate import TorrentCreator
@@ -2057,6 +2060,26 @@ async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionCo
         async with ExecutionContext.create(base_dir, config) as owned_context:
             return await process_meta(meta, base_dir, owned_context)
 
+    extension_registry = execution_context.extensions
+    pipeline_signature = preparation_pipeline_signature(tuple(stage.name for stage in extension_registry.pipeline_stages))
+    source_path = str(meta.path or "")
+    run_key = await asyncio.to_thread(preparation_key, source_path, meta, pipeline_signature)
+    workspace_name = meta.uuid or Path(source_path).name
+    workspace = Path(base_dir) / "tmp" / workspace_name
+    invocation = {
+        "base_dir": meta.base_dir,
+        "item_args": meta.item_args,
+        "path": meta.path,
+        "trackers": meta.trackers,
+    }
+    restored = await execution_context.artifacts.restore(run_key, workspace)
+    if restored is not None:
+        meta.update(restored)
+        meta.update(invocation)
+        execution_context.metrics.increment("artifacts.preparation.hits")
+        return True
+    execution_context.metrics.increment("artifacts.preparation.misses")
+
     succeeded = False
     prepared: tuple[Meta, Prep] | None = None
 
@@ -2068,18 +2091,33 @@ async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionCo
     async def prepare_release(_context: ExecutionContext, _release_meta: Meta) -> StageResult:
         nonlocal succeeded
         if prepared is None:
-            return StageResult.stopped("initial preparation did not complete")
-        prepared_meta, prep = prepared
+            if not meta.imghost:
+                return StageResult.stopped("initial preparation did not complete")
+            resumed_prep = Prep(screens=meta.screens, img_host=meta.imghost, config=config, publish_preview=_publish_webui_preview_target)
+            resumed = (meta, resumed_prep)
+        else:
+            resumed = prepared
+        prepared_meta, prep = resumed
         succeeded = await _process_meta_after_initial(prepared_meta, base_dir, prep)
         return StageResult.completed() if succeeded else StageResult.stopped("release preparation failed")
 
+    stages = [
+        FunctionStage("gather_initial_metadata", gather_initial),
+        FunctionStage("prepare_release", prepare_release),
+        *extension_registry.pipeline_stages,
+    ]
     pipeline = Pipeline(
-        [
-            FunctionStage("gather_initial_metadata", gather_initial),
-            FunctionStage("prepare_release", prepare_release),
-        ]
+        stages,
+        checkpoint_store=execution_context.checkpoints,
+        run_key=run_key,
+        resume=not meta.no_resume,
+        signature=pipeline_signature,
     )
-    await pipeline.run(execution_context, meta)
+    results = await pipeline.run(execution_context, meta)
+    succeeded = bool(results) and all(result.status is not StageStatus.STOPPED for result in results)
+    if succeeded and meta.uuid:
+        await execution_context.artifacts.capture(run_key, Path(base_dir) / "tmp" / meta.uuid, meta.to_dict())
+        execution_context.metrics.increment("artifacts.preparation.writes")
     return succeeded
 
 
@@ -2335,7 +2373,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
             break
 
     meta.ua_name = "Upload-Assistant"
-    meta.current_version = await update_notification(base_dir, execution_context)
+    meta.current_version = ""
 
     # Do not add an Upload Assistant identity/signature to generated descriptions.
     meta.ua_signature = ""
@@ -2489,6 +2527,18 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
         if path.endswith('"'):
             path = path[:-1]
 
+        if meta.dry_run_plan:
+            queue_list = await QueueManager.plan_queue(path, meta, paths, base_dir)
+            plans: list[dict[str, Any]] = []
+            for queue_item in queue_list:
+                planned_path = str(queue_item.get("path") or "") if isinstance(queue_item, Mapping) else str(queue_item)
+                if planned_path:
+                    plans.append((await build_execution_plan(execution_context, meta, planned_path)).to_dict())
+            logger.info(json.dumps({"plans": plans}, indent=2), extra={"markup": False, "highlighter": None})
+            return
+
+        meta.current_version = await update_notification(base_dir, execution_context)
+
         is_binary = await get_mkbrr_path(base_dir)
         if not meta.mkbrr:
             try:
@@ -2509,10 +2559,64 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
         skipped_files_count = 0
         base_meta = meta.copy()
 
-        for queue_item in queue_list:
+        configured_parallel = config.get("DEFAULT", {}).get("queue_prepare_concurrency", 1)
+        requested_parallel = meta.queue_prepare_concurrency or configured_parallel
+        try:
+            preparation_concurrency = max(1, int(requested_parallel))
+        except (TypeError, ValueError):
+            preparation_concurrency = 1
+        parallel_prepared: dict[int, tuple[Meta, bool]] = {}
+        can_prepare_in_parallel = (
+            preparation_concurrency > 1
+            and bool(meta.queue)
+            and bool(meta.unattended)
+            and not meta.site_upload_queue
+            and not meta.args_line_queue
+            and all(isinstance(item, str) for item in queue_list)
+            and len({Path(str(item)).name for item in queue_list}) == len(queue_list)
+        )
+
+        if can_prepare_in_parallel:
+            logger.info(f"[cyan]Preparing up to {preparation_concurrency} queue items concurrently; uploads remain serialized.[/cyan]")
+            preparation_pool: SafeParallelPreparation[tuple[int, str], tuple[int, Meta, bool]] = SafeParallelPreparation(preparation_concurrency)
+
+            async def prepare_queue_item(index_and_path: tuple[int, str]) -> tuple[int, Meta, bool]:
+                index, item_path = index_and_path
+                prepared_meta = base_meta.copy()
+                prepared_meta.path = item_path
+                prepared_meta.uuid = ""
+                prepared_meta.item_args = [item_path]
+                prepared_tmp = Path(base_dir) / "tmp" / Path(item_path).name
+                ensure_secure_tmp_subdir(prepared_tmp)
+                token = current_release_log_path.set(str(prepared_tmp / f"prepare_{int(time.time())}.log"))
+                try:
+                    meta_file = prepared_tmp / "meta.json"
+                    keep_meta = bool(config["DEFAULT"].get("keep_meta", False))
+                    if keep_meta and meta_file.exists() and not prepared_meta.delete_meta:
+                        async with aiofiles.open(meta_file, encoding="utf-8") as existing:
+                            content = await existing.read()
+                        if content.strip():
+                            await merge_meta(prepared_meta, cast(dict[str, Any], json.loads(content)))
+                    succeeded = await process_meta(prepared_meta, base_dir, execution_context)
+                    return index, prepared_meta, succeeded
+                finally:
+                    await cancel_and_drain_early_artifact_tasks(prepared_meta.uuid)
+                    current_release_log_path.reset(token)
+
+            prepared_results = await preparation_pool.prepare(list(enumerate(cast(list[str], queue_list))), prepare_queue_item)
+            for result in prepared_results:
+                if isinstance(result, BaseException):
+                    logger.warning(f"[yellow]Parallel preparation worker failed: {result}; item will retry sequentially.[/yellow]")
+                    continue
+                index, prepared_meta, succeeded = result
+                parallel_prepared[index] = (prepared_meta, succeeded)
+
+        for queue_index, queue_item in enumerate(queue_list):
             total_files = len(queue_list)
             current_item_path: str = ""
             tmp_path = ""
+            parallel_meta_success: bool | None = None
+            was_parallel_prepared = False
             current_release_log_path.set(None)
             try:
                 meta = base_meta.copy()
@@ -2559,9 +2663,16 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     else:
                         meta.item_args = list(sys.argv[1:])
 
-                meta.path = path
-                meta.uuid = ""
-                _publish_webui_preview_target(path)
+                parallel_result = parallel_prepared.get(queue_index)
+                was_parallel_prepared = parallel_result is not None
+                if parallel_result is not None:
+                    meta, parallel_meta_success = parallel_result
+                    path = str(meta.path or path)
+                    _publish_webui_preview_target(path, meta.uuid or None)
+                else:
+                    meta.path = path
+                    meta.uuid = ""
+                    _publish_webui_preview_target(path)
 
                 if not path:
                     raise ValueError("The 'path' variable is not defined or is empty.")
@@ -2572,7 +2683,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                 ensure_secure_tmp_subdir(tmp_path)
                 current_release_log_path.set(str(Path(tmp_path) / f"upload_{int(time.time())}.log"))
 
-                if meta.delete_tmp and Path(tmp_path).exists():
+                if not was_parallel_prepared and meta.delete_tmp and Path(tmp_path).exists():
                     try:
                         shutil.rmtree(tmp_path)
                         if os.name != "nt":
@@ -2588,7 +2699,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
                 keep_meta = config["DEFAULT"].get("keep_meta", False)
 
-                if not keep_meta or meta.delete_meta:
+                if not was_parallel_prepared and (not keep_meta or meta.delete_meta):
                     if Path(meta_file).exists():
                         try:
                             meta_file.unlink()
@@ -2598,7 +2709,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     else:
                         logger.debug(f"[yellow]No metadata file found at {meta_file}")
 
-                if keep_meta and Path(meta_file).exists():
+                if not was_parallel_prepared and keep_meta and Path(meta_file).exists():
                     async with aiofiles.open(meta_file, encoding="utf-8") as f:
                         content = await f.read()
                         saved_meta = cast(dict[str, Any], json.loads(content)) if content.strip() else {}
@@ -2614,15 +2725,25 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
             logger.info(f"[green]Gathering info for {Path(path).name}")
 
-            try:
-                meta_success = await process_meta(meta, base_dir, execution_context)
-            finally:
-                await cancel_and_drain_early_artifact_tasks(meta.uuid)
+            if parallel_meta_success is None:
+                try:
+                    meta_success = await process_meta(meta, base_dir, execution_context)
+                finally:
+                    await cancel_and_drain_early_artifact_tasks(meta.uuid)
+            else:
+                meta_success = parallel_meta_success
             if not meta_success:
                 if "queue" in meta and meta.queue is not None:
                     processed_files_count += 1
                     skipped_files_count += 1
                     logger.info(f"[yellow]Upload preparation failed for {current_item_path}; leaving it retryable in the queue.\n\n")
+                await cleanup_manager.cleanup()
+                gc.collect()
+                cleanup_manager.reset_terminal()
+                continue
+
+            if meta.prepare_only:
+                logger.info(f"[green]Preparation checkpoint saved for {current_item_path or path}[/green]")
                 await cleanup_manager.cleanup()
                 gc.collect()
                 cleanup_manager.reset_terminal()
@@ -2712,7 +2833,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                         t_upper = (tracker).upper().strip()
                         if t_upper == "USENET":
                             continue
-                        tracker_class = tracker_class_map.get(t_upper)
+                        tracker_class = tracker_setup.registry.get(t_upper)
                         if tracker_class and getattr(tracker_class, "is_usenet", False):
                             usenet_trackers.append(tracker)
                             continue
@@ -2841,12 +2962,11 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                         # zero-success items unlogged lets unattended Qui
                         # queues retry them after a restart instead of
                         # silently losing work.
-                        if upload_succeeded or meta.debug:
-                            if log_file and (not meta.debug or "debug" in Path(log_file).name):
-                                if meta.site_upload_queue:
-                                    await QueueManager.save_processed_path(log_file, current_item_path)
-                                else:
-                                    await save_processed_file(log_file, current_item_path)
+                        if (upload_succeeded or meta.debug) and log_file and (not meta.debug or "debug" in Path(log_file).name):
+                            if meta.site_upload_queue:
+                                await QueueManager.save_processed_path(log_file, current_item_path)
+                            else:
+                                await save_processed_file(log_file, current_item_path)
 
             finish_time = time.time()
             logger.debug(f"Uploads processed in {finish_time - start_time:.4f} seconds")

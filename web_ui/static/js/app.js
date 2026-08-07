@@ -1598,6 +1598,7 @@ function AudionutsUAGUI() {
   const [operationsOpen, setOperationsOpen] = useState(false);
   const [detachedJobs, setDetachedJobs] = useState([]);
   const [operationsLoading, setOperationsLoading] = useState(false);
+  const [runtimeHealth, setRuntimeHealth] = useState(null);
   const [operationDrafts, setOperationDrafts] = useState({});
   const [operationInput, setOperationInput] = useState({});
   const [operationLog, setOperationLog] = useState({});
@@ -1638,12 +1639,29 @@ function AudionutsUAGUI() {
     }
   }, [API_BASE]);
 
+  const loadRuntimeHealth = useCallback(async () => {
+    try {
+      const response = await apiFetch(`${API_BASE}/runtime/health`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) setRuntimeHealth(data);
+    } catch (error) {
+      console.error("Failed to load runtime health:", error);
+    }
+  }, [API_BASE]);
+
   useEffect(() => {
     if (!operationsOpen && activePanel !== "operations") return undefined;
     loadDetachedJobs();
     const timer = window.setInterval(loadDetachedJobs, 2500);
     return () => window.clearInterval(timer);
   }, [activePanel, loadDetachedJobs, operationsOpen]);
+
+  useEffect(() => {
+    if (!operationsOpen && activePanel !== "operations") return undefined;
+    loadRuntimeHealth();
+    const timer = window.setInterval(loadRuntimeHealth, 15000);
+    return () => window.clearInterval(timer);
+  }, [activePanel, loadRuntimeHealth, operationsOpen]);
 
   useEffect(() => {
     if (activePanel === "operations") setOperationsOpen(true);
@@ -1720,6 +1738,15 @@ function AudionutsUAGUI() {
             {overlay && <button onClick={() => { setOperationsOpen(false); setActivePanel("main"); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>Close</button>}
           </div>
         </div>
+        {runtimeHealth && (
+          <div className={`mb-4 grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2 lg:grid-cols-4 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
+            <div><span className="block opacity-60">Runtime</span><span className={`font-semibold ${runtimeHealth.status === "healthy" ? "text-emerald-500" : "text-amber-500"}`}>{runtimeHealth.status}</span></div>
+            <div><span className="block opacity-60">Artifact reuse</span><span className="font-semibold">{runtimeHealth.cache?.artifacts?.entries || 0} releases / {runtimeHealth.cache?.artifacts?.objects || 0} objects</span></div>
+            <div><span className="block opacity-60">Resumable stages</span><span className="font-semibold">{runtimeHealth.checkpoints?.completed_stages || 0} checkpoints</span></div>
+            <div><span className="block opacity-60">Providers</span><span className="font-semibold">{Object.keys(runtimeHealth.scheduler?.providers || {}).length} observed</span></div>
+            <div className="sm:col-span-2 lg:col-span-4"><span className="opacity-60">External tools: </span><span>{Object.entries(runtimeHealth.tools || {}).map(([name, available]) => `${name}:${available ? "ok" : "missing"}`).join(" · ")}</span></div>
+          </div>
+        )}
         {!detachedJobs.length ? (
           <div className={`rounded-lg border border-dashed p-8 text-center text-sm ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>No unattended jobs yet.</div>
         ) : (
@@ -1740,6 +1767,12 @@ function AudionutsUAGUI() {
                       </div>
                       <p className="mt-1 break-all text-sm font-medium">{job.source_path}</p>
                       <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{job.message || ""}</p>
+                      {job.progress && (job.progress.percent !== undefined || job.progress.stage) && (
+                        <div className="mt-2">
+                          <div className="mb-1 flex justify-between text-[11px] opacity-70"><span>{job.progress.stage || "progress"}</span><span>{job.progress.percent !== undefined ? `${job.progress.percent}%` : ""}</span></div>
+                          {job.progress.percent !== undefined && <div className={`h-1.5 overflow-hidden rounded-full ${isDarkMode ? "bg-gray-700" : "bg-gray-200"}`}><div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress.percent) || 0))}%` }} /></div>}
+                        </div>
+                      )}
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button onClick={() => performJobAction(job.id, "log")} className={`rounded border px-2 py-1 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}>Log</button>

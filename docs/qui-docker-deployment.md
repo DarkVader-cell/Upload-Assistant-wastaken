@@ -80,6 +80,8 @@ The existing Qui programs should continue to use `/config/ua-submit` with
 their current path mappings. That wrapper posts to `/api/qui/submit`, adds
 unattended mode, and reads the API token from `/config/.ua-token`.
 
+For dashboards or automation, use `/api/qui/events` with a persisted cursor for incremental updates, `/api/qui/summary` for low-cost counts, and `/api/qui/retry` for validated bulk recovery. `/api/qui/status` remains the authoritative resynchronization snapshot. All endpoints use the same Upload Assistant API token policy as the submit wrapper.
+
 No Qui database migration is required. Both existing external-program entries
 already point to this wrapper; historical stale IPs in old logs are not active
 configuration.

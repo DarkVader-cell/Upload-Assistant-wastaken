@@ -12,6 +12,23 @@ This document summarizes the Web UI HTTP API implemented in web_ui/server.py. Fo
 - Description: basic health check
 - Response: {"status": "healthy", "success": true, "message": "..."}
 
+### /api/runtime/health
+
+- Methods: GET
+- Auth: authenticated session with CSRF/same-origin validation, or an accepted bearer token
+- Rate limit: 120 per hour
+- Description: returns detailed, non-secret runtime health for preparation caches, checkpoints, adaptive provider telemetry, configured torrent clients and Qui capabilities, external tools, and extensions
+- Response: `{"success":true,"status":"healthy|degraded","cache":{...},"checkpoints":{...},"scheduler":{...},"clients":{...},"tools":{...},"extensions":{...}}`
+
+### /api/plan
+
+- Methods: POST
+- Auth: authenticated session with CSRF/same-origin validation, or an accepted bearer token
+- Rate limit: 300 per hour
+- Payload: `{"path":"/media/release.mkv","args":"--trackers AITHER,BLU"}`
+- Description: validates the path and Upload Assistant arguments, then returns a read-only execution plan. It does not prepare files, contact trackers, or mutate queue/client state.
+- Response: `{"success":true,"plan":{"path":"...","trackers":[...],"stages":[...],"estimated_api_calls":N,"resumable":true,"warnings":[]}}`
+
 ### /api/execute
 
 - Methods: POST, OPTIONS
@@ -102,6 +119,14 @@ a Web UI or container restart. Jobs that were already running when the Web UI
 stopped are reported as `interrupted` and retained for safe retry; they are not
 blindly replayed because a tracker may have accepted the request before the
 process stopped.
+
+Qui and other automation clients can avoid repeatedly transferring the full job list:
+
+- `GET /api/qui/events?cursor=0&wait=20` long-polls for up to 25 seconds and returns incremental job events plus the next monotonic cursor. Events omit subprocess commands.
+- `GET /api/qui/summary` returns compact status counts, active/queued totals, and the total retained jobs.
+- `POST /api/qui/retry` retries all failed/interrupted jobs, or only `{"job_ids":["..."]}`. Invalid and non-retryable jobs are left unchanged.
+
+Consumers should persist the returned cursor, apply events in order, and fall back to `/api/qui/status` after a long disconnect because the event buffer is bounded. The existing status endpoint remains the authoritative snapshot.
 
 ### /api/qui/retry/<job_id>
 

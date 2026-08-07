@@ -1,16 +1,16 @@
 # Complementary Feature Roadmap
 
-This backlog is intentionally separate from the behavior-preserving refactor. Scores use a five-point scale; higher workflow and performance scores are better, while lower risk and upstream-conflict scores are better.
+These workflow features are now implemented behind compatible defaults. Scores use a five-point scale; higher workflow and performance scores are better, while lower risk and upstream-conflict scores are better.
 
-| Rank | Feature | Workflow | Performance | Risk | Upstream conflict | Rationale |
-| ---: | --- | ---: | ---: | ---: | ---: | --- |
-| 1 | Content-addressed preparation artifacts | 5 | 5 | 3 | 2 | Reuse hashes, MediaInfo, screenshots, descriptions, and metadata across retries or multiple trackers. |
-| 2 | Stage-level resumable queues | 5 | 4 | 3 | 2 | Resume after the last completed pipeline stage instead of restarting a release. |
-| 3 | Dry-run execution planner | 5 | 3 | 2 | 1 | Show stages, cache hits, expected API calls, selected trackers, and estimated work before execution. |
-| 4 | Adaptive provider and tracker scheduler | 4 | 5 | 4 | 2 | Use observed latency and rate-limit headers to maximize safe concurrency. |
-| 5 | Provider/client health dashboard | 4 | 3 | 2 | 1 | Surface cache efficiency, API health, Qui status, client connectivity, and external-tool availability. |
-| 6 | Stable extension/plugin API | 4 | 3 | 4 | 1 | Add trackers and metadata providers outside upstream-owned modules, sharply reducing merge conflicts. |
-| 7 | Deeper Qui synchronization | 4 | 3 | 3 | 1 | Mirror queue state, progress, retry controls, and completion status through the existing optional native API. |
-| 8 | Safe parallel queue preparation | 4 | 5 | 4 | 3 | Prepare independent releases concurrently while serializing prompts and tracker mutations. |
+| Rank | Feature                                 | Status      | Workflow | Performance | Risk | Upstream conflict | Rationale                                                                                                                  |
+| ---: | --------------------------------------- | ----------- | -------: | ----------: | ---: | ----------------: | -------------------------------------------------------------------------------------------------------------------------- |
+|    1 | Content-addressed preparation artifacts | Implemented |        5 |           5 |    3 |                 2 | Reuses generated files from immutable SHA-256 objects and per-release manifests.                                           |
+|    2 | Stage-level resumable queues            | Implemented |        5 |           4 |    3 |                 2 | Atomically restores completed stages when the source, options, and pipeline signature still match.                         |
+|    3 | Dry-run execution planner               | Implemented |        5 |           3 |    2 |                 1 | CLI and API plans show stages, cache hits, calls, trackers, work, and warnings without mutation.                           |
+|    4 | Adaptive provider and tracker scheduler | Implemented |        4 |           5 |    4 |                 2 | Persists latency/failure/rate-limit telemetry, applies cooldowns, bounds concurrency, and serializes provider mutations.   |
+|    5 | Provider/client health dashboard        | Implemented |        4 |           3 |    2 |                 1 | The Operations UI and authenticated API expose caches, checkpoints, tools, clients, extensions, and provider health.       |
+|    6 | Stable extension/plugin API             | Implemented |        4 |           3 |    4 |                 1 | Versioned opt-in entry points and local modules add trackers, providers, stages, and health checks outside upstream files. |
+|    7 | Deeper Qui synchronization              | Implemented |        4 |           3 |    3 |                 1 | Cursor events, compact summaries, progress, argument updates, cancellation, and bulk retry complement status polling.      |
+|    8 | Safe parallel queue preparation         | Implemented |        4 |           5 |    4 |                 3 | Unattended regular queues can prepare unique workspaces concurrently while uploads and mutations remain ordered.           |
 
-Recommended sequence: artifact reuse, stage checkpoints, dry-run planning, then adaptive scheduling. The plugin API should be designed alongside those features but introduced only after the tracker and provider contracts stabilize.
+All features default to conservative behavior: extensions are off, queue preparation concurrency is one, and interactive queues stay sequential. Cache/checkpoint formats and the extension API are versioned so upstream changes can invalidate state without removing compatibility code.

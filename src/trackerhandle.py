@@ -15,14 +15,17 @@ from src.cogs.redaction import Redaction
 from src.config_helpers import format_terminal_link
 from src.console import logger
 from src.dupe_checking import DupeChecker
+from src.extensions import load_extensions
 from src.get_desc import DescriptionBuilder
 from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
 from src.rehostimages import check_tracker_image_hosts
+from src.runtime.context import current_execution_context
+from src.runtime.scheduler import AdaptiveScheduler
+from src.trackers.adapter import TrackerRegistry
 from src.trackers.passthepopcorn import PassThePopcorn
 from src.trackers.torrenthr import TorrentHR
-from src.trackers.adapter import TrackerRegistry
 from src.trackersetup import TrackerSetup
 
 type StatusDict = dict[str, Any]
@@ -71,7 +74,11 @@ async def process_trackers(
     other_api_trackers: Sequence[str],
     upload_target: str = "tracker",
 ) -> None:
-    registry = TrackerRegistry(tracker_class_map)
+    extensions = load_extensions(meta.base_dir, config)
+    registry = TrackerRegistry(tracker_class_map, extensions.trackers)
+    api_tracker_names = set(api_trackers) | registry.by_auth_type("unit3d_api")
+    other_api_tracker_names = set(other_api_trackers) | registry.by_auth_type("other_api")
+    http_tracker_names = set(http_trackers) | registry.by_auth_type("cookies")
     tracker_setup = TrackerSetup(config=config)
     tracker_setup_any = cast(Any, tracker_setup)
     enabled_trackers = list(cast(Sequence[str], tracker_setup_any.trackers_enabled(meta)))
@@ -212,7 +219,7 @@ async def process_trackers(
                                 return False
             return True
 
-        if tracker in api_trackers:
+        if tracker in api_tracker_names:
             tracker_status = meta.tracker_status
             upload_status = cast(Mapping[str, Any], tracker_status.get(tracker, {})).get("upload", False)
             if upload_status:
@@ -257,7 +264,7 @@ async def process_trackers(
                     print_tracker_result(tracker, tracker_class, status, False)
                     logger.info(f"[red]{tracker} upload failed or returned data error.[/red]")
 
-        elif tracker in other_api_trackers or tracker in http_trackers:
+        elif tracker in other_api_tracker_names or tracker in http_tracker_names:
             tracker_status = meta.tracker_status
             upload_status = cast(Mapping[str, Any], tracker_status.get(tracker, {})).get("upload", False)
             if upload_status:
@@ -315,7 +322,7 @@ async def process_trackers(
                         tracker_class = registry.create(manual_tracker, config)
                         try:
                             await check_tracker_image_hosts(meta, tracker_class)
-                            if manual_tracker in api_trackers:
+                            if manual_tracker in api_tracker_names:
                                 await DescriptionBuilder(manual_tracker, config).unit3d_edit_desc(meta, manual_tracker)
                             else:
                                 await tracker_class.edit_desc(meta)
@@ -397,11 +404,22 @@ async def process_trackers(
 
     bandwidth_control = meta.qbit_bandwidth_control or config["DEFAULT"].get("qbit_bandwidth_control", False)
 
+    execution_context = current_execution_context()
+    scheduler = execution_context.scheduler if execution_context is not None else AdaptiveScheduler(meta.base_dir, config)
+    enabled_trackers = scheduler.ordered(enabled_trackers)
+
+    async def scheduled_tracker(tracker: str) -> None:
+        await scheduler.run(
+            f"tracker:{tracker}",
+            lambda: process_single_tracker(tracker),
+            serialize_mutation=True,
+        )
+
     if ((not meta.tv_pack and one_disc) or multi_screens == 0) and not bandwidth_control:
         # Run all tracker tasks concurrently with individual error handling
         tasks: list[tuple[str, asyncio.Task[None]]] = []
         for tracker in enabled_trackers:
-            task = asyncio.create_task(process_single_tracker(tracker))
+            task = asyncio.create_task(scheduled_tracker(tracker))
             tasks.append((tracker, task))
 
         # Wait for all tasks to complete, but don't let one tracker's failure stop others
@@ -415,6 +433,9 @@ async def process_trackers(
     else:
         # Process each tracker sequentially
         for tracker in enabled_trackers:
-            await process_single_tracker(tracker)
+            await scheduled_tracker(tracker)
+
+    if execution_context is None:
+        await scheduler.close()
 
     logger.info(f"[green]All {upload_target} uploads processed.[/green]")

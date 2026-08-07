@@ -8,9 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from src.extensions import ExtensionRegistry, load_extensions
 from src.metadata_cache import MetadataCache, cache_for
+from src.runtime.artifacts import ArtifactStore
+from src.runtime.checkpoints import CheckpointStore
 from src.runtime.http import HttpClientPool
 from src.runtime.metrics import RuntimeMetrics
+from src.runtime.scheduler import AdaptiveScheduler
 from src.runtime.subprocesses import SubprocessManager
 
 _CURRENT_CONTEXT: contextvars.ContextVar[ExecutionContext | None] = contextvars.ContextVar(
@@ -27,13 +31,21 @@ class ExecutionContext:
     config: dict[str, Any]
     metrics: RuntimeMetrics = field(default_factory=RuntimeMetrics)
     cancelled: asyncio.Event = field(default_factory=asyncio.Event)
+    artifacts: ArtifactStore = field(init=False)
+    checkpoints: CheckpointStore = field(init=False)
+    extensions: ExtensionRegistry = field(init=False)
     http: HttpClientPool = field(init=False)
+    scheduler: AdaptiveScheduler = field(init=False)
     subprocesses: SubprocessManager = field(init=False)
     _context_token: contextvars.Token[ExecutionContext | None] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         self.base_dir = self.base_dir.resolve()
-        self.http = HttpClientPool(self.metrics)
+        self.artifacts = ArtifactStore(self.base_dir, self.config)
+        self.checkpoints = CheckpointStore(self.base_dir, self.config)
+        self.extensions = load_extensions(self.base_dir, self.config)
+        self.scheduler = AdaptiveScheduler(self.base_dir, self.config)
+        self.http = HttpClientPool(self.metrics, self.scheduler)
         default = self.config.get("DEFAULT", {}) if isinstance(self.config, dict) else {}
         try:
             concurrency = int(default.get("subprocess_concurrency", 4)) if isinstance(default, dict) else 4
@@ -65,6 +77,7 @@ class ExecutionContext:
     async def close(self) -> None:
         await self.subprocesses.close()
         await self.http.close()
+        await self.scheduler.close()
 
     async def __aenter__(self) -> ExecutionContext:
         self._context_token = _CURRENT_CONTEXT.set(self)

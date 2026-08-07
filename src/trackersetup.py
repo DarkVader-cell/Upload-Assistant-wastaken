@@ -15,7 +15,9 @@ import httpx
 from data.example_config import config as example_config
 from src.cleanup import cleanup_manager
 from src.console import logger
+from src.extensions import load_extensions
 from src.meta import Meta
+from src.trackers.adapter import TrackerRegistry
 from src.trackers.alpharatio import AlphaRatio
 from src.trackers.amigosshare import AmigosShare
 from src.trackers.anthelion import Anthelion
@@ -101,7 +103,6 @@ from src.trackers.UNIT3D.znth import Zenith
 from src.trackers.USENET.curupira import Curupira
 from src.trackers.USENET.drunkenslug import DrunkenSlug
 from src.trackers.USENET.suio import Suio
-from src.trackers.adapter import TrackerRegistry
 
 JsonDict = dict[str, Any]
 example_config: dict[str, Any]
@@ -110,7 +111,9 @@ example_config: dict[str, Any]
 class TrackerSetup:
     def __init__(self, config: dict[str, Any]):
         self.config: dict[str, Any] = config
-        self.registry = tracker_registry
+        project_root = Path(__file__).resolve().parent.parent
+        extensions = load_extensions(project_root, config)
+        self.registry = TrackerRegistry(tracker_class_map, extensions.trackers)
 
     def _create_tracker_instance(self, tracker: str) -> Any | None:
         if tracker.upper() not in self.registry:
@@ -184,7 +187,7 @@ class TrackerSetup:
         if meta.manual:
             trackers.insert(0, "MANUAL")
 
-        valid_trackers = [t for t in trackers if t in tracker_class_map or t in ("MANUAL", "USENET")]
+        valid_trackers = [t for t in trackers if t in self.registry or t in ("MANUAL", "USENET")]
         removed_trackers = set(trackers) - set(valid_trackers)
 
         for tracker in removed_trackers:

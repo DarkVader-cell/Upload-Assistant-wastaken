@@ -59,6 +59,25 @@ Important gotchas:
 - `tmdb_api` (str, required): TMDb API key. Get it from https://www.themoviedb.org/settings/api
 - `btn_api` (str): BTN API key (used to fetch BTN details).
 
+### Preparation runtime
+
+- `preparation_artifacts_enabled` (bool): Reuse content-addressed metadata, screenshot, description, and torrent artifacts across retries and tracker sets.
+- `preparation_artifacts_dir` (str): Artifact manifest/object directory, relative to the project root unless absolute.
+- `stage_checkpoints_enabled` (bool): Resume unchanged releases after their latest completed preparation stage.
+- `stage_checkpoints_dir` (str): Durable stage state directory.
+- `adaptive_scheduler_enabled` (bool): Order providers and trackers using observed latency, failures, and rate-limit cooldowns.
+- `adaptive_scheduler_concurrency` (int): Maximum concurrent scheduled provider/tracker work.
+- `adaptive_scheduler_state` (str): Non-secret scheduler telemetry file.
+- `queue_prepare_concurrency` (int): Number of unattended regular queue items to prepare concurrently. Uploads and client mutations remain serialized; `1` preserves sequential preparation.
+- `extensions_enabled` (bool): Opt in to third-party extensions. Disabled by default.
+- `extension_paths` (list[str]): Local extension directories. Each `.py` file must export `register(registry)` against extension API version 1.
+
+CLI workflow controls:
+
+- `--plan` / `--dry-run-plan`: Print stages, cache/checkpoint hits, expected external calls, selected trackers, and estimated work without execution.
+- `--no-resume`: Ignore stage checkpoints for one run.
+- `--queue-prepare-concurrency N`: Override bounded unattended preparation concurrency for one queue run.
+
 ### Image host selection (priority list)
 
 Order matters: `img_host_1` is primary, later hosts are fallbacks.

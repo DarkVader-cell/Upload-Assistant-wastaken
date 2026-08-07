@@ -57,6 +57,27 @@ config: dict[str, Any] = {
             "musicbrainz": {"enabled": True, "ttl_hours": 720},
             "discogs": {"enabled": True, "ttl_hours": 720},
         },
+        # PREPARATION RUNTIME
+        # Reuse generated metadata, screenshots, descriptions, and torrent files
+        # by storing immutable, content-addressed preparation artifacts.
+        "preparation_artifacts_enabled": True,
+        "preparation_artifacts_dir": "data/cache/preparation",
+        # Save completed pipeline stages so interrupted releases resume at the
+        # next stage when their source and preparation options are unchanged.
+        "stage_checkpoints_enabled": True,
+        "stage_checkpoints_dir": "data/cache/checkpoints",
+        # Learn provider/tracker latency and rate-limit cooldowns while keeping a
+        # hard upper bound on network concurrency.
+        "adaptive_scheduler_enabled": True,
+        "adaptive_scheduler_concurrency": 4,
+        "adaptive_scheduler_state": "data/cache/runtime/scheduler.json",
+        # Unattended regular queues may prepare independent releases in parallel.
+        # Tracker uploads and client mutations remain in the ordered main loop.
+        "queue_prepare_concurrency": 1,
+        # Extensions are opt-in. Files in extension_paths must expose
+        # register(registry) and use the versioned API from src/extensions.py.
+        "extensions_enabled": False,
+        "extension_paths": ["data/plugins"],
         # TRACKER METADATA CACHE
         # Saves metadata fetched from a tracker when you provide a specific
         # torrent ID (for example, --ptp, --hdb, or a tracker link in a torrent
