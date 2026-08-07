@@ -28,6 +28,12 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall src web_ui upload.py config-generator.py
 
+      - name: Check architecture boundaries
+        run: python scripts/architecture_guard.py
+
+      - name: Run runtime benchmark smoke test
+        run: python benchmarks/benchmark_runtime.py --smoke
+
   tests:
     name: Pytest (${{ matrix.os }})
     runs-on: ${{ matrix.runner }}
