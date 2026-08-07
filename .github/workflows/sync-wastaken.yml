@@ -6,8 +6,10 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: write
   contents: write
   issues: write
+  pull-requests: write
 
 concurrency:
   group: sync-wastaken
@@ -66,6 +68,70 @@ jobs:
       - name: Push fast-forward
         if: steps.sync.outputs.changed == 'true'
         run: git push origin dev
+
+      - name: Run validation for updated dev
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pr-validation.yml --ref dev
+
+      - name: Open or refresh dev promotion pull request
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const comparison = await github.rest.repos.compareCommits({
+              owner,
+              repo,
+              base: 'main',
+              head: 'dev',
+            });
+            if (comparison.data.ahead_by === 0) {
+              core.info('dev has no commits to promote to main.');
+              return;
+            }
+
+            const title = 'Sync validated dev into main';
+            const body = [
+              'Automated promotion PR for the upstream integration branch.',
+              '',
+              `Commits ahead of main: **${comparison.data.ahead_by}**`,
+              `Latest upstream commit: \`${{ steps.sync.outputs.latest }}\``,
+              '',
+              'The sync workflow dispatched the cross-platform validation suite for `dev`.',
+            ].join('\n');
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              base: 'main',
+              head: `${owner}:dev`,
+              per_page: 20,
+            });
+            const existing = pulls[0];
+            if (existing) {
+              await github.rest.pulls.update({
+                owner,
+                repo,
+                pull_number: existing.number,
+                title,
+                body,
+              });
+              core.info(`Updated promotion PR #${existing.number}.`);
+              return;
+            }
+            const { data: created } = await github.rest.pulls.create({
+              owner,
+              repo,
+              title,
+              body,
+              head: 'dev',
+              base: 'main',
+              draft: false,
+            });
+            core.info(`Created promotion PR #${created.number}.`);
 
       - name: Report divergence
         if: failure() && steps.sync.outputs.diverged == 'true'

@@ -1,0 +1,119 @@
+name: Forecast upstream conflicts
+
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-conflict-forecast
+  cancel-in-progress: true
+
+jobs:
+  forecast:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Configure merge identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch Wastaken development
+        run: git fetch --no-tags https://github.com/wastaken7/Upload-Assistant.git refs/heads/development:refs/remotes/wastaken7/development
+
+      - name: Simulate merge into main
+        id: forecast
+        shell: bash
+        run: |
+          upstream_sha="$(git rev-parse wastaken7/development)"
+          echo "upstream_sha=${upstream_sha}" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$upstream_sha" HEAD; then
+            echo "conflicted=false" >> "$GITHUB_OUTPUT"
+            echo "main already contains the latest upstream commit." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          set +e
+          git merge --no-commit --no-ff wastaken7/development
+          merge_status=$?
+          set -e
+          if [ "$merge_status" -eq 0 ]; then
+            git merge --abort
+            echo "conflicted=false" >> "$GITHUB_OUTPUT"
+            echo "Latest upstream development merges cleanly into main." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          conflicts="$(git diff --name-only --diff-filter=U | sort)"
+          git merge --abort
+          {
+            echo "conflicted=true"
+            echo "conflicts<<EOF"
+            echo "$conflicts"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "## Upstream merge conflicts detected"
+            echo
+            echo '```text'
+            echo "$conflicts"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report forecast conflict
+        if: steps.forecast.outputs.conflicted == 'true'
+        uses: actions/github-script@v7
+        env:
+          CONFLICTS: ${{ steps.forecast.outputs.conflicts }}
+        with:
+          script: |
+            const title = 'Upstream forecast: main will require conflict resolution';
+            const body = [
+              '`wastaken7/Upload-Assistant:development` no longer merges cleanly into `main`.',
+              '',
+              `Upstream commit: \`${{ steps.forecast.outputs.upstream_sha }}\``,
+              '',
+              'Conflicting files:',
+              '```text',
+              process.env.CONFLICTS || '(conflict list unavailable)',
+              '```',
+              '',
+              'Resolve these seams before the next upstream promotion.',
+            ].join('\n');
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+            });
+            const existing = issues.find(issue => issue.title === title);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+              });
+            }
+
+      - name: Fail when conflicts are forecast
+        if: steps.forecast.outputs.conflicted == 'true'
+        run: exit 1
