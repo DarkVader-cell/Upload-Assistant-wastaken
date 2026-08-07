@@ -33,6 +33,8 @@ import web_ui.auth as auth_mod
 from src.webui_progress import ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
 from src.manual_metadata import parse_detached_metadata_request, parse_metadata_submission
 from web_ui.browse_index import BrowseIndex
+from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
+from web_ui.services.presets import load_argument_presets, save_argument_presets
 
 
 def _module_name(*parts: str) -> str:
@@ -194,31 +196,12 @@ _description_review_locks_lock = threading.Lock()
 
 def _load_argument_presets() -> list[dict[str, str]]:
     """Load the shared Web UI argument presets from the data directory."""
-    try:
-        if not ARGUMENT_PRESETS_PATH.exists():
-            return []
-        raw = json.loads(ARGUMENT_PRESETS_PATH.read_text(encoding="utf-8"))
-        if not isinstance(raw, list):
-            return []
-        presets: list[dict[str, str]] = []
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            name = item.get("name")
-            arguments = item.get("arguments")
-            if isinstance(name, str) and isinstance(arguments, str) and name.strip() and arguments.strip():
-                presets.append({"name": name.strip(), "arguments": arguments.strip()})
-        return presets[-MAX_ARGUMENT_PRESETS:]
-    except OSError, TypeError, ValueError:
-        return []
+    return load_argument_presets(ARGUMENT_PRESETS_PATH, MAX_ARGUMENT_PRESETS)
 
 
 def _save_argument_presets(presets: list[dict[str, str]]) -> None:
     """Persist shared Web UI argument presets with an atomic file replacement."""
-    ARGUMENT_PRESETS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = ARGUMENT_PRESETS_PATH.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(presets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temp_path.replace(ARGUMENT_PRESETS_PATH)
+    save_argument_presets(ARGUMENT_PRESETS_PATH, presets)
 
 
 # Access logging helper
@@ -1334,19 +1317,9 @@ def _submit_auth_ok() -> tuple[bool, tuple[Any, int] | None]:
 
 def _detached_job_snapshot(limit: int = 100) -> list[dict[str, Any]]:
     with detached_jobs_lock:
-        jobs = list(detached_jobs.values())
-        queue_positions = {job_id: index + 1 for index, job_id in enumerate(detached_job_queue)}
-    jobs.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
-    snapshots: list[dict[str, Any]] = []
-    for job in jobs[:limit]:
-        snapshot = {key: value for key, value in job.items() if key != "command"}
-        job_id = str(job.get("id", ""))
-        snapshot["queue_position"] = queue_positions.get(job_id)
-        snapshot["can_edit"] = str(job.get("status")) in {"queued", "interrupted", "failed"}
-        snapshot["can_cancel"] = str(job.get("status")) in {"queued", "starting", "running", "waiting_for_input", "waiting_for_metadata"}
-        snapshot["can_retry"] = str(job.get("status")) in {"failed", "interrupted"}
-        snapshots.append(_json_safe(snapshot))
-    return snapshots
+        jobs = {job_id: dict(job) for job_id, job in detached_jobs.items()}
+        queued = list(detached_job_queue)
+    return snapshot_detached_jobs(jobs, queued, limit=limit, json_safe=_json_safe)
 
 
 def _persist_detached_jobs_locked() -> None:
@@ -1375,41 +1348,16 @@ def _restore_detached_jobs() -> None:
     blindly replayed, since a tracker may have accepted the request before the
     WebUI/container stopped.
     """
-    if not DETACHED_JOB_STATE_PATH.exists():
-        return
-    try:
-        stored = json.loads(DETACHED_JOB_STATE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, TypeError):
-        return
-    if not isinstance(stored, Mapping):
+    restored = restore_detached_jobs(DETACHED_JOB_STATE_PATH)
+    if restored is None:
         return
 
-    restored_queue: list[str] = []
     with detached_jobs_lock:
-        for raw_job_id, raw_job in stored.items():
-            job_id = str(raw_job_id)
-            if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id) or not isinstance(raw_job, Mapping):
-                continue
-            job = dict(raw_job)
-            command = job.get("command")
-            if not isinstance(command, list) or not command or not all(isinstance(item, str) for item in command):
-                continue
-            status = str(job.get("status", ""))
-            if status == "queued":
-                restored_queue.append(job_id)
-                job["message"] = "Recovered after WebUI restart; queued for unattended execution"
-            elif status in {"running", "waiting_for_input", "waiting_for_metadata"}:
-                job["status"] = "interrupted"
-                job["message"] = "Interrupted by WebUI restart; retained for safe retry"
-                job["recovery_available"] = True
-                job["finished_at"] = datetime.now(UTC).isoformat()
-                job["metadata_request"] = None
-                job["prompt_request"] = None
-            detached_jobs[job_id] = job
-        detached_job_queue.extend(restored_queue)
+        detached_jobs.update(restored.jobs)
+        detached_job_queue.extend(restored.queue)
         with contextlib.suppress(OSError, TypeError, ValueError):
             _persist_detached_jobs_locked()
-    if restored_queue:
+    if restored.queue:
         _start_detached_worker()
 
 
@@ -4234,13 +4182,7 @@ def _detached_job_by_id(job_id: str) -> dict[str, Any] | None:
 
 
 def _validated_detached_args(raw_args: object, append_unattended: object = True) -> tuple[list[str], str]:
-    args = str(raw_args or "")
-    append = str(append_unattended).strip().lower() not in {"0", "false", "no", "off"}
-    parsed_args = shlex.split(args)
-    if append and "-ua" not in parsed_args and "--unattended" not in parsed_args:
-        parsed_args.append("-ua")
-    validated_args = _validate_upload_assistant_args(parsed_args)
-    return validated_args, " ".join(validated_args)
+    return validate_detached_args(raw_args, append_unattended, _validate_upload_assistant_args)
 
 
 @app.route("/api/qui/update/<job_id>", methods=["POST"])
