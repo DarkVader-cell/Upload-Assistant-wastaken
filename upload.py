@@ -1101,8 +1101,8 @@ def book_screens(meta: Meta, min_successful_uploads: int) -> tuple[int, int]:
     return actual_screens, capped_min
 
 
-async def _process_meta_legacy(meta: Meta, base_dir: str) -> bool:
-    """Process the metadata for each queued path."""
+async def _gather_initial_prep(meta: Meta) -> tuple[Meta, Prep] | None:
+    """Resolve initial settings and gather media metadata for one release."""
     if not meta.imghost:
         meta.imghost = config["DEFAULT"]["img_host_1"]
         try:
@@ -1112,7 +1112,7 @@ async def _process_meta_legacy(meta: Meta, base_dir: str) -> bool:
                 update_oeimg_to_onlyimage()
         except Exception as e:
             logger.error(f"[red]Error checking image hosts: {e}[/red]")
-            return False
+            return None
 
     if not meta.unattended:
         ua = config["DEFAULT"].get("auto_mode", False)
@@ -1125,7 +1125,7 @@ async def _process_meta_legacy(meta: Meta, base_dir: str) -> bool:
     except Exception as e:
         logger.info(f"Error in gather_prep: {e}")
         logger.info(traceback.format_exc())
-        return False
+        return None
 
     modified_reason = detect_modified_release(
         [str(meta.path or "")],
@@ -1140,14 +1140,19 @@ async def _process_meta_legacy(meta: Meta, base_dir: str) -> bool:
         if meta.unattended:
             meta.we_are_uploading = False
             meta.skip_cross_seeding = True
-            return False
+            return None
         try:
             if not CLI_UI.ask_yes_no("Continue with this release anyway?", default=False):
                 meta.we_are_uploading = False
                 meta.skip_cross_seeding = True
-                return False
+                return None
         except EOFError:
-            return False
+            return None
+    return meta, prep
+
+
+async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> bool:
+    """Run the established post-discovery preparation behavior."""
 
     # Load covers.json if it exists and not already present in meta
     covers_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/covers.json"
@@ -2044,7 +2049,7 @@ async def _process_meta_legacy(meta: Meta, base_dir: str) -> bool:
 async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionContext | None = None) -> bool:
     """Run release preparation through the shared observable pipeline.
 
-    The compatibility stage deliberately delegates to the established
+    The compatibility stages deliberately delegate to the established
     implementation. Subsequent refactors can extract one stage at a time while
     keeping this public function, ordering, and boolean result unchanged.
     """
@@ -2053,13 +2058,27 @@ async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionCo
             return await process_meta(meta, base_dir, owned_context)
 
     succeeded = False
+    prepared: tuple[Meta, Prep] | None = None
 
-    async def prepare_release(_context: ExecutionContext, release_meta: Meta) -> StageResult:
+    async def gather_initial(_context: ExecutionContext, release_meta: Meta) -> StageResult:
+        nonlocal prepared
+        prepared = await _gather_initial_prep(release_meta)
+        return StageResult.completed() if prepared is not None else StageResult.stopped("initial preparation failed")
+
+    async def prepare_release(_context: ExecutionContext, _release_meta: Meta) -> StageResult:
         nonlocal succeeded
-        succeeded = await _process_meta_legacy(release_meta, base_dir)
+        if prepared is None:
+            return StageResult.stopped("initial preparation did not complete")
+        prepared_meta, prep = prepared
+        succeeded = await _process_meta_after_initial(prepared_meta, base_dir, prep)
         return StageResult.completed() if succeeded else StageResult.stopped("release preparation failed")
 
-    pipeline = Pipeline([FunctionStage("prepare_release", prepare_release)])
+    pipeline = Pipeline(
+        [
+            FunctionStage("gather_initial_metadata", gather_initial),
+            FunctionStage("prepare_release", prepare_release),
+        ]
+    )
     await pipeline.run(execution_context, meta)
     return succeeded
 
