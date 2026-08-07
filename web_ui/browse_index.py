@@ -216,6 +216,19 @@ class BrowseIndex:
     def _watcher_available(self) -> bool:
         return os.name == "posix" and ctypes.util.find_library("c") is not None
 
+    def _indexed_directories(self, roots: tuple[str, ...]) -> list[tuple[str, Path]]:
+        """Return watcher targets from the existing index without another disk walk."""
+        placeholders = ",".join("?" for _ in roots)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT root, path FROM browse_entries "
+                f"WHERE root IN ({placeholders}) AND entry_type = 'folder'",
+                roots,
+            ).fetchall()
+        directories = [(root, Path(root)) for root in roots]
+        directories.extend((str(row["root"]), Path(str(row["path"]))) for row in rows)
+        return directories
+
     def _watch_filesystem(self, roots: tuple[str, ...]) -> None:
         """Consume Linux inotify events and update only affected paths."""
         libc_name = ctypes.util.find_library("c")
@@ -240,10 +253,11 @@ class BrowseIndex:
                 watches[watch_descriptor] = (root, directory)
 
         try:
-            for root in roots:
-                for dirpath, dirnames, _filenames in os.walk(root):
-                    dirnames[:] = [name for name in dirnames if not name.startswith(".")]
-                    add_directory(root, Path(dirpath))
+            # The refresh already discovered every directory. Reuse that
+            # snapshot so enabling live updates does not immediately perform a
+            # second full HDD traversal.
+            for root, directory in self._indexed_directories(roots):
+                add_directory(root, directory)
             poller = select.poll()
             poller.register(fd, select.POLLIN)
             while not self._watch_stop.is_set():
