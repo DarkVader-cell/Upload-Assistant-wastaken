@@ -14,6 +14,7 @@ _VERSION = 1
 _LOCKS: dict[Path, asyncio.Lock] = {}
 _MISSING = object()
 _RUN_DISABLED = False
+_INSTANCES: dict[tuple[str, str], MetadataCache] = {}
 
 
 def _default_config() -> dict[str, Any]:
@@ -124,8 +125,26 @@ class MetadataCache:
                 return
 
 
+def _cache_signature(base_dir: str | Path, config: dict[str, Any] | None) -> tuple[str, str]:
+    root = Path(base_dir).resolve() if base_dir else _project_root().resolve()
+    selected = config or _default_config()
+    default = selected.get("DEFAULT", selected) if isinstance(selected, dict) else {}
+    relevant = {
+        key: value
+        for key, value in default.items()
+        if key.startswith("metadata_cache_")
+    } if isinstance(default, dict) else {}
+    return str(root), json.dumps(relevant, sort_keys=True, default=str)
+
+
 def cache_for(base_dir: str | Path, config: dict[str, Any] | None = None) -> MetadataCache:
-    return MetadataCache(base_dir, config)
+    """Return one cache facade per root/configuration instead of rebuilding it per call."""
+    signature = _cache_signature(base_dir, config)
+    cache = _INSTANCES.get(signature)
+    if cache is None:
+        cache = MetadataCache(base_dir, config)
+        _INSTANCES[signature] = cache
+    return cache
 
 
 def is_cache_miss(value: Any) -> bool:

@@ -6,6 +6,7 @@ import contextlib
 import filecmp
 import gc
 import json
+import logging
 import os
 import platform
 import re
@@ -20,12 +21,6 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlparse
-
-from src.check_requirements import check_dependencies
-
-check_dependencies()
-
-import logging
 
 import aiofiles
 import cli_ui  # pyright: ignore[reportMissingImports]
@@ -51,8 +46,8 @@ from src.early_tasks import is_usenet_only as _is_usenet_only
 from src.get_desc import gen_desc
 from src.get_name import NameManager
 from src.get_tracker_data import TrackerDataManager
-from src.qbitwait import Wait
 from src.modified_release import detect_modified_release
+from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
 from src.takescreens import TakeScreensManager, download_artwork_from_meta
@@ -3082,6 +3077,9 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
+    from src.check_requirements import check_dependencies
+
+    check_dependencies()
     check_python_version()
 
     # Register signal handlers only when run as main script (not when imported)
