@@ -2678,6 +2678,15 @@ config: dict[str, Any] = {
             # Create a Client Proxy API Key in QUI (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
             # Example: "http://localhost:7476/proxy/<your-client-api-key>". Bandwidth Control still requires qbit_url/qbit_port and qbit_api_key or qbit_user/qbit_pass.
             "qui_proxy_url": "",
+            # Optional native Qui API integration. These settings are not needed
+            # for the qBittorrent-compatible proxy above.
+            "qui_api_url": "",
+            "qui_api_key": "",
+            "qui_instance_id": "",
+            # When enabled, verify the Qui instance before injection.
+            "qui_health_check": False,
+            # When enabled, ask Qui whether the infohash already exists before injection.
+            "qui_native_duplicate_check": False,
             # enable_search to True will automatically try and find a suitable hash to save having to rehash when creating torrents
             "enable_search": True,
             "qbit_url": "http://127.0.0.1",
@@ -2731,6 +2740,11 @@ config: dict[str, Any] = {
             # Create a Client Proxy API Key in QUI (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
             # Example: "http://localhost:7476/proxy/<your-client-api-key>". Bandwidth Control still requires qbit_url/qbit_port and qbit_api_key or qbit_user/qbit_pass.
             "qui_proxy_url": "",
+            "qui_api_url": "",
+            "qui_api_key": "",
+            "qui_instance_id": "",
+            "qui_health_check": False,
+            "qui_native_duplicate_check": False,
             # enable_search to True will automatically try and find a suitable hash to save having to rehash when creating torrents
             "enable_search": True,
             "qbit_url": "http://127.0.0.1",

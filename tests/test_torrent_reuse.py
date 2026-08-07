@@ -139,6 +139,30 @@ async def test_client_search_prefers_torrent_with_all_local_subtitles(tmp_path, 
 
 
 @pytest.mark.asyncio
+async def test_client_search_continues_when_one_client_fails(tmp_path, monkeypatch):
+    reusable_torrent = tmp_path / "reusable.torrent"
+    reusable_torrent.touch()
+
+    async def fake_search(_self, _meta, client_name, *_args):
+        if client_name == "broken":
+            raise RuntimeError("client unavailable")
+        return str(reusable_torrent)
+
+    monkeypatch.setattr(Clients, "_search_single_client_for_torrent", fake_search)
+    config = {
+        "DEFAULT": {"default_torrent_client": "broken", "searching_client_list": ["broken", "working"], "prefer_max_16_torrent": False},
+        "TRACKERS": {},
+        "TORRENT_CLIENTS": {"broken": {}, "working": {}},
+    }
+    meta = Meta({"client": "none"})
+
+    found = await Clients(config).find_existing_torrent(meta)
+
+    assert found == str(reusable_torrent)  # noqa: S101
+    assert meta.reuse_torrent_client == "working"  # noqa: S101
+
+
+@pytest.mark.asyncio
 async def test_client_search_rejects_partially_subtitled_fallback(tmp_path, monkeypatch):
     partial_subtitles = tmp_path / "partial-subtitles.torrent"
     partial_subtitles.touch()

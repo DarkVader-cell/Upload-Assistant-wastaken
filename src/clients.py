@@ -291,7 +291,11 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                 logger.info(f"[yellow]Client '{client_name}' not found in TORRENT_CLIENTS config, skipping...")
                 continue
 
-            result = await self._search_single_client_for_torrent(meta, client_name, prefer_small_pieces, mtv_torrent, piece_limit, best_match)
+            try:
+                result = await self._search_single_client_for_torrent(meta, client_name, prefer_small_pieces, mtv_torrent, piece_limit, best_match)
+            except Exception as error:
+                logger.info(f"[yellow]Torrent search failed for client '{client_name}', continuing with remaining clients: {error}[/yellow]")
+                continue
 
             if result:
                 candidate_path = result.get("torrent_path") if isinstance(result, dict) else result

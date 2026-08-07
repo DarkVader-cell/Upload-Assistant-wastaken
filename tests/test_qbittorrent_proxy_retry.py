@@ -22,6 +22,22 @@ class FakeProxySession:
         return next(self.get_responses)
 
 
+class FakeQuiSession:
+    def __init__(self, response):
+        self.response = response
+        self.post_calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def post(self, url, **kwargs):
+        self.post_calls.append((url, kwargs))
+        return self.response
+
+
 @pytest.mark.asyncio
 async def test_proxy_retry_retries_a_transient_http_status(monkeypatch):
     client = QbittorrentClientMixin()
@@ -95,3 +111,39 @@ async def test_proxy_retry_checks_for_existing_torrent_before_second_post(monkey
 
     assert session.post_calls == 1  # noqa: S101
     assert session.get_calls == 2  # noqa: S101
+
+
+def test_qui_api_settings_require_url_key_and_instance() -> None:
+    client = QbittorrentClientMixin()
+
+    assert client._qui_api_settings({"qui_api_url": "https://qui.example"}) is None  # noqa: S101
+    assert client._qui_api_settings({"qui_api_url": "https://qui.example", "qui_api_key": "key", "qui_instance_id": 2}) == (
+        "https://qui.example",
+        "key",
+        "2",
+    )  # noqa: S101
+
+
+@pytest.mark.asyncio
+async def test_native_qui_duplicate_check_uses_instance_api(monkeypatch):
+    session = FakeQuiSession(httpx.Response(200, json={"duplicates": [{"hash": "abc123"}]}))
+    monkeypatch.setattr("src.torrent_clients.qbittorrent.httpx.AsyncClient", lambda **_kwargs: session)
+    client = QbittorrentClientMixin()
+
+    duplicate = await client._qui_has_duplicate(
+        {
+            "qui_api_url": "https://qui.example/",
+            "qui_api_key": "secret",
+            "qui_instance_id": 2,
+            "qui_native_duplicate_check": True,
+        },
+        "abc123",
+    )
+
+    assert duplicate is True  # noqa: S101
+    assert session.post_calls == [
+        (
+            "https://qui.example/api/instances/2/torrents/check-duplicates",
+            {"headers": {"X-API-Key": "secret"}, "json": {"hashes": ["abc123"]}},
+        )
+    ]  # noqa: S101
