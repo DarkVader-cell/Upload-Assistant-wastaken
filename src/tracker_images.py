@@ -15,6 +15,19 @@ _BASE_COLLECTION_FIELDS: dict[ImageCollection, str] = {
 }
 
 
+def deduplicate_images(images: Sequence[ImageDict]) -> list[ImageDict]:
+    """Keep the first occurrence of each hosted image in stable order."""
+    result: list[ImageDict] = []
+    seen: set[str] = set()
+    for image in images:
+        key = str(image.get("raw_url") or image.get("img_url") or image.get("web_url") or "")
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        result.append(dict(image))
+    return result
+
+
 def get_tracker_image_collection(meta: Meta, tracker: str, collection: ImageCollection) -> list[Any]:
     """Return a tracker override or the release-wide collection as fallback."""
     tracker_collections = meta.tracker_image_collections.get(tracker, {})
@@ -31,4 +44,4 @@ def has_tracker_image_collection(meta: Meta, tracker: str, collection: ImageColl
 
 def set_tracker_image_collection(meta: Meta, tracker: str, collection: ImageCollection, images: Sequence[ImageDict]) -> None:
     """Store a tracker-local image collection without mutating shared metadata."""
-    meta.tracker_image_collections.setdefault(tracker, {})[collection] = [dict(image) for image in images]
+    meta.tracker_image_collections.setdefault(tracker, {})[collection] = deduplicate_images(images)

@@ -19,6 +19,7 @@ from src.console import logger
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
 from src.temp_paths import screenshots_dir
+from src.tracker_images import deduplicate_images
 
 type ImageDict = dict[str, Any]
 
@@ -643,7 +644,8 @@ async def _upload_screens(
     initial_img_host = default_config[f"img_host_{img_host_num}"]
     img_host = meta.imghost
 
-    image_list = meta.image_list
+    image_list = deduplicate_images(meta.image_list)
+    meta.image_list = image_list
 
     # Treat empty allowed host list as no restriction
     if not allowed_hosts:
