@@ -13,3 +13,5 @@ Unattended regular queues may prepare unique temporary workspaces concurrently. 
 Fork-only behavior should live in new service or extension modules. Upstream-owned entrypoints should contain thin calls into those modules, not feature implementations. The release-history and config-removal HTTP contracts are Flask blueprints under `web_ui/services`, keeping `web_ui/server.py` below its architecture ceiling. The scheduled upstream forecast identifies integration seams before the hourly `dev` sync is blocked; validated `dev` changes promote to `main` through a pull request.
 
 Direct `httpx.AsyncClient` and `asyncio.create_subprocess_exec` use are migration debt. New code uses the shared runtime helpers, and the architecture guard prevents these counts or the Web UI monolith from growing.
+
+See [Workflow, Performance, and Tracker Improvements](workflow-improvements.md) for the user-facing contracts built on these boundaries, including persistence, safe configuration mutation, tracker rules, and Docker behavior.

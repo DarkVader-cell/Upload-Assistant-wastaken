@@ -1,15 +1,20 @@
 # Audionut → Wastaken porting ledger
 
-This is the working migration ledger for the Wastaken fork. It compares the
-previous fork's `master` branch (`8f7b2480358a6e77407848bd7969c581fecdc242`)
-with this fork's `wastaken` branch at the time of review. The old fork's
-Windows-client branch and Web UI feature work are intentionally excluded from
-this pass.
+This is the working migration ledger for the Wastaken fork. It tracks reviewed
+behavior from the previous fork, current Wastaken development, relevant UpBrr
+changes, Web UI/Qui integration, Docker/runtime work, and current tracker rules.
+Entries describe the evidence reviewed at implementation time; upstream changes
+remain subject to the normal sync and conflict-review process.
 
 Each case must be reviewed independently. A case is not considered ported
 until the behavior is implemented in this fork, covered by a focused test, and
 marked `implemented` here. Live configuration, credentials, cookies, sessions,
 logs, and host-specific Docker state are never porting inputs.
+
+Latest validation (2026-08-08): the complete Python suite passes, changed-file
+Ruff and frontend ESLint pass, the architecture guard remains within all three
+limits, Docker builds and reaches its internal health check, and no tracked
+features or files were deleted.
 
 ## Status vocabulary
 
@@ -29,7 +34,7 @@ logs, and host-specific Docker state are never porting inputs.
 
 | ID | Case | Old-fork evidence | Wastaken evidence | Initial status | Recommendation / test gate |
 | --- | --- | --- | --- | --- | --- |
-| M-01 | Indian/South Asian streaming services and aliases | `src/region.py`, `docs/streaming-services.md`, commits `a63eca48`, `40db429d` | `src/region.py`, `docs/streaming-services.md` | `implemented` | Added missing aliases and documented the canonical codes; Ruff and stubbed runtime smoke checks pass. Formal pytest is pending dependency availability. |
+| M-01 | Indian/South Asian streaming services and aliases | `src/region.py`, `docs/streaming-services.md`, commits `a63eca48`, `40db429d` | `src/region.py`, `docs/streaming-services.md` | `implemented` | Added missing aliases and documented the canonical codes; Ruff and the complete Python suite pass. |
 | M-02 | Uppercase service abbreviations and SonyLIV recognition | commits `b0eb797f`, `97cb152b` | `src/region.py`, `tests/test_region_services.py` | `implemented` | Added separator-insensitive, case-insensitive SonyLIV detection while preserving `iP`, `iT`, and `iQIYI`; Ruff and stubbed runtime smoke checks pass. |
 | M-03 | Bengali, Odia, and Punjabi language equivalence | `src/languages.py`, DT-related commits | `src/trackers/common.py` | `implemented` | Extended Wastaken's existing shared language-equivalence groups with Bengali/Bangla, Punjabi/Panjabi, and Odia/Oriya aliases. The old DT-only gate remains separate because DT is not present in this fork. |
 | M-04 | Screenshot SAR/PAR correction and exact dimensions | `src/takescreens.py`, `src/screenshot_review.py` | `src/takescreens.py`, screenshot review support | `implemented` | Added the old fork's ≤4 px rounding snap rule across DVD, regular, and fallback screenshot filters; meaningful anamorphic corrections still emit scale filters. |
@@ -40,18 +45,18 @@ logs, and host-specific Docker state are never porting inputs.
 | M-09 | DVD menu parsing and automatic bounded menu capture | `src/disc_menus.py`, `upload.py`, commits `8d15cfb1`, `e57fca5a` | `src/disc_menus.py`, `upload.py`, `src/uploadscreens.py` | `present` | Wastaken already has automatic DVD menu capture with bounded selection, blank-frame filtering, persistence, fallback sampling, and normal-screenshot separation. No port required. |
 | M-10 | AITHER duplicate-language audio gate | `src/trackers/AITHER.py`, commit `e57fca5a` | `src/trackers/UNIT3D/aither.py` | `implemented` | Adapted the gate to Wastaken's typed Meta structure; commentary tracks remain exempt, while duplicate primary-language audio requires a Compatibility title. |
 | M-11 | DT/DesiTorrents Indian-language audio gate and banned groups | `src/trackers/DT.py`, commits `3df90b9e`, `0ca8a461`, current tracker rule supplied 2026-08-08 | `src/trackers/UNIT3D/torrentdesi.py`, `src/trackersetup.py` | `implemented` | Preserves the existing bans and adds YTS, RARBG, BonsaiHD, GalaxyRG, `-=!DrSTAR!=-`, AKG, and DUS. Listed-group WEB-DLs require an explicit confirmation that they contain no advertisement tags or watermarks; unattended runs remain conservative. |
-| M-13 | UpBrr Blu-ray/disc duplicate fixes | UpBrr `7f8130fc` | `src/dupe_checking.py`, ANT/HDB/AZ adapters | `implemented` | Ported applicable structured candidate evidence, full-disc classification, incomplete file-count handling, and authoritative full-disc matching that bypasses encode-only resolution/HDR filters. UpBrr's Go-only standalone-summary repair has no direct Python service equivalent; Wastaken regenerates its full report through its existing BDInfo flow. |
+| M-13 | UpBrr Blu-ray/disc duplicate fixes | UpBrr `7f8130fc` | `src/discparse.py`, `src/dupe_checking.py`, ANT/HDB/AZ adapters | `implemented` | Ported standalone-summary reuse, bounded malformed-report handling, structured candidate evidence, full-disc classification, incomplete file-count handling, and authoritative full-disc matching that bypasses encode-only resolution/HDR filters. |
 | M-14 | BLU banned-group refresh | Current tracker rule supplied 2026-08-08 | `src/trackers/UNIT3D/blutopia.py` | `implemented` | BLU now matches all 95 supplied banned groups exactly; AOC, CMRG, EVO, TERMiNAL, and exact-case ViSION are limited to raw content, leading release-tag dashes are normalized, and AOC requires explicit approval. |
 | M-15 | LUME accepted encoder rules | Current tracker rules 6.5.4.1–6.5.4.3 supplied 2026-08-08 | `src/trackers/UNIT3D/luminarr.py` | `implemented` | Encodes below 1080p require x264. Live-action 1080p SDR requires x264, while live-action 1080p HDR/DV/HLG requires x265; animation and non-encode behavior is unchanged. |
 | M-12 | OE/ULCX skip when streaming service is undetected | tracker modules and commit `314d5630` | `src/trackers/UNIT3D/onlyencodes.py`, `ulcx.py` | `implemented` | Added the WEBDL/WEBRip empty-service guard to both trackers so unattended uploads cannot proceed without a streaming-service tag. |
-| M-13 | Description footer/signature policy | `upload.py`, description builder changes | `src/get_desc.py`, tracker description writers | `implemented` | Removed the automatic Upload Assistant signature from the shared builder and tracker-specific writers; `custom_signature` configuration remains available. |
-| M-14 | Safe path boundaries and literal glob escaping | `src/discparse.py`, `src/get_desc.py`, `src/manualpackage.py`, `src/rehostimages.py` | corresponding Wastaken modules | `present` | Wastaken's pathlib-based paths avoid the old glob construction hazards, and `rehostimages.py` already escapes title/disc-derived glob patterns. No port required. |
+| M-16 | Description footer/signature policy | `upload.py`, description builder changes | `src/get_desc.py`, tracker description writers | `implemented` | Removed the automatic Upload Assistant signature from the shared builder and tracker-specific writers; `custom_signature` configuration remains available. |
+| M-17 | Safe path boundaries and literal glob escaping | `src/discparse.py`, `src/get_desc.py`, `src/manualpackage.py`, `src/rehostimages.py` | corresponding Wastaken modules | `present` | Wastaken's pathlib-based paths avoid the old glob construction hazards, and `rehostimages.py` already escapes title/disc-derived glob patterns. No port required. |
 
 ### Queue, Qui, and unattended operation
 
 | ID | Case | Old-fork evidence | Wastaken evidence | Initial status | Recommendation / test gate |
 | --- | --- | --- | --- | --- | --- |
-| Q-01 | Named queue safety and unattended no-prompt behavior | `src/queue_policy.py`, `src/queuemanage.py` | `src/queue_policy.py`, `src/queuemanage.py`, `tests/test_queue_policy.py` | `implemented` | Centralized the policy and guarded new/existing queue edit prompts; Ruff/static smoke checks pass, while formal pytest remains pending dependency availability. |
+| Q-01 | Named queue safety and unattended no-prompt behavior | `src/queue_policy.py`, `src/queuemanage.py` | `src/queue_policy.py`, `src/queuemanage.py`, `tests/test_queue_policy.py` | `implemented` | Centralized the policy and guarded new/existing queue edit prompts; Ruff and the complete Python suite pass. |
 | Q-02 | FIFO detached Qui queue and unique session IDs | `web_ui/server.py`, `docs/detached-metadata.md`, commits `64fb32e9`, `ce3fdfe3` | `web_ui/server.py` | `implemented` | Added authenticated detached FIFO processing with unique token-based job IDs, unattended subprocess execution, and isolated per-job logs. |
 | Q-03 | Qui status and log endpoints | old fork `/api/qui/*` implementation and docs | `web_ui/server.py` | `implemented` | Added authenticated `/api/qui/status` and `/api/qui/log/<job_id>` contracts with bounded log-tail responses. |
 | Q-04 | Detached metadata checkpoints and resume | `src/manual_metadata.py`, `web_ui/server.py`, `docs/detached-metadata.md` | `src/manual_metadata.py`, `web_ui/server.py`, `src/prep_helpers.py` | `implemented` | Detached jobs now emit a structured missing-ID checkpoint, expose it in status, validate IMDb/TMDb submissions, and resume the same subprocess through its stdin pipe. Compile, Ruff, and focused normalization smoke checks pass. |
@@ -88,7 +93,7 @@ logs, and host-specific Docker state are never porting inputs.
 | --- | --- | --- | --- | --- | --- |
 | D-01 | Permanent container through `gluetun_seeding` | `Dockerfile`, `docker-compose.yml`, `docker-entrypoint.sh`, commits `c45e3078`–`1f377451` | local runtime compose and Wastaken Docker docs | `partial` | Keep the local deployment overlay separate from tracked source; document any upstream-compatible changes. |
 | D-02 | Mounted config/session persistence | `web_ui/auth.py`, Docker volume setup, commit `dc2383e4` | current auth and Docker data paths | `partial` | Preserve the working local mounts; port source behavior only if upstream image loses state. |
-| D-03 | Docker build stages, architecture binaries, and cache optimization | old `Dockerfile` and CI workflows | Wastaken Docker workflow | `review` | Compare build correctness and maintenance cost; port only functional or material reliability improvements. |
+| D-03 | Docker build stages, architecture binaries, and cache optimization | old `Dockerfile` and CI workflows | multi-stage `Dockerfile`, `.dockerignore`, entrypoint, and Wastaken CI | `implemented` | Dependency and per-architecture binary stages are cacheable independently; the final runtime excludes build tooling, tests, secrets, caches, and wrong-platform binaries. First-start config bootstrapping preserves existing mounts. |
 | D-04 | Branch/tag publishing and stale-image guards | old CI workflows and `ua` helper | Wastaken sync/release workflows | `review` | Keep deployment behavior local unless it belongs in the fork; test workflow YAML statically. |
 | D-05 | Self-hosted runner DNS and digest cleanup | old Docker workflow | Wastaken workflow | `review` | Port only runner-specific reliability fixes; do not commit host DNS configuration. |
 | D-06 | Upstream development synchronization | old sync workflows | `.github/workflows/sync-wastaken.yml` | `present` | Retain Wastaken’s hourly sync workflow and review conflicts manually. |

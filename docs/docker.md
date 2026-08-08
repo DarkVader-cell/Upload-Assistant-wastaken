@@ -45,6 +45,12 @@ The Docker context excludes host configuration, cookies, sessions,
 Windows binaries. Keep mutable configuration and credentials in mounted volumes;
 they are never required to build the image.
 
+When the whole `data/` directory is mounted and `config.py` is absent, the
+entrypoint initializes it from the bundled example before dropping privileges.
+An existing config—including a read-only file mount—is left untouched. Persist
+`data/` to retain release history and authentication state; persist `tmp/` when
+detached Qui recovery state must survive container recreation.
+
 ## Usage?
 
 ```

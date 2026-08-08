@@ -22,6 +22,7 @@
   - [7. Persistent TTL-Based Metadata Cache](#7-persistent-ttl-based-metadata-cache)
   - [8. Modern Web UI & Real-Time Engine](#8-modern-web-ui--real-time-engine)
   - [9. Resumable and Observable Runtime](#9-resumable-and-observable-runtime)
+- [Workflow, Performance, and Tracker Improvements](docs/workflow-improvements.md)
 - [Supported Sites](#supported-sites)
 - [Setup Guide](#setup-guide)
   - [Step 1: Install Required Tools](#step-1-install-required-tools)
@@ -102,6 +103,8 @@ This branch introduces new media categories and automation features not present 
 - **Operations visibility**: The Web UI reports runtime health, artifact reuse, resumable stages, provider telemetry, external-tool availability, detached-job progress, and searchable release history that survives restarts. Qui clients can consume cursor-based events, compact summaries, and bulk retry controls.
 - **Safer client configuration**: Removing a configured torrent-client profile repairs the default, injection, and search references so stale profile names cannot break later runs.
 - **Upstream-friendly extensions**: The opt-in versioned extension API adds trackers, metadata providers, pipeline stages, and health checks outside upstream-owned modules.
+
+The complete operational behavior, tracker safeguards, Docker changes, compatibility boundaries, and troubleshooting notes are documented in [Workflow, Performance, and Tracker Improvements](docs/workflow-improvements.md).
 
 ## Supported Sites
 

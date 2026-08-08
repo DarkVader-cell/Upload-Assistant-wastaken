@@ -215,8 +215,8 @@
     "semantic_hash": ""
   },
   "src/discparse.py": {
-    "mtime": 1786090173.5145962,
-    "ast_hash": "1ccbdacf5169b2bd668f95228a8d0b7b",
+    "mtime": 1786173627.4961767,
+    "ast_hash": "8fb760071a803b7e78cb93c637690cdf",
     "semantic_hash": ""
   },
   "src/dupe_checking.py": {
@@ -1370,8 +1370,8 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1786172486.1315062,
-    "ast_hash": "e560ddeda2a32300d1c0f709eba5110e",
+    "mtime": 1786173551.4551785,
+    "ast_hash": "54da99dee8cbf316ebe44dd57a35a52c",
     "semantic_hash": ""
   },
   "bandit.yaml": {
@@ -1415,8 +1415,8 @@
     "semantic_hash": "72728f60e00131354a382158d556c514"
   },
   "docs/audionut-porting-ledger.md": {
-    "mtime": 1786173245.322023,
-    "ast_hash": "468cb2c41483d2ce3518be4efcc39b36",
+    "mtime": 1786173702.5491636,
+    "ast_hash": "212fdfbc9f7d382f57fbeaf5e3d80231",
     "semantic_hash": ""
   },
   "docs/book-upload.md": {
@@ -1460,8 +1460,8 @@
     "semantic_hash": "108a1720d8f3a78183cfc19e080b2ca7"
   },
   "docs/web-ui-api.md": {
-    "mtime": 1786172486.1315062,
-    "ast_hash": "1e35d9c9d957c8ff9c92265a38bf8f70",
+    "mtime": 1786173664.6221716,
+    "ast_hash": "fc7318155e0a9d0cc5801d85662eb0c6",
     "semantic_hash": ""
   },
   "docs/web-ui-basic.md": {
@@ -2335,8 +2335,8 @@
     "semantic_hash": ""
   },
   "docs/docker.md": {
-    "mtime": 1786117151.634172,
-    "ast_hash": "ec08343b021f164d8e3ffb1321a50f0a",
+    "mtime": 1786173551.4571786,
+    "ast_hash": "f8c19161a3831c21ab2475a4d3476769",
     "semantic_hash": ""
   },
   "docs/ffmpeg-max-workers-issues.md": {
@@ -2345,8 +2345,8 @@
     "semantic_hash": ""
   },
   "docs/home.md": {
-    "mtime": 1785819018.0058825,
-    "ast_hash": "75d6b40c98e1866d78af7357e390616b",
+    "mtime": 1786173551.4561784,
+    "ast_hash": "c743db465199b425c33c378db9d5c5ff",
     "semantic_hash": ""
   },
   "docs/unraid.md": {
@@ -2585,8 +2585,8 @@
     "semantic_hash": ""
   },
   "docs/architecture.md": {
-    "mtime": 1786172486.1315062,
-    "ast_hash": "81b6d7527546ed5604264b2cfa00b872",
+    "mtime": 1786173551.4561784,
+    "ast_hash": "18aa8fc8866fdb7f93389749d6412dce",
     "semantic_hash": ""
   },
   "docs/extensions.md": {
@@ -2662,6 +2662,21 @@
   "graphify-out/memory/query_20260808_021945_were_all_performance_optimizations__build_optimiza.md": {
     "mtime": 1786155585.4197786,
     "ast_hash": "93acd8688a2add125c0821a151d47896",
+    "semantic_hash": ""
+  },
+  "tests/test_discparse_cached_summary.py": {
+    "mtime": 1786173679.8551686,
+    "ast_hash": "5237456481a3b56208954b3c45601681",
+    "semantic_hash": ""
+  },
+  "docs/workflow-improvements.md": {
+    "mtime": 1786173627.4961767,
+    "ast_hash": "577ba38a22e24a7a2d2fdaeb317f7d6c",
+    "semantic_hash": ""
+  },
+  "graphify-out/memory/query_20260808_071516_how_do_persistent_release_history__safe_torrent_cl.md": {
+    "mtime": 1786173316.019087,
+    "ast_hash": "8d6ce4a87e07e647ae09d23030c58148",
     "semantic_hash": ""
   }
 }

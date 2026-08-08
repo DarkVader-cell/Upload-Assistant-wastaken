@@ -138,12 +138,23 @@ Consumers should persist the returned cursor, apply events in order, and fall ba
 
 The database defaults to `data/cache/release_history.sqlite3`, uses indexed SQLite queries, and does not store CLI arguments, API keys, cookies, or tracker credentials.
 
+Allowed status filters are `cancelled`, `completed`, `debug`, `failed`, `interrupted`, `queued`, `running`, and `skipped`. The query is limited to 200 characters; invalid status/pagination values return HTTP 400, while a transient SQLite/storage failure returns HTTP 503. Set `DEFAULT.release_history_enabled` to `False` to return an empty result without deleting the database, or use `release_history_db` and `release_history_max_entries` to relocate and bound it.
+
 ### /api/qui/retry/<job_id>
 
 - Methods: POST
 - Auth: same authentication as the other `/api/qui/*` endpoints
 - Description: explicitly requeue a detached job in `failed` or `interrupted` state
 - Response: `{"success": true, "job_id": "...", "status": "queued"}` or a conflict if the job is not retryable
+
+### Execution screenshot review
+
+- `GET /api/execution_screenshots?session_id=<id>` returns the active execution's review items plus top-level `can_add`. Each item includes `id`, `filename`, `size`, `source`, `group`, `image_url`, `can_replace`, `can_delete`, and `can_refill`.
+- `GET /api/execution_screenshots/<screenshot_id>/image?session_id=<id>` serves a reviewed local image resolved within that execution's temporary directory.
+- `POST /api/execution_screenshots/add` accepts `{"session_id":"...","group":"main"}`.
+- `POST /api/execution_screenshots/<screenshot_id>/<action>` accepts `delete`, `replace`, `refill`, or `undo` with `{"session_id":"..."}`. Refill captures a new frame in the same logical slot and preserves ordering/count; undo applies to a pending remote replacement.
+
+These endpoints require the active authenticated execution context. State-changing calls require a valid CSRF header and same-origin request. Capabilities are authoritative: for example, capture actions are unavailable for unsupported disc types.
 
 ### Unattended Operations control endpoints
 

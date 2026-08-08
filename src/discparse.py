@@ -167,6 +167,17 @@ class DiscParse:
             for file in (p.name for p in Path(save_dir).iterdir()):
                 if file == f"BD_SUMMARY_{str(i).zfill(2)}.txt":
                     bdinfo_text = save_dir + "/" + file
+            if bdinfo_text is not None and meta_discs == []:
+                try:
+                    cached_summary = await asyncio.to_thread(Path(bdinfo_text).read_text, encoding="utf-8", errors="replace")
+                    cached_bdinfo = self.parse_bdinfo(cached_summary, "", path)
+                    if cached_bdinfo.get("video"):
+                        discs[i]["summary"] = cached_summary
+                        discs[i]["bdinfo"] = cached_bdinfo
+                        continue
+                    logger.info(f"[yellow]Cached BDInfo summary for disc {i + 1} is incomplete; regenerating it.[/yellow]")
+                except (OSError, TypeError, ValueError):
+                    logger.info(f"[yellow]Cached BDInfo summary for disc {i + 1} could not be parsed; regenerating it.[/yellow]")
             if bdinfo_text is None or meta_discs == []:
                 bdinfo_text = ""
                 playlists_path = Path(path) / "PLAYLIST"
@@ -446,8 +457,8 @@ class DiscParse:
 
                         except Exception:
                             logger.info(traceback.format_exc())
-                            await asyncio.sleep(5)
-                            continue
+                            logger.info(f"[bold red]Invalid BDInfo report for playlist {playlist_number}; skipping it instead of retrying indefinitely.[/bold red]")
+                            break
                         break
 
             else:
