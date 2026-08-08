@@ -109,6 +109,18 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
 
         return tracker_ids
 
+    async def resolve_reused_source_path(self, meta: Meta) -> str | None:
+        """Resolve the original local content path for an automatically reused torrent."""
+        client_name = meta.reuse_torrent_client
+        if not client_name:
+            return None
+        client_config = self.config.get("TORRENT_CLIENTS", {}).get(client_name)
+        if not isinstance(client_config, dict):
+            return None
+        if str(client_config.get("torrent_client", "")).lower() == "qbit":
+            return await self.get_reused_source_path(meta, client_config)
+        return None
+
     async def add_to_client(self, meta: Meta, tracker: str, cross: bool = False) -> None:
         """Add the prepared torrent to each configured client."""
         if meta.path is None:

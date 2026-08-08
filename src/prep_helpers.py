@@ -733,9 +733,22 @@ async def process_trackers_and_torrent(
                 meta.infohash = Torrent.read(reuse_torrent_path).infohash
             except Exception as e:
                 logger.debug(f"[yellow]Unable to read infohash from cached torrent: {e}")
-            # Fetch properties only: this preserves comment/tracker-ID discovery
-            # without running another name-based torrent search or exporting it.
-            await client.get_ptp_from_hash(meta, pathed=True, client_name=meta.reuse_torrent_client)
+            path_parts = {part.casefold() for part in Path(str(meta.path or "")).parts}
+            is_cross_seed_path = bool(path_parts & {"cross_seed", "cross-seed", "crossseed"})
+            original_path = await client.resolve_reused_source_path(meta) if is_cross_seed_path else None
+            if original_path and Path(original_path).exists():
+                meta.cross_seed_source_path = original_path
+                meta.path = original_path
+                meta.filelist = [original_path]
+                logger.info(f"[green]Using original torrent-client content path for upload: {original_path}[/green]")
+            # Do not import tracker IDs from an automatically reused torrent.
+            # A reused torrent can be a cross-seed whose tracker comment belongs
+            # to a different (or stale/mislabelled) release.  Those IDs would be
+            # accepted before the filename search and would therefore make the
+            # tracker metadata override the local filename.  The reused torrent
+            # is still retained for BASE.torrent creation below; metadata is
+            # resolved from the current file name instead.
+            logger.debug("[cyan]Skipping tracker-ID import from automatically reused torrent; using local filename metadata.[/cyan]")
 
 
 async def search_metadata(
@@ -870,7 +883,13 @@ async def search_metadata(
             meta.we_checked_them_all = False
 
         # if not auto qbittorrent search, this also checks with the infohash if passed.
-        if meta.infohash is not None and not meta.base_torrent_created and not meta.we_checked_them_all and not ids:
+        if (
+            meta.infohash is not None
+            and not meta.reuse_torrent_path
+            and not meta.base_torrent_created
+            and not meta.we_checked_them_all
+            and not ids
+        ):
             meta = await client.get_ptp_from_hash(meta)
 
         if not meta.edit and not ids:

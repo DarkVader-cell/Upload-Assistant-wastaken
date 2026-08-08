@@ -360,6 +360,7 @@ class Meta:
     retry_count: int = 0
     reuse_torrent_client: str | None = None
     reuse_torrent_path: str | None = None
+    cross_seed_source_path: str | None = None
     rtorrent_label: str | None = None
     runtime: int = 60
     saved_description: bool | None = None

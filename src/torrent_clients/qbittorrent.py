@@ -21,7 +21,7 @@ from torf import Torrent
 from src.cogs.redaction import Redaction
 from src.console import logger
 from src.meta import Meta
-from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_save_path, tracker_directory
+from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local, map_save_path, tracker_directory
 from src.torrentcreate import TorrentCreator
 
 # These have to be global variables to be shared across all instances since a new instance is made every time
@@ -120,6 +120,139 @@ class QbittorrentClientMixin:
 
     async def is_valid_torrent(self, meta: Meta, torrent_path: str, torrenthash: str, torrent_client: str, client: dict[str, Any]) -> tuple[bool, str]:
         raise NotImplementedError
+
+    async def get_reused_source_path(self, meta: Meta, client: dict[str, Any]) -> str | None:
+        """Return the local content path owned by an automatically reused torrent."""
+        infohash = str(meta.infohash or "").strip()
+        if not infohash:
+            return None
+
+        proxy_url = str(client.get("qui_proxy_url", "")).strip().rstrip("/")
+        qbt_client: qbittorrentapi.Client | None = None
+        session: httpx.AsyncClient | None = None
+        try:
+            if proxy_url:
+                session = httpx.AsyncClient(timeout=14.0, verify=self.create_ssl_context_for_client(client))
+                response = await session.get(f"{proxy_url}/api/v2/torrents/properties", params={"hash": infohash})
+                if response.status_code != 200:
+                    return None
+                properties = response.json()
+            else:
+                qbt_client = await self.init_qbittorrent_client(client)
+                if qbt_client is None:
+                    return None
+
+                # Cross-seed clients commonly contain two torrents with the
+                # same payload: one in the cross-seed directory and one in the
+                # normal downloads directory. Prefer the latter when qBit
+                # exposes it, since it is the authoritative original path.
+                requested_name = Path(str(meta.path or "")).name.casefold()
+                torrents = await self.retry_qbt_operation(
+                    lambda: asyncio.to_thread(qbt_client.torrents_info),
+                    "List torrents while resolving reused source path",
+                    initial_timeout=14.0,
+                )
+                local_paths = coerce_str_list(client.get("local_path", []))
+                remote_paths = coerce_str_list(client.get("remote_path", []))
+
+                def localize(path_value: str) -> str:
+                    value = path_value
+                    for index, remote_path in enumerate(remote_paths):
+                        local_path = local_paths[index] if index < len(local_paths) else (local_paths[0] if local_paths else remote_path)
+                        mapped = map_client_path_to_local(value, local_path, remote_path)
+                        if Path(mapped).exists() or index == len(remote_paths) - 1:
+                            value = mapped
+                            if Path(mapped).exists():
+                                break
+                    return value
+
+                def resolve_candidate(path_value: str) -> str | None:
+                    candidate = Path(localize(path_value))
+                    if candidate.is_file():
+                        if candidate.name.casefold() != requested_name:
+                            return None
+                        if current_size is not None and candidate.stat().st_size != current_size:
+                            return None
+                        return str(candidate.resolve())
+                    if candidate.is_dir():
+                        matches = [item for item in candidate.rglob("*") if item.is_file() and item.name.casefold() == requested_name]
+                        if len(matches) == 1:
+                            if current_size is not None and matches[0].stat().st_size != current_size:
+                                return None
+                            return str(matches[0].resolve())
+                    return None
+
+                current_path = Path(str(meta.path or "")).resolve()
+                try:
+                    current_size = current_path.stat().st_size
+                except OSError:
+                    current_size = None
+                alternate_paths: list[str] = []
+                for torrent in torrents or []:
+                    torrent_name = str(getattr(torrent, "name", "") or "")
+                    if torrent_name.casefold() != requested_name:
+                        continue
+                    torrent_hash = str(getattr(torrent, "hash", "") or "").strip()
+                    if torrent_hash.casefold() == infohash.casefold():
+                        continue
+                    raw_path = str(getattr(torrent, "content_path", "") or "")
+                    if not raw_path:
+                        raw_path = str(Path(str(getattr(torrent, "save_path", "") or "")) / torrent_name)
+                    resolved = resolve_candidate(raw_path)
+                    if resolved and Path(resolved) != current_path:
+                        alternate_paths.append(resolved)
+                if alternate_paths:
+                    return alternate_paths[0]
+
+                properties = await self.retry_qbt_operation(
+                    lambda: asyncio.to_thread(qbt_client.torrents_properties, torrent_hash=infohash),
+                    f"Get reused torrent content path for {infohash}",
+                    initial_timeout=14.0,
+                )
+
+            if not isinstance(properties, dict):
+                return None
+            content_path = str(properties.get("content_path") or "").strip()
+            if not content_path:
+                save_path = str(properties.get("save_path") or "").strip()
+                name = str(properties.get("name") or "").strip()
+                if save_path and name:
+                    content_path = str(Path(save_path) / name)
+            if not content_path:
+                return None
+
+            local_paths = coerce_str_list(client.get("local_path", []))
+            remote_paths = coerce_str_list(client.get("remote_path", []))
+            for index, remote_path in enumerate(remote_paths):
+                local_path = local_paths[index] if index < len(local_paths) else (local_paths[0] if local_paths else remote_path)
+                content_path = map_client_path_to_local(content_path, local_path, remote_path)
+                if Path(content_path).exists():
+                    break
+
+            candidate = Path(content_path)
+            if candidate.is_file():
+                try:
+                    current_size = Path(str(meta.path or "")).stat().st_size
+                except OSError:
+                    current_size = None
+                if current_size is None or candidate.stat().st_size == current_size:
+                    return str(candidate.resolve())
+            if candidate.is_dir():
+                requested_name = Path(str(meta.path or "")).name.casefold()
+                matches = [item for item in candidate.rglob("*") if item.is_file() and item.name.casefold() == requested_name]
+                if len(matches) == 1:
+                    try:
+                        current_size = Path(str(meta.path or "")).stat().st_size
+                    except OSError:
+                        current_size = None
+                    if current_size is None or matches[0].stat().st_size == current_size:
+                        return str(matches[0].resolve())
+        except (OSError, TypeError, ValueError, qbittorrentapi.APIError) as error:
+            logger.debug(f"[yellow]Unable to resolve reused torrent source path: {error}[/yellow]")
+        finally:
+            if session is not None:
+                await session.aclose()
+        return None
 
     async def get_ptp_from_hash_qbit(self, meta: Meta, client: dict[str, Any], pathed: bool = False) -> Meta:
         lookup_started = time.perf_counter()
