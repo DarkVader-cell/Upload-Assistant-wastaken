@@ -1752,6 +1752,8 @@ function AudionutsUAGUI() {
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.success) throw new Error(data?.error || "Unable to load log");
         setOperationLog((previous) => ({ ...previous, [jobId]: data.log || "" }));
+        setOperationsOpen(true);
+        setActivePanel("operations");
       } else {
         await operationRequest(`${API_BASE}/qui/${action}/${encodeURIComponent(jobId)}`, {
           method: "POST",
@@ -1852,6 +1854,18 @@ function AudionutsUAGUI() {
                         {trackerNames.length > 0 && <div>{trackerNames.join(" · ")}</div>}
                       </div>
                     </div>
+                    {item.job_id && (historyStatus === "failed" || historyStatus === "interrupted") && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => performJobAction(item.job_id, "retry")}
+                          className="rounded bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                        >Continue upload</button>
+                        <button
+                          onClick={() => performJobAction(item.job_id, "log")}
+                          className={`rounded border px-2 py-1 text-[11px] ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}
+                        >Open log</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -6332,10 +6346,10 @@ function AudionutsUAGUI() {
                   }}
                   aria-pressed={isScreenshotReviewOpen}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${isScreenshotReviewOpen ? "bg-purple-600 text-white" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
-                  title="Review generated screenshots"
+                  title="Review and fix generated screenshots"
                 >
                   <ScreenshotsIcon />
-                  Screenshots
+                  Fix screenshots
                   {executionScreenshots.length
                     ? ` (${executionScreenshots.length})`
                     : ""}
