@@ -1,4 +1,5 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
+import re
 from typing import Any
 
 import cli_ui
@@ -39,12 +40,55 @@ class Luminarr(UNIT3D):
         self.common = Common(config)
         self.rehost_images_manager = RehostImagesManager(config)
 
+    @staticmethod
+    def _encoder_family(meta: Meta) -> str:
+        """Return the evidenced x264/x265 encoder family, not only the codec."""
+        evidence = [str(meta.video_encode or "")]
+        tracks = meta.mediainfo.get("media", {}).get("track", []) if isinstance(meta.mediainfo, dict) else []
+        if isinstance(tracks, dict):
+            tracks = [tracks]
+        for track in tracks if isinstance(tracks, list) else []:
+            if isinstance(track, dict) and track.get("@type") == "Video":
+                evidence.extend(str(track.get(key) or "") for key in ("Encoded_Library", "Encoded_Library_Name"))
+        normalized = " ".join(evidence).lower()
+        if "x265" in normalized:
+            return "x265"
+        if "x264" in normalized:
+            return "x264"
+        return ""
+
+    @staticmethod
+    def _is_live_action(meta: Meta) -> bool:
+        descriptors = [*meta.genres, *meta.keywords]
+        return not meta.anime and not any("animation" in str(value).casefold() for value in descriptors)
+
+    def _accepted_encode(self, meta: Meta) -> tuple[bool, str]:
+        if meta.is_disc or str(meta.type or "").upper() != "ENCODE":
+            return True, ""
+        match = re.search(r"(\d{3,4})", str(meta.resolution or ""))
+        height = int(match.group(1)) if match else 0
+        encoder = self._encoder_family(meta)
+        if height and height < 1080 and encoder != "x264":
+            return False, "resolutions below 1080p must use x264"
+        if str(meta.resolution or "").casefold() != "1080p" or not self._is_live_action(meta):
+            return True, ""
+        is_hdr = any(marker in str(meta.hdr or "").upper() for marker in ("HDR", "DV", "HLG"))
+        required = "x265" if is_hdr else "x264"
+        if encoder != required:
+            return False, f"1080p {'HDR' if is_hdr else 'SDR'} live-action encodes must use {required}"
+        return True, ""
+
     async def get_additional_data(self, meta: Meta) -> dict[str, Any]:
         return {
             "mod_queue_opt_in": await self.get_flag(meta, "modq"),
         }
 
     async def get_additional_checks(self, meta: Meta) -> bool:
+        accepted_encode, reason = self._accepted_encode(meta)
+        if not accepted_encode:
+            logger.info(f"{self.tracker}: [bold red]{reason}.[/bold red]")
+            return False
+
         if meta.is_disc not in ["BDMV", "DVD"] and not await self.common.check_language_requirements(
             meta, self.tracker, languages_to_check=["english"], check_audio=True, check_subtitle=True, original_language=True
         ):

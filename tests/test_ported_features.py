@@ -1,5 +1,10 @@
+# ruff: noqa: S101
+
 import asyncio
 
+import pytest
+
+import upload
 from src.cogs.redaction import Redaction
 from src.manual_metadata import metadata_request, parse_metadata_submission, should_request_metadata
 from src.modified_release import MODIFIED_RELEASE_REASON, detect_modified_release
@@ -102,3 +107,12 @@ def test_failed_unattended_queue_item_remains_retryable():
     assert not queue_item_has_successful_upload([{"upload_success": False}])
     assert queue_item_has_successful_upload([{"upload_success": True}])
     assert queue_item_has_successful_upload([], debug=True)
+
+
+def test_upload_main_propagates_unexpected_failures(monkeypatch):
+    async def fail(_base_dir):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(upload, "do_the_thing", fail)
+    with pytest.raises(RuntimeError, match="boom"):
+        asyncio.run(upload.main())

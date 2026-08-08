@@ -400,6 +400,22 @@ class TrackerSetup:
         if "taoe" in group_tags:
             group_tags = "taoe"
 
+        # DesiTorrents permits otherwise-listed groups for clean WEB-DLs. The
+        # presence of advertisement tags/watermarks cannot be inferred safely
+        # from MediaInfo, so require an explicit confirmation and keep
+        # unattended runs conservative.
+        if tracker.upper() == "DESITORRENTS" and meta.type == "WEBDL":
+            listed_names = {
+                str(item[0] if isinstance(item, list) and item else item).lower()
+                for item in banned_group_list
+            }
+            if (
+                group_tags in listed_names
+                and (not meta.unattended or meta.unattended_confirm)
+                and cli_ui.ask_yes_no("Is this WEB-DL free of advertisement tags and watermarks?", default=False)
+            ):
+                return False
+
         if tracker.upper() in ("AITHER", "CAPYBARABR", "LST", "LUMINARR", "SPEEDAPP", "ZENITH"):
             file_path = await self.get_banned_groups(meta, tracker)
             if file_path == "empty":

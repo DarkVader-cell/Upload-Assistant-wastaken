@@ -291,7 +291,22 @@ class AZTrackerBase:
                     size_span = cells[4].find("span")
                     size = size_span.get_text(strip=True) if size_span else cells[4].get_text(strip=True)
 
-                dupe_entry = {"name": name, "size": size, "link": torrent_link}
+                canonical_type = {
+                    "bluray raw": "DISC",
+                    "dvd": "DISC",
+                    "bluray remux": "REMUX",
+                    "dvd remux": "REMUX",
+                    "web-dl": "WEBDL",
+                    "webrip": "WEBRIP",
+                    "hdtv": "HDTV",
+                    "sdtv": "HDTV",
+                    "bdrip": "ENCODE",
+                    "bluray": "ENCODE",
+                    "brrip": "ENCODE",
+                    "dvdrip": "ENCODE",
+                    "hdrip": "ENCODE",
+                }.get(rip_type.lower().strip(), rip_type)
+                dupe_entry = {"name": name, "size": size, "link": torrent_link, "type": canonical_type, "source": rip_type}
 
                 if meta.is_disc == "BDMV":
                     bd_info = await self.get_dupe_bdinfo(torrent_link)

@@ -499,13 +499,19 @@ class Anthelion:
                     largest_file = largest.get("name", "")
 
                 result: dict[str, Any] = {
-                    "name": largest_file or search_result.get("fileName", ""),
+                    "name": (valid_files[0].get("name", "") if len(valid_files) == 1 else search_result.get("fileName") or search_result.get("releaseName") or largest_file or ""),
                     "files": [cast(dict[str, Any], file).get("name", "") for file in files if isinstance(file, dict)],
                     "size": int(search_result.get("size", 0)),
                     "link": search_result.get("guid", ""),
                     "flags": search_result.get("flags", []),
                     "file_count": search_result.get("fileCount", 0),
                     "download": search_result.get("link", "").replace("&amp;", "&"),
+                    "type": search_result.get("type", ""),
+                    "source": search_result.get("source") or search_result.get("media") or "",
+                    "container": search_result.get("container", ""),
+                    "codec": search_result.get("codec", ""),
+                    "group": search_result.get("releaseGroup", ""),
+                    "res": resolution,
                 }
                 dupes.append(result)
 

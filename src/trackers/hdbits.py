@@ -23,6 +23,54 @@ from src.trackers.common import Common
 Config = dict[str, Any]
 
 
+def _hdb_candidate_type(value: object) -> str:
+    medium = str(value or "").strip().upper().replace("_", "")
+    return {
+        "1": "DISC",
+        "3": "ENCODE",
+        "4": "HDTV",
+        "5": "REMUX",
+        "6": "WEBDL",
+        "BLURAY": "DISC",
+        "HDDVD": "DISC",
+        "DISC": "DISC",
+        "ENCODE": "ENCODE",
+        "HDTV": "HDTV",
+        "REMUX": "REMUX",
+        "WEBDL": "WEBDL",
+        "WEBRIP": "WEBRIP",
+    }.get(medium, "")
+
+
+def _hdb_candidate_codec(value: object) -> str:
+    return {"1": "H.264", "2": "MPEG-2", "3": "VC-1", "4": "XviD", "5": "H.265", "6": "VP9"}.get(str(value or "").strip(), str(value or ""))
+
+
+def _hdb_dupe_entry(each: dict[str, Any], base_url: str, passkey: str) -> dict[str, Any]:
+    filename = str(each.get("filename") or "")
+    raw_tags = each.get("tags", [])
+    tags = [item.strip() for item in raw_tags.split(",") if item.strip()] if isinstance(raw_tags, str) else [str(item).strip() for item in raw_tags if str(item).strip()] if isinstance(raw_tags, list) else []
+    medium = _hdb_candidate_type(each.get("medium"))
+    return {
+        "name": each.get("name", ""),
+        "size": each.get("size"),
+        "files": [],
+        "file_count": each.get("numfiles", 0),
+        "link": f"{base_url}/details.php?id={each.get('id')}",
+        "download": f"{base_url}/download.php/{quote(filename)}?id={each.get('id')}&passkey={passkey}",
+        "category": {"1": "MOVIE", "2": "TV", "3": "MOVIE", "4": "MOVIE"}.get(str(each.get("category") or ""), str(each.get("category") or "")),
+        "type": medium,
+        "source": "BluRay" if medium == "DISC" else "",
+        "res": each.get("resolution", ""),
+        "codec": _hdb_candidate_codec(each.get("codec")),
+        "container": each.get("container", ""),
+        "group": each.get("releaseGroup") or each.get("group") or "",
+        "flags": tags,
+        "internal": each.get("origin", 0) == 1,
+        "description": each.get("descr", ""),
+    }
+
+
 class HDBits:
     """
     HDB Private Torrent Tracker
@@ -384,16 +432,7 @@ class HDBits:
                     response_data = response.json()
                     results = response_data.get("data", [])
                     if results:
-                        for each in results:
-                            result = {
-                                "name": each["name"],
-                                "size": each["size"],
-                                "files": each["filename"][:-8] if each["filename"].endswith(".torrent") else each["filename"],
-                                "filecount": each["numfiles"],
-                                "link": f"{self.base_url}/details.php?id={each['id']}",
-                                "download": f"{self.base_url}/download.php/{quote(each['filename'])}?id={each['id']}&passkey={self.passkey}",
-                            }
-                            dupes.append(result)
+                        dupes.extend(_hdb_dupe_entry(cast(dict[str, Any], each), self.base_url, self.passkey) for each in results)
                 else:
                     logger.info(f"{self.tracker}: [bold red]HTTP request failed. Status: {response.status_code}")
             return dupes
@@ -409,16 +448,7 @@ class HDBits:
                     response_data = response.json()
                     results = response_data.get("data", [])
                     if results:
-                        for each in results:
-                            result = {
-                                "name": each["name"],
-                                "size": each["size"],
-                                "files": each["filename"][:-8] if each["filename"].endswith(".torrent") else each["filename"],
-                                "filecount": each["numfiles"],
-                                "link": f"{self.base_url}/details.php?id={each['id']}",
-                                "download": f"{self.base_url}/download.php/{quote(each['filename'])}?id={each['id']}&passkey={self.passkey}",
-                            }
-                            dupes.append(result)
+                        dupes.extend(_hdb_dupe_entry(cast(dict[str, Any], each), self.base_url, self.passkey) for each in results)
                 else:
                     logger.info(f"{self.tracker}: [bold red]HTTP request failed. Status: {response.status_code}")
 

@@ -83,7 +83,7 @@ This branch introduces new media categories and automation features not present 
 
 ### 6. Interactive Screenshot Review Workflow
 
-- **Manual Screenshot Review**: Inspect, add, delete, or replace/recapture individual frames before uploading through the interactive Web UI.
+- **Manual Screenshot Review**: Inspect, add, delete, replace/recapture, or delete-and-refill individual frame slots before uploading through the interactive Web UI.
 
 ### 7. Persistent TTL-Based Metadata Cache
 
@@ -99,7 +99,8 @@ This branch introduces new media categories and automation features not present 
 
 - **Faster retries and queues**: Content-addressed artifacts, atomic stage checkpoints, pooled provider clients, adaptive scheduling, and safe parallel unattended preparation avoid repeated work while keeping uploads ordered.
 - **Plan before execution**: `--plan` / `--dry-run-plan` and `POST /api/plan` show stages, cache hits, expected external calls, trackers, and warnings without mutating files or clients.
-- **Operations visibility**: The Web UI reports runtime health, artifact reuse, resumable stages, provider telemetry, external-tool availability, and detached-job progress. Qui clients can consume cursor-based events, compact summaries, and bulk retry controls.
+- **Operations visibility**: The Web UI reports runtime health, artifact reuse, resumable stages, provider telemetry, external-tool availability, detached-job progress, and searchable release history that survives restarts. Qui clients can consume cursor-based events, compact summaries, and bulk retry controls.
+- **Safer client configuration**: Removing a configured torrent-client profile repairs the default, injection, and search references so stale profile names cannot break later runs.
 - **Upstream-friendly extensions**: The opt-in versioned extension API adds trackers, metadata providers, pipeline stages, and health checks outside upstream-owned modules.
 
 ## Supported Sites

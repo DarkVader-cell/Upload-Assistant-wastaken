@@ -2122,6 +2122,10 @@ function ItemList({
         const nextDepth = item.subsection ? depth : depth + 1;
         const groupKey = [...pathParts, item.key].join("/");
         const isOpen = expandedGroups.has(groupKey);
+        const isConfiguredTorrentClient =
+          isTorrentClientConfig &&
+          Array.isArray(item.children) &&
+          item.children.some((child) => child.source === "config");
 
         const nested = (
           <ItemList
@@ -2151,30 +2155,67 @@ function ItemList({
         if (isCollapsible) {
           return (
             <div key={groupKey} className="space-y-4">
-              <button
-                type="button"
-                onClick={() => toggleGroup(groupKey)}
-                className={`flex items-center gap-2 text-left w-full text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}
-                aria-expanded={isOpen}
-              >
-                <span
-                  className="transition-transform"
-                  style={{
-                    transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
-                  }}
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleGroup(groupKey)}
+                  className={`flex flex-1 items-center gap-2 text-left text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-800"}`}
+                  aria-expanded={isOpen}
                 >
-                  &gt;
-                </span>
-                <span
-                  className={
-                    isDarkMode
-                      ? "text-purple-300 font-mono"
-                      : "text-purple-700 font-mono"
-                  }
-                >
-                  {getTrackerDisplayName(item.key)}
-                </span>
-              </button>
+                  <span
+                    className="transition-transform"
+                    style={{
+                      transform: isOpen ? "rotate(90deg)" : "rotate(0deg)",
+                    }}
+                  >
+                    &gt;
+                  </span>
+                  <span
+                    className={
+                      isDarkMode
+                        ? "text-purple-300 font-mono"
+                        : "text-purple-700 font-mono"
+                    }
+                  >
+                    {getTrackerDisplayName(item.key)}
+                  </span>
+                </button>
+                {isConfiguredTorrentClient && (
+                  <button
+                    type="button"
+                    className="rounded border border-rose-500/60 px-2 py-1 text-xs text-rose-500 hover:bg-rose-500/10"
+                    onClick={async () => {
+                      const ok = await showConfirmModal({
+                        title: "Remove torrent client",
+                        message: `Remove ${item.key}? Default, injection, and search references to this client will be repaired automatically.`,
+                        confirmLabel: "Remove client",
+                      });
+                      if (!ok) return;
+                      try {
+                        const response = await apiFetch(
+                          `${API_BASE}/config_remove_subsection`,
+                          {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({
+                              path: ["TORRENT_CLIENTS", item.key],
+                            }),
+                          },
+                        );
+                        const result = await response.json();
+                        if (!response.ok || !result.success) {
+                          throw new Error(result.error || "Removal failed");
+                        }
+                        window.location.reload();
+                      } catch (error) {
+                        window.alert(error.message || "Could not remove client");
+                      }
+                    }}
+                  >
+                    Remove
+                  </button>
+                )}
+              </div>
               {isOpen && (
                 <div
                   className={`rounded-lg border p-4 ${isDarkMode ? "border-gray-700 bg-gray-900/30" : "border-gray-200 bg-gray-50"}`}

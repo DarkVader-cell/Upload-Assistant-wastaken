@@ -133,6 +133,17 @@ def _publish_webui_preview_target(path: str, meta_uuid: str | None = None) -> No
         return
 
 
+async def _record_release_history(meta: Meta, *, record_id: str, status: str | None = None) -> None:
+    """Persist a non-secret release summary without delaying the upload loop."""
+    try:
+        from src.runtime.history import ReleaseHistoryStore
+
+        source = "webui" if _webui_session_id else "cli"
+        await asyncio.to_thread(ReleaseHistoryStore(base_dir, config).record_release, meta, status=status, source=source, record_id=record_id)
+    except Exception as error:
+        logger.debug(f"Release history update failed: {error}")
+
+
 def _handle_shutdown_signal(signum: int, _frame: Any) -> None:
     """Handle SIGTERM/SIGINT for graceful shutdown."""
     global _shutdown_requested, _webui_server
@@ -2349,6 +2360,8 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                 Path(subdir_path).chmod(0o700)
 
     meta = Meta()
+    history_record_id = ""
+    history_recorded = False
     try:
         remaining_args, pasted_paths = read_paths_from_stdin(sys.argv[1:], sys.stdin)
     except ValueError as exc:
@@ -2617,6 +2630,9 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
             tmp_path = ""
             parallel_meta_success: bool | None = None
             was_parallel_prepared = False
+            detached_job_id = os.environ.get("UA_DETACHED_JOB_ID", "").strip()
+            history_record_id = detached_job_id or f"{_webui_session_id or 'cli'}:{queue_index}:{time.time_ns()}"
+            history_recorded = False
             current_release_log_path.set(None)
             try:
                 meta = base_meta.copy()
@@ -2996,6 +3012,9 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     else:
                         await save_processed_file(log_file, current_item_path)
 
+            await _record_release_history(meta, record_id=history_record_id)
+            history_recorded = True
+
             if "limit_queue" in meta and meta.limit_queue > 0 and (processed_files_count - skipped_files_count) >= meta.limit_queue:
                 if sanitize_meta:
                     try:
@@ -3021,10 +3040,13 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
     except Exception as e:
         logger.info(f"[bold red]An unexpected error occurred: {e}")
+        if history_record_id and not history_recorded:
+            await _record_release_history(meta, record_id=history_record_id, status="failed")
         if sanitize_meta:
             meta = await Redaction.clean_meta_for_export(meta)
         logger.info(traceback.format_exc())
         cleanup_manager.reset_terminal()
+        raise
 
     finally:
         current_release_log_path.set(None)
@@ -3259,6 +3281,7 @@ async def main() -> None:
     except Exception as e:
         if not _shutdown_requested:
             logger.error(f"[bold red]Unexpected error: {e}[/bold red]")
+        raise
 
 
 if __name__ == "__main__":
@@ -3272,12 +3295,19 @@ if __name__ == "__main__":
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _handle_shutdown_signal)
 
+    exit_code = 0
     try:
         asyncio.run(main())
-    except KeyboardInterrupt, SystemExit:
+    except KeyboardInterrupt:
+        exit_code = 130 if not _shutdown_requested else 0
         if not _shutdown_requested:
             logger.info("\n[yellow]Shutting down...[/yellow]")
+    except SystemExit as error:
+        exit_code = error.code if isinstance(error.code, int) else 1
+        if exit_code and not _shutdown_requested:
+            logger.info("\n[yellow]Upload-Assistant stopped before completion.[/yellow]")
     except BaseException as e:
+        exit_code = 1
         if not _shutdown_requested:
             logger.info(f"[bold red]Critical error: {e}[/bold red]")
     finally:
@@ -3299,4 +3329,4 @@ if __name__ == "__main__":
         if _shutdown_requested or _is_webui_mode:
             logger.info("[green]Shutdown complete[/green]")
 
-        sys.exit(0)
+        sys.exit(exit_code)

@@ -12,6 +12,7 @@ from src.screenshot_review import (
     image_version,
     list_review_items,
     list_screenshots,
+    refill_screenshot_slot,
     staged_remote_uploads,
     target_count,
     undo_remote_replacement,
@@ -206,6 +207,30 @@ def test_add_after_deleting_earlier_remote_addition_uses_unique_id(tmp_path: Pat
     assert addition.id.startswith("remote-add-")
     assert addition.id not in {"remote-add-0", "remote-add-1"}
     assert [item.id for item in list_review_items(tmp_path, meta_data)] == ["remote-0", "remote-add-1", addition.id]
+
+
+def test_refill_pending_addition_preserves_slot_and_target_count(tmp_path: Path, monkeypatch) -> None:
+    screenshots_dir = tmp_path / "screenshots"
+    screenshots_dir.mkdir()
+    addition = screenshots_dir / "review-remote-add-0.png"
+    addition.write_bytes(b"old")
+    (tmp_path / "screenshot_review.json").write_text(
+        '{"remote_additions": [{"id": "remote-add-0", "file": "review-remote-add-0.png"}]}',
+        encoding="utf-8",
+    )
+    meta_data = {"image_list": [{"raw_url": "https://images.example/original.png"}]}
+
+    async def capture_stub(_temp_dir, _meta_data, target):
+        target.path.write_bytes(b"new")
+        return 2.0
+
+    monkeypatch.setattr("src.screenshot_review._capture_fresh_frame", capture_stub)
+    refilled = asyncio.run(refill_screenshot_slot(tmp_path, meta_data, "remote-add-0"))
+
+    assert refilled.id == "remote-add-0"
+    assert addition.read_bytes() == b"new"
+    assert [item.id for item in list_review_items(tmp_path, meta_data)] == ["remote-0", "remote-add-0"]
+    assert target_count(tmp_path, 0) == 2
 
 
 def test_apply_staged_remote_uploads_preserves_later_review_changes(tmp_path: Path) -> None:

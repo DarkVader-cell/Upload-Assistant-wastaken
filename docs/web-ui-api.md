@@ -128,6 +128,16 @@ Qui and other automation clients can avoid repeatedly transferring the full job 
 
 Consumers should persist the returned cursor, apply events in order, and fall back to `/api/qui/status` after a long disconnect because the event buffer is bounded. The existing status endpoint remains the authoritative snapshot.
 
+### /api/release_history
+
+- Methods: GET
+- Auth: authenticated Web UI session or accepted bearer token
+- Query parameters: `q` (release name, path, tracker, record ID, or job ID), `status`, `limit` (1–500), and `offset`
+- Description: returns the bounded, persistent, non-secret release projection shared by CLI, Web UI, and detached Qui runs
+- Response: `{"success":true,"items":[...],"stats":{"entries":N,"completed":N,"failed":N},"limit":100,"offset":0}`
+
+The database defaults to `data/cache/release_history.sqlite3`, uses indexed SQLite queries, and does not store CLI arguments, API keys, cookies, or tracker credentials.
+
 ### /api/qui/retry/<job_id>
 
 - Methods: POST
@@ -279,9 +289,9 @@ The following endpoints via a valid web session.
 
 - Methods: POST
 - Auth: requires web session + CSRF + Origin
-- POST payload: {"path": ["SECTION"]}
-- Description: remove a top-level subsection from user config
-- Response: {"success": true, "value": null}
+- POST payload: `{"path":["SECTION"]}` or `{"path":["TORRENT_CLIENTS","profile-name"]}`
+- Description: removes a user-config subsection. Removing a torrent-client profile also repairs the default, injecting, and searching client references and selects a remaining profile as the default when possible.
+- Response: `{"success":true,"references_updated":[["DEFAULT","default_torrent_client"], ...]}`; unchanged paths return `{"success":true,"value":null}`
 
 ### /api/tokens
 

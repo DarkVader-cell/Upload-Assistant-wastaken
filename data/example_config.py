@@ -71,6 +71,11 @@ config: dict[str, Any] = {
         "adaptive_scheduler_enabled": True,
         "adaptive_scheduler_concurrency": 4,
         "adaptive_scheduler_state": "data/cache/runtime/scheduler.json",
+        # Keep a compact, searchable execution history across CLI, Web UI, and
+        # detached Qui runs. The SQLite database contains no credentials.
+        "release_history_enabled": True,
+        "release_history_db": "data/cache/release_history.sqlite3",
+        "release_history_max_entries": 5000,
         # Unattended regular queues may prepare independent releases in parallel.
         # Tracker uploads and client mutations remain in the ordered main loop.
         "queue_prepare_concurrency": 1,

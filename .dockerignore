@@ -42,9 +42,11 @@ tmp
 docker-data
 *.torrent
 *.log
+**/*.log
 
 # Host configuration, credentials, and mutable application state
 data/config.py
+data/access_log.log
 data/session_secret
 data/sessions
 data/*.db

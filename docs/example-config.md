@@ -68,6 +68,9 @@ Important gotchas:
 - `adaptive_scheduler_enabled` (bool): Order providers and trackers using observed latency, failures, and rate-limit cooldowns.
 - `adaptive_scheduler_concurrency` (int): Maximum concurrent scheduled provider/tracker work.
 - `adaptive_scheduler_state` (str): Non-secret scheduler telemetry file.
+- `release_history_enabled` (bool): Persist a non-secret release summary for CLI, Web UI, and detached Qui runs.
+- `release_history_db` (str): SQLite history path, relative to the project root unless absolute.
+- `release_history_max_entries` (int): Maximum retained history rows; oldest rows are pruned after each update.
 - `queue_prepare_concurrency` (int): Number of unattended regular queue items to prepare concurrently. Uploads and client mutations remain serialized; `1` preserves sequential preparation.
 - `extensions_enabled` (bool): Opt in to third-party extensions. Disabled by default.
 - `extension_paths` (list[str]): Local extension directories. Each `.py` file must export `register(registry)` against extension API version 1.

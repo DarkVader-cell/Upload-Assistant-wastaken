@@ -31,7 +31,7 @@ bind-mounted local state.
 The canonical Compose file keeps the WebUI permanently active through
 `gluetun_seeding` and persists:
 
-- `docker-data/data` — `config.py`, caches, and application state;
+- `docker-data/data` — `config.py`, caches, searchable release history, and application state;
 - `docker-data/tmp` — logs, screenshots, queue state, and Qui job manifests;
 - `docker-data/webui-auth` — WebUI sessions and authentication state;
 - `/mnt/seeding` — the only host content root exposed to the WebUI.
@@ -80,7 +80,7 @@ The existing Qui programs should continue to use `/config/ua-submit` with
 their current path mappings. That wrapper posts to `/api/qui/submit`, adds
 unattended mode, and reads the API token from `/config/.ua-token`.
 
-For dashboards or automation, use `/api/qui/events` with a persisted cursor for incremental updates, `/api/qui/summary` for low-cost counts, and `/api/qui/retry` for validated bulk recovery. `/api/qui/status` remains the authoritative resynchronization snapshot. All endpoints use the same Upload Assistant API token policy as the submit wrapper.
+For dashboards or automation, use `/api/qui/events` with a persisted cursor for incremental updates, `/api/qui/summary` for low-cost counts, `/api/qui/retry` for validated bulk recovery, and `/api/release_history` for cross-restart release outcomes. `/api/qui/status` remains the authoritative live resynchronization snapshot. All endpoints use the same Upload Assistant API token policy as the submit wrapper.
 
 No Qui database migration is required. Both existing external-program entries
 already point to this wrapper; historical stale IPs in old logs are not active

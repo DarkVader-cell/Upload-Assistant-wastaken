@@ -63,6 +63,8 @@ Notes:
 
 Use **Unattended Operations** to submit the selected files or folders to the durable detached queue. While open, the dashboard refreshes live and lets you view job state and logs, edit arguments before a job starts, cancel or retry jobs, and answer required metadata or ordinary yes/no/text prompts without a terminal.
 
+The same panel includes persistent release history for CLI, interactive Web UI, and Qui runs. Search by release name, path, tracker, or job ID, or filter by status. History is bounded by `release_history_max_entries` and survives Web UI/container restarts when `data/` is persistent.
+
 The dashboard also refreshes runtime health every 15 seconds. It summarizes artifact reuse, resumable stage checkpoints, observed providers, and required external tools, and displays per-job stage/percentage progress when available. A degraded status means one or more configured dependencies needs attention; it does not hide or stop otherwise valid queued work.
 
 Detached jobs are serialized and persisted under `tmp/qui_jobs.json`. Settings are changed only before a job starts (or as part of retrying a failed/interrupted job); a running process is not rewritten underneath itself. Keep the Web UI authenticated and bound to a trusted interface because this dashboard can control uploads and send input to active processes.
@@ -72,6 +74,8 @@ Detached jobs are serialized and persisted under `tmp/qui_jobs.json`. Settings a
 - The "View Config" button opens a config editor served at `/config`. The editor reads options from `data/example_config.py` and applies overrides in `data/config.py`. Users without a config.py file will have a file created from the example_config.py file.
 - The editor performs type coercion and writes updates back into the config file `data/config.py`. Changes are audited to `data/config_audit.log`.
 - Use the config editor for common changes like adding torrent clients, image hosts, or toggling features.
+- Configured torrent-client profiles have a **Remove** action. Removing one also repairs `default_torrent_client`, `injecting_client_list`, and `searching_client_list`; implementation names such as `qbit` are not mistaken for profile names.
+- In screenshot review, **Delete + refill** recaptures the same slot and preserves ordering/target count. Plain **Delete** remains available when you intentionally want fewer screenshots.
 
 ### Access control
 

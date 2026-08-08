@@ -1599,6 +1599,10 @@ function AudionutsUAGUI() {
   const [detachedJobs, setDetachedJobs] = useState([]);
   const [operationsLoading, setOperationsLoading] = useState(false);
   const [runtimeHealth, setRuntimeHealth] = useState(null);
+  const [releaseHistory, setReleaseHistory] = useState([]);
+  const [releaseHistoryStats, setReleaseHistoryStats] = useState(null);
+  const [releaseHistorySearch, setReleaseHistorySearch] = useState("");
+  const [releaseHistoryStatus, setReleaseHistoryStatus] = useState("");
   const [operationDrafts, setOperationDrafts] = useState({});
   const [operationInput, setOperationInput] = useState({});
   const [operationLog, setOperationLog] = useState({});
@@ -1649,6 +1653,27 @@ function AudionutsUAGUI() {
     }
   }, [API_BASE]);
 
+  const loadReleaseHistory = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ limit: "100" });
+      if (releaseHistorySearch.trim()) {
+        params.set("q", releaseHistorySearch.trim());
+      }
+      if (releaseHistoryStatus) params.set("status", releaseHistoryStatus);
+      const response = await apiFetch(
+        `${API_BASE}/release_history?${params.toString()}`,
+        { cache: "no-store" },
+      );
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) {
+        setReleaseHistory(Array.isArray(data.items) ? data.items : []);
+        setReleaseHistoryStats(data.stats || null);
+      }
+    } catch (error) {
+      console.error("Failed to load release history:", error);
+    }
+  }, [API_BASE, releaseHistorySearch, releaseHistoryStatus]);
+
   useEffect(() => {
     if (!operationsOpen && activePanel !== "operations") return undefined;
     loadDetachedJobs();
@@ -1662,6 +1687,16 @@ function AudionutsUAGUI() {
     const timer = window.setInterval(loadRuntimeHealth, 15000);
     return () => window.clearInterval(timer);
   }, [activePanel, loadRuntimeHealth, operationsOpen]);
+
+  useEffect(() => {
+    if (!operationsOpen && activePanel !== "operations") return undefined;
+    const initial = window.setTimeout(loadReleaseHistory, 200);
+    const timer = window.setInterval(loadReleaseHistory, 10000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [activePanel, loadReleaseHistory, operationsOpen]);
 
   useEffect(() => {
     if (activePanel === "operations") setOperationsOpen(true);
@@ -1732,7 +1767,7 @@ function AudionutsUAGUI() {
             <button onClick={submitUnattendedSelection} className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
               Queue selected ({selectedPaths.length || (selectedPath ? 1 : 0)})
             </button>
-            <button onClick={loadDetachedJobs} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>
+            <button onClick={() => { loadDetachedJobs(); loadReleaseHistory(); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>
               {operationsLoading ? "Refreshing…" : "Refresh"}
             </button>
             {overlay && <button onClick={() => { setOperationsOpen(false); setActivePanel("main"); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>Close</button>}
@@ -1747,6 +1782,72 @@ function AudionutsUAGUI() {
             <div className="sm:col-span-2 lg:col-span-4"><span className="opacity-60">External tools: </span><span>{Object.entries(runtimeHealth.tools || {}).map(([name, available]) => `${name}:${available ? "ok" : "missing"}`).join(" · ")}</span></div>
           </div>
         )}
+        <section className="mb-5">
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold">Release history</h3>
+              <p className={`text-[11px] ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Persistent across restarts · {releaseHistoryStats?.entries || 0} recorded · {releaseHistoryStats?.completed || 0} completed
+              </p>
+            </div>
+            <div className="flex flex-1 flex-wrap justify-end gap-2 sm:flex-none">
+              <input
+                value={releaseHistorySearch}
+                onChange={(event) => setReleaseHistorySearch(event.target.value)}
+                placeholder="Search name, path, tracker, or job ID"
+                aria-label="Search release history"
+                className={`min-w-[220px] flex-1 rounded border px-2 py-1.5 text-xs sm:w-72 ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
+              />
+              <select
+                value={releaseHistoryStatus}
+                onChange={(event) => setReleaseHistoryStatus(event.target.value)}
+                aria-label="Filter release history by status"
+                className={`rounded border px-2 py-1.5 text-xs ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
+              >
+                <option value="">All statuses</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="skipped">Skipped</option>
+                <option value="debug">Debug</option>
+                <option value="interrupted">Interrupted</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+          {!releaseHistory.length ? (
+            <div className={`rounded-lg border border-dashed p-4 text-center text-xs ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>
+              No matching release history.
+            </div>
+          ) : (
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {releaseHistory.map((item) => {
+                const historyStatus = String(item.status || "unknown");
+                const trackerNames = Array.isArray(item.successful_trackers) && item.successful_trackers.length
+                  ? item.successful_trackers
+                  : Array.isArray(item.trackers) ? item.trackers : [];
+                return (
+                  <div key={item.id} className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-gray-700 bg-gray-900/70" : "border-gray-200 bg-gray-50"}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${historyStatus === "completed" ? "bg-emerald-500/20 text-emerald-400" : historyStatus === "failed" || historyStatus === "cancelled" ? "bg-rose-500/20 text-rose-400" : "bg-amber-500/20 text-amber-400"}`}>{historyStatus}</span>
+                          <strong className="truncate text-xs">{item.release_name || item.source_path || item.id}</strong>
+                          {(item.category || item.media_type || item.resolution) && <span className="text-[10px] opacity-60">{[item.category, item.media_type, item.resolution].filter(Boolean).join(" · ")}</span>}
+                        </div>
+                        <p className="mt-1 truncate font-mono text-[10px] opacity-60" title={item.source_path}>{item.source_path}</p>
+                      </div>
+                      <div className="text-right text-[10px] opacity-60">
+                        <div>{new Date(Number(item.updated_at) * 1000).toLocaleString()}</div>
+                        {trackerNames.length > 0 && <div>{trackerNames.join(" · ")}</div>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        <h3 className="mb-2 text-sm font-bold">Live unattended jobs</h3>
         {!detachedJobs.length ? (
           <div className={`rounded-lg border border-dashed p-8 text-center text-sm ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>No unattended jobs yet.</div>
         ) : (
@@ -4490,6 +4591,8 @@ function AudionutsUAGUI() {
                             screenshotActionId === `replace:${screenshot.id}`;
                           const deleting =
                             screenshotActionId === `delete:${screenshot.id}`;
+                          const refilling =
+                            screenshotActionId === `refill:${screenshot.id}`;
                           const undoing =
                             screenshotActionId === `undo:${screenshot.id}`;
                           const screenshotState =
@@ -4584,6 +4687,21 @@ function AudionutsUAGUI() {
                                       ) : (
                                         <TrashIcon />
                                       )}
+                                    </button>
+                                  )}
+                                  {screenshot.can_refill && (
+                                    <button
+                                      onClick={() =>
+                                        changeExecutionScreenshot(
+                                          screenshot.id,
+                                          "refill",
+                                        )
+                                      }
+                                      disabled={isWorking}
+                                      className="px-2 py-1 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                                      title={`Delete and automatically refill ${screenshot.filename}`}
+                                    >
+                                      {refilling ? "Refilling…" : "Delete + refill"}
                                     </button>
                                   )}
                                   {screenshot.source === "replacement" && (

@@ -37,12 +37,14 @@ class Blutopia(UNIT3D):
         "aXXo",
         "B3LLUM",
         "BHDStudio",
+        "BitHD",
         "Brrip",
         "CHD",
         "CM8",
         "CrEwSaDe",
         "d3g",
         "DeadFish",
+        "D3US",
         "DNL",
         "DTLegacy",
         "ELiTE",
@@ -70,6 +72,7 @@ class Blutopia(UNIT3D):
         "Leffe",
         "LEGi0N",
         "LOAD",
+        "mAck",
         "MeGusta",
         "mHD",
         "mSD",
@@ -79,10 +82,14 @@ class Blutopia(UNIT3D):
         "NOIVTC",
         "nSD",
         "OFT",
+        "PAAI",
+        "PHOCiS",
         "PiRaTeS",
         "playBD",
         "PlaySD",
         "playXD",
+        "PMi",
+        "PrimeFix",
         "PRODJi",
         "RAPiDCOWS",
         "RARBG",
@@ -106,6 +113,7 @@ class Blutopia(UNIT3D):
         "WAF",
         "WKS",
         "x0r",
+        "XDMovies",
         "xRed",
         "XS",
         "YIFY",
@@ -113,6 +121,7 @@ class Blutopia(UNIT3D):
         "ZmN",
         "ZMNT",
     )
+    raw_only_groups = ("AOC", "CMRG", "EVO", "TERMiNAL", "ViSION")
     id_url = f"{base_url}/api/torrents/"
     upload_url = f"{base_url}/api/torrents/upload"
     search_url = f"{base_url}/api/torrents/filter"
@@ -165,6 +174,7 @@ class Blutopia(UNIT3D):
 
     async def get_additional_checks(self, meta: Meta) -> bool:
         should_continue = True
+        release_group = str(meta.tag or "").lstrip("-")
 
         if meta.type == "ENCODE":
             audio_tracks = self._audio_tracks(meta)
@@ -210,12 +220,22 @@ class Blutopia(UNIT3D):
             if cli_ui.ask_yes_no("Is this a derived layer release?", default=False):
                 meta.tracker_status[self.tracker]["other"] = True
 
-        if meta.type not in ["WEBDL"] and not meta.is_disc and meta.tag in ["AOC", "CMRG", "EVO", "TERMiNAL", "ViSION"]:
+        if meta.type not in ["WEBDL"] and not meta.is_disc and release_group in self.raw_only_groups:
             if not meta.unattended or (meta.unattended and meta.unattended_confirm):
                 logger.info(f"{self.tracker}: [bold red]Group {meta.tag} is only allowed for raw type content[/bold red]")
                 if cli_ui.ask_yes_no("Do you want to upload anyway?", default=False):
                     pass
                 else:
+                    return False
+            else:
+                return False
+
+        # AOC requires explicit approval even for nominally raw WEB-DLs because
+        # the group is also known to publish fake WEB-DLs.
+        if release_group == "AOC" and (meta.type == "WEBDL" or meta.is_disc):
+            logger.info(f"{self.tracker}: [bold yellow]AOC uploads require prior approval.[/bold yellow]")
+            if not meta.unattended or meta.unattended_confirm:
+                if not cli_ui.ask_yes_no("Do you have approval to upload this AOC release?", default=False):
                     return False
             else:
                 return False

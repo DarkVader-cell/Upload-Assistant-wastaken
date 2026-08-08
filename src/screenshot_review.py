@@ -286,6 +286,25 @@ async def replace_screenshot(temp_dir: Path, meta_data: Mapping[str, object], sc
         return target
 
 
+async def refill_screenshot_slot(temp_dir: Path, meta_data: Mapping[str, object], screenshot_id: str) -> ReviewedScreenshot:
+    """Regenerate a reviewed slot while preserving its position and target count.
+
+    Pending additions historically could only be deleted and re-added at the
+    end. Keeping their opaque ID and index makes an explicit delete-and-refill
+    operation deterministic for descriptions and staged uploads.
+    """
+    if not screenshot_id.startswith("remote-add-"):
+        return await replace_screenshot(temp_dir, meta_data, screenshot_id)
+    with _lock_for(temp_dir):
+        items = list_review_items(temp_dir, meta_data)
+        target = _find_item(items, screenshot_id)
+        if target.path is None:
+            raise FileNotFoundError("Screenshot slot not found")
+        timestamp = await _capture_fresh_frame(temp_dir, meta_data, target)
+        _record_capture(temp_dir, target.id, len(items), timestamp)
+        return target
+
+
 def undo_remote_replacement(temp_dir: Path, screenshot_id: str) -> None:
     """Discard a pending replacement and restore the original remote image."""
     with _lock_for(temp_dir):

@@ -15,8 +15,16 @@ set -e
 TARGET_UID="${PUID:-}"
 TARGET_GID="${PGID:-}"
 
+ensure_default_config() {
+    if [ ! -f /Upload-Assistant/data/config.py ] && [ -f /Upload-Assistant/defaults/data/example_config.py ]; then
+        cp /Upload-Assistant/defaults/data/example_config.py /Upload-Assistant/data/config.py
+    fi
+}
+
 # ── Fix directory ownership (only possible when running as root) ──────
 if [ "$(id -u)" = "0" ]; then
+    ensure_default_config
+
     # Directories the app needs write access to
     # - data, tmp: config, temp files
     # - session_secret: when SESSION_SECRET_FILE points to a path that Docker
@@ -67,4 +75,5 @@ if [ "$(id -u)" = "0" ]; then
 fi
 
 # Fallback: run as current user (root, or whatever `user:` specified)
+ensure_default_config
 exec python /Upload-Assistant/upload.py "$@"

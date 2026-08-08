@@ -15,6 +15,7 @@ import queue
 import re
 import secrets
 import shlex
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -32,8 +33,11 @@ from collections.abc import Iterator, Mapping, Sequence
 import web_ui.auth as auth_mod
 from src.webui_progress import ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
 from src.manual_metadata import parse_detached_metadata_request, parse_metadata_submission
+from src.runtime.history import ReleaseHistoryStore
 from web_ui.browse_index import BrowseIndex
+from web_ui.services.config_remove_api import ConfigSourceOperations, create_config_remove_blueprint
 from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
+from web_ui.services.history_api import create_history_api_blueprint
 from web_ui.services.presets import load_argument_presets, save_argument_presets
 from web_ui.services.qui_sync import QuiEventBroker, create_qui_sync_blueprint, progress_from_log_line
 from web_ui.services.runtime_api import create_runtime_api_blueprint
@@ -1146,6 +1150,12 @@ detached_jobs_lock = threading.Lock()
 detached_worker_thread: threading.Thread | None = None
 DETACHED_JOB_STATE_PATH = Path(__file__).resolve().parent.parent / "tmp" / "qui_jobs.json"
 QUI_EVENT_BROKER = QuiEventBroker()
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+try:
+    _runtime_config = getattr(_dynamic_import("data.config"), "config", {})
+except (ImportError, AttributeError):
+    _runtime_config = {}
+RELEASE_HISTORY = ReleaseHistoryStore(_PROJECT_ROOT, _runtime_config)
 
 # Local store for consoles we've wrapped to avoid assigning attributes on Console
 _ua_console_store: dict[int, dict[str, Any]] = {}
@@ -1335,13 +1345,18 @@ def _persist_detached_jobs_locked() -> None:
 
 
 def _set_detached_job(job_id: str, **updates: Any) -> None:
+    snapshot: dict[str, Any] | None = None
     with detached_jobs_lock:
         job = detached_jobs.get(job_id)
         if job:
             job.update(updates)
             with contextlib.suppress(OSError, TypeError, ValueError):
                 _persist_detached_jobs_locked()
-            QUI_EVENT_BROKER.publish("job.updated", job_id, job)
+            snapshot = dict(job)
+    if snapshot is not None:
+        QUI_EVENT_BROKER.publish("job.updated", job_id, snapshot)
+        with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+            RELEASE_HISTORY.record_job(snapshot)
 
 
 def _restore_detached_jobs() -> None:
@@ -1387,7 +1402,10 @@ def _retry_detached_job(job_id: str) -> bool:
         detached_job_queue.append(job_id)
         with contextlib.suppress(OSError, TypeError, ValueError):
             _persist_detached_jobs_locked()
-        QUI_EVENT_BROKER.publish("job.retried", job_id, job)
+        snapshot = dict(job)
+    QUI_EVENT_BROKER.publish("job.retried", job_id, snapshot)
+    with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+        RELEASE_HISTORY.record_job(snapshot)
     _start_detached_worker()
     return True
 
@@ -4115,6 +4133,8 @@ def qui_submit():
                 detached_job_queue.append(job_id)
                 _persist_detached_jobs_locked()
             QUI_EVENT_BROKER.publish("job.queued", job_id, job)
+            with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+                RELEASE_HISTORY.record_job(job)
             created.append({key: value for key, value in job.items() if key != "command"})
         except Exception as error:
             errors.append({"path": str(raw_path), "error": str(error)})
@@ -4219,7 +4239,10 @@ def qui_update(job_id: str):
                 return jsonify({"success": False, "error": "Job not found"}), 404
             current.update(updates)
             _persist_detached_jobs_locked()
-    QUI_EVENT_BROKER.publish("job.arguments_updated", job_id, current)
+    snapshot = dict(current)
+    QUI_EVENT_BROKER.publish("job.arguments_updated", job_id, snapshot)
+    with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+        RELEASE_HISTORY.record_job(snapshot)
     return jsonify({"success": True, "job_id": job_id, "args": args_text, "status": "queued" if str(job.get("status")) in {"failed", "interrupted"} else str(job.get("status"))})
 
 
@@ -4240,10 +4263,15 @@ def qui_cancel(job_id: str):
             detached_job_queue[:] = [queued_id for queued_id in detached_job_queue if queued_id != job_id]
             job.update({"status": "cancelled", "message": "Cancelled before execution", "finished_at": datetime.now(UTC).isoformat(), "recovery_available": False})
             _persist_detached_jobs_locked()
-            QUI_EVENT_BROKER.publish("job.cancelled", job_id, dict(job))
-            return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
-        if status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata"}:
+            snapshot = dict(job)
+        elif status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata"}:
             return jsonify({"success": False, "error": "Job is not active"}), 409
+
+    if status == "queued":
+        QUI_EVENT_BROKER.publish("job.cancelled", job_id, snapshot)
+        with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+            RELEASE_HISTORY.record_job(snapshot)
+        return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
 
     with active_processes_lock:
         process_info = active_processes.get(job_id, {})
@@ -4405,41 +4433,6 @@ def config_update():
         return jsonify({"success": False, "error": "An error occurred while updating the configuration"}), 500
 
     return jsonify({"success": True, "value": _json_safe(coerced_value)})
-
-
-@app.route("/api/config_remove_subsection", methods=["POST"])
-def config_remove_subsection():
-    """Remove a subsection (top-level key) from the user's config.py if present"""
-    # Require authenticated web session and CSRF protection; disallow bearer/basic API auth
-    if not _is_authenticated():
-        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
-    # Require CSRF + same-origin for config removal
-    if not _verify_csrf_header() or not _verify_same_origin():
-        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
-
-    data = _request_json_dict()
-    path_raw = data.get("path", [])
-    path: list[str] = []
-    if isinstance(path_raw, Sequence) and not isinstance(path_raw, (str, bytes, bytearray)):
-        path_items: Sequence[Any] = cast(Sequence[Any], path_raw)
-        path.extend(p for p in path_items if isinstance(p, str) and p)
-
-    if not path:
-        return jsonify({"success": False, "error": "Invalid path"}), 400
-
-    base_dir = Path(__file__).parent.parent
-    config_path = base_dir / "data" / "config.py"
-
-    try:
-        source = config_path.read_text(encoding="utf-8")
-        updated = _remove_config_key_in_source(source, path)
-        if updated == source:
-            # Nothing changed
-            return jsonify({"success": True, "value": None})
-        config_path.write_text(updated, encoding="utf-8")
-        return jsonify({"success": True})
-    except Exception:
-        return jsonify({"success": False, "error": "An error occurred while removing the configuration subsection"}), 500
 
 
 @app.route("/api/tokens", methods=["GET", "POST", "DELETE"])
@@ -4867,6 +4860,7 @@ def execution_screenshots():
                     ),
                     "can_replace": can_capture and item.source != "addition",
                     "can_delete": item.source in {"local", "addition"},
+                    "can_refill": can_capture and item.source in {"local", "addition"},
                 }
                 for item in items
             ],
@@ -5019,7 +5013,7 @@ def add_execution_screenshot():
 @app.route("/api/execution_screenshots/<screenshot_id>/<action>", methods=["POST"])
 def mutate_execution_screenshot(screenshot_id: str, action: str):
     """Delete or replace a reviewed frame with CSRF and same-origin protection."""
-    if action not in {"delete", "replace", "undo"}:
+    if action not in {"delete", "refill", "replace", "undo"}:
         return jsonify({"success": False, "error": "Unsupported screenshot action"}), 404
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
@@ -5032,10 +5026,12 @@ def mutate_execution_screenshot(screenshot_id: str, action: str):
     meta_data = _screenshot_review_meta(temp_dir, meta_data)
 
     try:
-        from src.screenshot_review import delete_screenshot, replace_screenshot, undo_remote_replacement
+        from src.screenshot_review import delete_screenshot, refill_screenshot_slot, replace_screenshot, undo_remote_replacement
 
         if action == "delete":
             delete_screenshot(temp_dir, meta_data, screenshot_id)
+        elif action == "refill":
+            asyncio.run(refill_screenshot_slot(temp_dir, meta_data, screenshot_id))
         elif action == "undo":
             undo_remote_replacement(temp_dir, screenshot_id)
         else:
@@ -6246,6 +6242,9 @@ def internal_error(e: Exception):
 
 app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, broker=QUI_EVENT_BROKER, snapshots=_detached_job_snapshot, retry_job=_retry_detached_job))
 app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=Path(__file__).resolve().parent.parent))
+app.register_blueprint(create_history_api_blueprint(auth_check=_submit_auth_ok, history=RELEASE_HISTORY, json_safe=_json_safe))
+_config_source_operations = ConfigSourceOperations(_load_config_from_file, _remove_config_key_in_source, _replace_config_value_in_source, _python_literal, _get_nested_value, _write_audit_log)
+app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=Path(__file__).resolve().parent.parent, operations=_config_source_operations))
 
 
 # Keep these helpers referenced so static analysis does not flag them as unused.

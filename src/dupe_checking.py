@@ -1,6 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import re
-from collections.abc import Callable, MutableMapping, Sequence
+from collections.abc import Callable, Mapping, MutableMapping, Sequence
 from pathlib import Path
 from typing import Any, TypedDict, cast
 
@@ -22,12 +22,40 @@ class DupeEntry(TypedDict, total=False):
     id: int | str | None
     type: str | None
     res: str | None
+    category: str | None
+    source: str | None
+    container: str | None
+    codec: str | None
+    group: str | None
     internal: int | bool
     bd_info: str | None
     description: str | None
 
 
 type DupeInput = str | DupeEntry | MutableMapping[str, Any]
+
+_FULL_DISC_TYPES = {"DISC", "FULL DISC", "BLURAY RAW", "BLU-RAY RAW", "BD25", "BD50", "BD66", "BD100", "DVD5", "DVD9"}
+_FULL_DISC_CONTAINERS = {"BDMV", "M2TS", "VOB/IFO", "VOB IFO", "VIDEO_TS"}
+_NON_DISC_TYPES = {"ENCODE", "HDTV", "REMUX", "WEBDL", "WEB-DL", "WEBRIP", "WEB-RIP", "BDRIP", "BRRIP", "DVDRIP"}
+
+
+def is_full_disc_candidate(entry: Mapping[str, Any]) -> bool:
+    """Classify duplicate candidates using structured tracker evidence first."""
+    type_value = str(entry.get("type") or "").strip().upper().replace("_", " ")
+    container = str(entry.get("container") or "").strip().upper().replace("_", " ")
+    source = str(entry.get("source") or "").strip().upper()
+    if type_value in _FULL_DISC_TYPES or container in _FULL_DISC_CONTAINERS:
+        return True
+    if container == "ISO" and any(marker in source for marker in ("BLURAY", "BLU-RAY", "UHD", "HD-DVD", "DVD")):
+        return True
+    name = str(entry.get("name") or "").upper().replace("_", " ").replace(".", " ")
+    compact = re.sub(r"[^A-Z0-9]", "", name)
+    return "FULLDISC" in compact or any(marker in compact for marker in ("BD25", "BD50", "BD66", "BD100", "DVD5", "DVD9"))
+
+
+def has_non_disc_candidate_evidence(entry: Mapping[str, Any]) -> bool:
+    type_value = str(entry.get("type") or "").strip().upper().replace("_", " ")
+    return type_value in _NON_DISC_TYPES
 
 
 class AttributeCheck(TypedDict):
@@ -107,6 +135,11 @@ class DupeChecker:
                     "id": d.get("id", None),
                     "type": d.get("type", None),
                     "res": d.get("res", None),
+                    "category": d.get("category", None),
+                    "source": d.get("source", None),
+                    "container": d.get("container", None),
+                    "codec": d.get("codec", None),
+                    "group": d.get("group", None),
                     "internal": d.get("internal", 0),
                     "bd_info": d.get("bd_info", ""),
                     "description": d.get("description", ""),
@@ -252,6 +285,14 @@ class DupeChecker:
             normalized = await DupeChecker.normalize_filename(each)
             type_id = entry.get("type", None)
             res_id = entry.get("res", None)
+            candidate_is_full_disc = is_full_disc_candidate(entry)
+
+            if has_is_disc and has_non_disc_candidate_evidence(entry) and not candidate_is_full_disc:
+                await log_exclusion("structured media type is not a full disc", each)
+                return True
+            if not has_is_disc and candidate_is_full_disc:
+                await log_exclusion("structured media type is a full disc", each)
+                return True
 
             # Use flags field if available for more accurate HDR detection
             flags_value = cast(list[Any], entry.get("flags") or [])
@@ -592,7 +633,7 @@ class DupeChecker:
                 elif meta.debug and entry_size is None and meta.source_size is not None:
                     logger.debug(f"[debug] Size comparison failed due to ValueError: entry_size={entry.get('size')}, source_size={meta.source_size}")
 
-            if meta.is_disc and file_count and file_count < 2:
+            if meta.is_disc and file_count and file_count < 2 and not candidate_is_full_disc:
                 await log_exclusion("file count less than 2 for disc upload", each)
                 return True
 
@@ -668,7 +709,10 @@ class DupeChecker:
                 await log_exclusion("source mismatch: non-WEB-DL vs WEB-DL", each)
                 return True
 
-            skip_resolution_check = is_dvd or "DVD" in target_source or is_dvdrip
+            # Structured full-disc evidence is authoritative. Tracker APIs may
+            # omit or mislabel resolution/HDR for disc entries, so applying
+            # encode-oriented filters here would hide a real existing disc.
+            skip_resolution_check = is_dvd or "DVD" in target_source or is_dvdrip or (has_is_disc and candidate_is_full_disc)
 
             if tracker_name == "OLDTOONSWORLD" and not is_tv_pack and meta.category == "TV" and target_episode and target_resolution:
                 dupe_season_match = re.search(r"[sS](\d+)", each)
