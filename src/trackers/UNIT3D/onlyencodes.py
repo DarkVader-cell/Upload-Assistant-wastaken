@@ -204,23 +204,6 @@ class OnlyEncodes(UNIT3D):
         audio = meta.audio
         video_codec = meta.video_codec
 
-        imdb_info = cast(dict[str, Any], meta.imdb_info)
-        imdb_name = str(imdb_info.get("title", ""))
-        imdb_year = str(imdb_info.get("year", ""))
-        imdb_aka = str(imdb_info.get("aka", ""))
-        year = str(meta.year) if meta.year is not None else ""
-        aka = meta.aka
-        if imdb_name and imdb_name.strip():
-            if aka:
-                oe_name = oe_name.replace(f"{aka} ", "", 1)
-            oe_name = oe_name.replace(f"{meta.title}", imdb_name, 1)
-
-            if imdb_aka and imdb_aka.strip() and imdb_aka != imdb_name and not meta.no_aka:
-                oe_name = oe_name.replace(f"{imdb_name}", f"{imdb_name} AKA {imdb_aka}", 1)
-
-        if meta.category != "TV" and imdb_year and imdb_year.strip() and year and year.strip() and imdb_year != year:
-            oe_name = oe_name.replace(f"{year}", imdb_year, 1)
-
         if name_type == "DVDRIP":
             if meta.category == "MOVIE":
                 oe_name = oe_name.replace(f"{source}{video_encode}", f"{resolution}", 1)
