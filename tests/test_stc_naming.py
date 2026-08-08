@@ -44,7 +44,8 @@ def test_stc_adds_multi_only_to_its_tracker_name():
         video_encode="x265",
     )
     base_name, *_ = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))
-    stc_name = asyncio.run(SkipTheCommercials({"DEFAULT": {}}).get_name(meta))["name"]
+    meta.name = base_name
+    stc_name = asyncio.run(SkipTheCommercials({"DEFAULT": {}, "TRACKERS": {}}).get_name(meta))["name"]
 
     assert "MULTI" not in base_name  # noqa: S101
     assert "S01E02 MULTI" in stc_name  # noqa: S101
@@ -66,7 +67,8 @@ def test_stc_does_not_duplicate_dual_audio_as_multi():
         audio="Dual-Audio FLAC 2.0",
         video_encode="H.264",
     )
-    stc_name = asyncio.run(SkipTheCommercials({"DEFAULT": {}}).get_name(meta))["name"]
+    meta.name = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))[0]
+    stc_name = asyncio.run(SkipTheCommercials({"DEFAULT": {}, "TRACKERS": {}}).get_name(meta))["name"]
 
     assert "MULTI" not in stc_name  # noqa: S101
     assert "Dual-Audio FLAC 2.0" in stc_name  # noqa: S101
