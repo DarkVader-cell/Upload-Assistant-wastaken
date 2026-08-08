@@ -4880,12 +4880,27 @@ def execution_description():
 
     temp_dir, _meta_file, meta_data = resolved
     content, version = draft(meta_data, temp_dir)
+    tracker_descriptions: list[dict[str, str]] = []
+    for description_file in sorted(temp_dir.glob("*DESCRIPTION.txt")):
+        if not description_file.name.startswith("[") or "]DESCRIPTION.txt" not in description_file.name:
+            continue
+        try:
+            description_content = description_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if description_content.strip():
+            tracker_descriptions.append({
+                "tracker": description_file.name.removeprefix("[").removesuffix("]DESCRIPTION.txt"),
+                "filename": description_file.name,
+                "content": description_content,
+            })
     return jsonify(
         {
             "success": True,
             "content": content,
             "version": version,
             "sources": source_items(meta_data),
+            "tracker_descriptions": tracker_descriptions,
         }
     )
 
@@ -5008,6 +5023,31 @@ def add_execution_screenshot():
         console.print(f"Screenshot add failed for {session_id}: {error}", markup=False)
         return jsonify({"success": False, "error": "Could not add screenshot"}), 500
     return jsonify({"success": True})
+
+
+@app.route("/api/execution_screenshots/regenerate", methods=["POST"])
+def regenerate_execution_screenshots():
+    """Regenerate all screenshots for one reviewed file/group in place."""
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+    payload = _request_json_dict()
+    session_id = _stringify_preview_value(payload.get("session_id"))
+    group = _stringify_preview_value(payload.get("group")) or "main"
+    resolved = _resolve_execution_screenshot_review(session_id)
+    if resolved is None:
+        return jsonify({"success": False, "error": "Screenshots are not available yet"}), 404
+    temp_dir, meta_data = resolved
+    meta_data = _screenshot_review_meta(temp_dir, meta_data)
+    try:
+        from src.screenshot_review import regenerate_screenshot_group
+
+        asyncio.run(regenerate_screenshot_group(temp_dir, meta_data, group))
+    except (FileNotFoundError, ValueError) as error:
+        return jsonify({"success": False, "error": str(error)}), 404
+    except Exception as error:
+        console.print(f"Screenshot regeneration failed for {session_id}: {error}", markup=False)
+        return jsonify({"success": False, "error": "Could not regenerate screenshots"}), 500
+    return jsonify({"success": True, "group": group})
 
 
 @app.route("/api/execution_screenshots/<screenshot_id>/<action>", methods=["POST"])
