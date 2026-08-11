@@ -3,20 +3,16 @@ import asyncio
 import copy
 import sys
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any, cast
 
 import cli_ui
-from torf import Torrent
 
 from src.cleanup import cleanup_manager
-from src.clients import Clients
 from src.console import logger, prompt_in_thread
 from src.dupe_checking import DupeChecker
 from src.imdb import imdb_manager
 from src.meta import Meta
 from src.metadata_searching import get_douban_id
-from src.torrentcreate import TorrentCreator
 from src.trackers.AVISTAZ.routing import AvistaZNetworkRouter
 from src.trackers.passthepopcorn import PassThePopcorn
 from src.trackersetup import TrackerSetup, tracker_class_map
@@ -39,7 +35,6 @@ class TrackerStatusManager:
     async def process_all_trackers(self, meta: Meta) -> int:
         tracker_status: dict[str, dict[str, Any]] = {}
         successful_trackers = 0
-        client: Any = Clients(config=self.config)
         tracker_setup: Any = TrackerSetup(config=self.config)
         tracker_setup.filter_unsupported_trackers(meta)
         await AvistaZNetworkRouter(self.config, tracker_class_map).apply(meta)
