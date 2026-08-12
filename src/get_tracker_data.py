@@ -229,7 +229,9 @@ class TrackerDataManager:
 
     async def _review_explicit_tracker_description(self, meta: Meta, tracker_name: str, candidate: Meta) -> None:
         """Allow an interactive run to edit the selected tracker description."""
-        if meta.unattended or not candidate.description:
+        from src.description_review import is_meaningful_description
+
+        if meta.unattended or not is_meaningful_description(candidate.description):
             return
         if os.environ.get("UA_WEBUI_ACTIVE"):
             from src.description_review import load_review, save_review

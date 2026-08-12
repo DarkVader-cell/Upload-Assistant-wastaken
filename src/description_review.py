@@ -10,6 +10,14 @@ from typing import Any
 _REVIEW_FILE = "description_review.json"
 
 
+def is_meaningful_description(value: object) -> bool:
+    """Return whether a value contains actual description text."""
+    if not isinstance(value, str):
+        return False
+    normalized = value.strip().casefold()
+    return bool(normalized) and normalized not in {"0", "none", "null", "undefined"}
+
+
 def review_path(temp_dir: Path) -> Path:
     return temp_dir / _REVIEW_FILE
 
@@ -46,7 +54,7 @@ def source_items(meta: dict[str, Any]) -> list[dict[str, str]]:
         ("description_nfo_content", "NFO"),
     ):
         content = meta.get(key)
-        if isinstance(content, str) and content.strip():
+        if is_meaningful_description(content):
             items.append({"key": key, "label": label, "content": content})
     return items
 
@@ -67,14 +75,14 @@ def draft(meta: dict[str, Any], temp_dir: Path) -> tuple[str, int]:
     if not _review_matches_source(meta, review):
         review = {}
     content = review.get("content")
-    if isinstance(content, str):
+    if is_meaningful_description(content):
         try:
             version = int(review.get("version", 0) or 0)
         except TypeError, ValueError:
             version = 0
         return content, version
     override = meta.get("description_override")
-    if isinstance(override, str) and override:
+    if is_meaningful_description(override):
         return override, 0
     items = source_items(meta)
     return (items[0]["content"] if items else ""), 0
@@ -87,7 +95,7 @@ def apply_saved_draft(meta: Any) -> None:
     if not _review_matches_source(meta.to_dict(), review):
         return
     content = review.get("content")
-    if isinstance(content, str):
+    if is_meaningful_description(content):
         meta.description_override = content
         # Several tracker adapters use ``meta.description`` directly. Keep both
         # views synchronized so a WebUI edit
@@ -100,4 +108,4 @@ def get_base_description(meta: Any) -> str:
     """Return the one authoritative base description for an upload."""
     apply_saved_draft(meta)
     description = getattr(meta, "description", "") or ""
-    return description if isinstance(description, str) else str(description)
+    return description if is_meaningful_description(description) else ""

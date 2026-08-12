@@ -20,7 +20,7 @@ from langcodes.tag_parser import LanguageTagError
 from src.bbcode import BBCODE
 from src.cogs.redaction import PathAwareEncoder
 from src.console import logger
-from src.description_review import apply_saved_draft
+from src.description_review import apply_saved_draft, is_meaningful_description
 from src.languages import languages_manager
 from src.mediainfo import MediaInfo
 from src.meta import Meta
@@ -201,7 +201,7 @@ async def gen_desc(
     meta.description = "\n".join(description_lines).strip()
     meta.saved_description = bool(meta.description)
 
-    if meta.description in ("None", "", " "):
+    if not is_meaningful_description(meta.description):
         meta.description = ""
 
     return meta
