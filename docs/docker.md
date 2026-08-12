@@ -18,58 +18,25 @@ The Docker images are built for multiple architectures:
 
 Docker will automatically pull the correct image for your system architecture.
 
-## Building locally
-
-The image uses independent stages for Python dependencies, architecture-specific
-helper binaries, and the final runtime. BuildKit reuses those stages when only
-application source changes, and the final image does not contain compilers or
-other build toolchains.
-
-```bash
-docker build -t upload-assistant:local .
-```
-
-Normal rebuilds should keep Docker's cache enabled. Requirements and helper
-binaries are intentionally copied before application source so source-only
-changes rebuild only the small application layers. Native Python dependencies
-must provide wheels on both `amd64` and `arm64`; CI checks both architectures.
-
-To inspect the uncompressed local image size:
-
-```bash
-docker image inspect upload-assistant:local --format '{{.Size}} bytes'
-```
-
-The Docker context excludes host configuration, cookies, sessions,
-`docker-data/`, Graphify output, Node modules, tests, caches, and platform-specific
-Windows binaries. Keep mutable configuration and credentials in mounted volumes;
-they are never required to build the image.
-
-When the whole `data/` directory is mounted and `config.py` is absent, the
-entrypoint initializes it from the bundled example before dropping privileges.
-An existing config—including a read-only file mount—is left untouched. Persist
-`data/` to retain release history and authentication state; persist `tmp/` when
-detached Qui recovery state must survive container recreation.
-
 ## Usage?
 
 ```
 docker run --rm -it --network=host \
--v /full/path/to/config.py:/Upload-Assistant/data/config.py \
+-v /full/path/to/appdata:/state \
 -v /full/path/to/downloads:/downloads \
-ghcr.io/darkvader-cell/upload-assistant-wastaken:latest /downloads/path/to/content --help
+ghcr.io/wastaken7/upload-assistant:latest /downloads/path/to/content --help
 ```
 
-The paths in your config file need to refer to paths inside the docker image, same with path provided for file. May need to utilize remote path mapping for your client.
+`/state` is the container's persistent, writable application-state root. It holds `data/config.py`, cookies, caches and temporary upload artifacts. Mount a directory, not a single `config.py` file. On the first run the application creates `/state/data/config.py` from the bundled example; edit it or run the generator before uploading. The paths in your config file need to refer to paths inside the docker image, same with path provided for file. May need to utilize remote path mapping for your client.
 
 ## Config-generator
 
 ```
 docker run --rm -it --network=host \
--v /full/path/to/config.py:/Upload-Assistant/data/config.py \
+-v /full/path/to/appdata:/state \
 -v /full/path/to/downloads:/downloads \
 --entrypoint python \
-ghcr.io/darkvader-cell/upload-assistant-wastaken:latest /Upload-Assistant/config-generator.py
+ghcr.io/wastaken7/upload-assistant:latest /Upload-Assistant/config-generator.py
 ```
 
 ## What if I want to utilize re-using torrents and I use qbit?
@@ -78,10 +45,10 @@ Add another -v line to your command to expose your BT_Backup folder, and set the
 
 ```
 docker run --rm -it --network=host \
--v /full/path/to/config.py:/Upload-Assistant/data/config.py \
+-v /full/path/to/appdata:/state \
 -v /full/path/to/downloads:/downloads \
 -v /full/path/to/BT_backup:/BT_backup \
-ghcr.io/darkvader-cell/upload-assistant-wastaken:latest /downloads/path/to/content --help
+ghcr.io/wastaken7/upload-assistant:latest /downloads/path/to/content --help
 ```
 
 ## What if I want to utilize re-using torrents and I use rtorrent/rutorrent?
@@ -90,10 +57,10 @@ Add another -v line to your command to expose your session folder, and set the p
 
 ```
 docker run --rm -it --network=host \
--v /full/path/to/config.py:/Upload-Assistant/data/config.py \
+-v /full/path/to/appdata:/state \
 -v /full/path/to/downloads:/downloads \
 -v /full/path/to/session/folder:/session \
-ghcr.io/darkvader-cell/upload-assistant-wastaken:latest /downloads/path/to/content --help
+ghcr.io/wastaken7/upload-assistant:latest /downloads/path/to/content --help
 ```
 
 ## What is docker?
@@ -102,36 +69,26 @@ Google is your friend
 
 ## How do I update the docker image?
 
-For the persistent Qui/WebUI deployment in this repository, update the
-published image and recreate only the Upload Assistant service:
-
 ```bash
-cd /home/artemis/Upload-Assistant-wastaken
-./scripts/update-docker.sh
-```
-
-The `docker-data/` state directories and `/mnt/seeding` bind mount are retained.
-For standalone containers, pull the published image and recreate the container
-using the same volume and network arguments:
-
-```bash
-docker pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest
+docker pull ghcr.io/wastaken7/upload-assistant:latest
+# Recreate the container to run the pulled image.
+# Docker Compose: docker compose up -d
 ```
 
 ## How do I use an image of a specific commit?
 
 ```
 docker run --rm -it --network=host \
--v /full/path/to/config.py:/Upload-Assistant/data/config.py \
+-v /full/path/to/appdata:/state \
 -v /full/path/to/downloads:/downloads \
-ghcr.io/darkvader-cell/upload-assistant-wastaken:abc123 /downloads/path/to/content --help
+ghcr.io/wastaken7/upload-assistant:abc123 /downloads/path/to/content --help
 ```
 
 Where abc123 is the first 6 digits of the hash of the commit
 
 ## Can I use this with Docker on Windows?
 
-Yes but this is a linux container so make sure you are running in that mode. Forewarning Docker on Windows is funky and certain features aren't implemented like mounting singular files as a volume, using paths that contain spaces in a volume, and lots more so you are on your own. You will not receive help trying to get it to work.
+Yes, but this is a Linux container, so make sure you are running in that mode. Mount a directory such as `C:\\Upload-Assistant` to `/state`; do not mount a single configuration file. Windows paths with spaces still need careful Docker volume syntax.
 
 ## The command for running is really long and I dont want to type it.
 
@@ -143,8 +100,8 @@ function upload(){
         args=("$@")
         args="${args[@]@Q}"
         echo $args
-        docker pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest
-        eval "docker run --rm -it --network=host -v /full/path/to/config.py:/Upload-Assistant/data/config.py -v /full/path/to/downloads:/downloads -v /full/path/to/BT_backup:/BT_backup ghcr.io/darkvader-cell/upload-assistant-wastaken:latest ${args}"
+        docker pull ghcr.io/wastaken7/upload-assistant:latest
+        eval "docker run --rm -it --network=host -v /full/path/to/appdata:/state -v /full/path/to/downloads:/downloads -v /full/path/to/BT_backup:/BT_backup ghcr.io/wastaken7/upload-assistant:latest ${args}"
 }
 ```
 
