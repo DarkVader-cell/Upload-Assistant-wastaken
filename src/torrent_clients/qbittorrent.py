@@ -21,7 +21,7 @@ from torf import Torrent
 from src.cogs.redaction import Redaction
 from src.console import logger
 from src.meta import Meta
-from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_save_path, tracker_directory
+from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local, map_save_path, tracker_directory
 from src.torrentcreate import TorrentCreator
 
 # These have to be global variables to be shared across all instances since a new instance is made every time
@@ -120,6 +120,139 @@ class QbittorrentClientMixin:
 
     async def is_valid_torrent(self, meta: Meta, torrent_path: str, torrenthash: str, torrent_client: str, client: dict[str, Any]) -> tuple[bool, str]:
         raise NotImplementedError
+
+    async def get_reused_source_path(self, meta: Meta, client: dict[str, Any]) -> str | None:
+        """Return the local content path owned by an automatically reused torrent."""
+        infohash = str(meta.infohash or "").strip()
+        if not infohash:
+            return None
+
+        proxy_url = str(client.get("qui_proxy_url", "")).strip().rstrip("/")
+        qbt_client: qbittorrentapi.Client | None = None
+        session: httpx.AsyncClient | None = None
+        try:
+            if proxy_url:
+                session = httpx.AsyncClient(timeout=14.0, verify=self.create_ssl_context_for_client(client))
+                response = await session.get(f"{proxy_url}/api/v2/torrents/properties", params={"hash": infohash})
+                if response.status_code != 200:
+                    return None
+                properties = response.json()
+            else:
+                qbt_client = await self.init_qbittorrent_client(client)
+                if qbt_client is None:
+                    return None
+
+                # Cross-seed clients commonly contain two torrents with the
+                # same payload: one in the cross-seed directory and one in the
+                # normal downloads directory. Prefer the latter when qBit
+                # exposes it, since it is the authoritative original path.
+                requested_name = Path(str(meta.path or "")).name.casefold()
+                torrents = await self.retry_qbt_operation(
+                    lambda: asyncio.to_thread(qbt_client.torrents_info),
+                    "List torrents while resolving reused source path",
+                    initial_timeout=14.0,
+                )
+                local_paths = coerce_str_list(client.get("local_path", []))
+                remote_paths = coerce_str_list(client.get("remote_path", []))
+
+                def localize(path_value: str) -> str:
+                    value = path_value
+                    for index, remote_path in enumerate(remote_paths):
+                        local_path = local_paths[index] if index < len(local_paths) else (local_paths[0] if local_paths else remote_path)
+                        mapped = map_client_path_to_local(value, local_path, remote_path)
+                        if Path(mapped).exists() or index == len(remote_paths) - 1:
+                            value = mapped
+                            if Path(mapped).exists():
+                                break
+                    return value
+
+                def resolve_candidate(path_value: str) -> str | None:
+                    candidate = Path(localize(path_value))
+                    if candidate.is_file():
+                        if candidate.name.casefold() != requested_name:
+                            return None
+                        if current_size is not None and candidate.stat().st_size != current_size:
+                            return None
+                        return str(candidate.resolve())
+                    if candidate.is_dir():
+                        matches = [item for item in candidate.rglob("*") if item.is_file() and item.name.casefold() == requested_name]
+                        if len(matches) == 1:
+                            if current_size is not None and matches[0].stat().st_size != current_size:
+                                return None
+                            return str(matches[0].resolve())
+                    return None
+
+                current_path = Path(str(meta.path or "")).resolve()
+                try:
+                    current_size = current_path.stat().st_size
+                except OSError:
+                    current_size = None
+                alternate_paths: list[str] = []
+                for torrent in torrents or []:
+                    torrent_name = str(getattr(torrent, "name", "") or "")
+                    if torrent_name.casefold() != requested_name:
+                        continue
+                    torrent_hash = str(getattr(torrent, "hash", "") or "").strip()
+                    if torrent_hash.casefold() == infohash.casefold():
+                        continue
+                    raw_path = str(getattr(torrent, "content_path", "") or "")
+                    if not raw_path:
+                        raw_path = str(Path(str(getattr(torrent, "save_path", "") or "")) / torrent_name)
+                    resolved = resolve_candidate(raw_path)
+                    if resolved and Path(resolved) != current_path:
+                        alternate_paths.append(resolved)
+                if alternate_paths:
+                    return alternate_paths[0]
+
+                properties = await self.retry_qbt_operation(
+                    lambda: asyncio.to_thread(qbt_client.torrents_properties, torrent_hash=infohash),
+                    f"Get reused torrent content path for {infohash}",
+                    initial_timeout=14.0,
+                )
+
+            if not isinstance(properties, dict):
+                return None
+            content_path = str(properties.get("content_path") or "").strip()
+            if not content_path:
+                save_path = str(properties.get("save_path") or "").strip()
+                name = str(properties.get("name") or "").strip()
+                if save_path and name:
+                    content_path = str(Path(save_path) / name)
+            if not content_path:
+                return None
+
+            local_paths = coerce_str_list(client.get("local_path", []))
+            remote_paths = coerce_str_list(client.get("remote_path", []))
+            for index, remote_path in enumerate(remote_paths):
+                local_path = local_paths[index] if index < len(local_paths) else (local_paths[0] if local_paths else remote_path)
+                content_path = map_client_path_to_local(content_path, local_path, remote_path)
+                if Path(content_path).exists():
+                    break
+
+            candidate = Path(content_path)
+            if candidate.is_file():
+                try:
+                    current_size = Path(str(meta.path or "")).stat().st_size
+                except OSError:
+                    current_size = None
+                if current_size is None or candidate.stat().st_size == current_size:
+                    return str(candidate.resolve())
+            if candidate.is_dir():
+                requested_name = Path(str(meta.path or "")).name.casefold()
+                matches = [item for item in candidate.rglob("*") if item.is_file() and item.name.casefold() == requested_name]
+                if len(matches) == 1:
+                    try:
+                        current_size = Path(str(meta.path or "")).stat().st_size
+                    except OSError:
+                        current_size = None
+                    if current_size is None or matches[0].stat().st_size == current_size:
+                        return str(matches[0].resolve())
+        except (OSError, TypeError, ValueError, qbittorrentapi.APIError) as error:
+            logger.debug(f"[yellow]Unable to resolve reused torrent source path: {error}[/yellow]")
+        finally:
+            if session is not None:
+                await session.aclose()
+        return None
 
     async def get_ptp_from_hash_qbit(self, meta: Meta, client: dict[str, Any], pathed: bool = False) -> Meta:
         lookup_started = time.perf_counter()
@@ -420,10 +553,6 @@ class QbittorrentClientMixin:
         qbt_session: httpx.AsyncClient | None = None,
         proxy_url: str | None = None,
     ) -> str | None:
-        trackers_config = cast(dict[str, Any], self.config.get("TRACKERS", {}))
-        mtv_config_value = trackers_config.get("MORETHANTV", {})
-        mtv_config = cast(dict[str, Any], mtv_config_value) if isinstance(mtv_config_value, dict) else {}
-        prefer_small_pieces = bool(mtv_config.get("prefer_mtv_torrent", False))
         logger.debug("[green]Searching qBittorrent for an existing .torrent")
 
         torrent_storage_dir = client.get("torrent_storage_dir")
@@ -465,7 +594,6 @@ class QbittorrentClientMixin:
             Path(extracted_torrent_dir).mkdir(parents=True, exist_ok=True)
 
             # **Step 1: Find correct torrents using content_path**
-            best_match: dict[str, Any] | None = None
             matching_torrents: list[dict[str, Any]] = []
 
             try:
@@ -578,7 +706,6 @@ class QbittorrentClientMixin:
 
             # **Step 2: Extract and Save .torrent Files**
             processed_hashes: set[str] = set()
-            best_match = None
             video_only_fallback: str | None = None
             torrent_hash: str | None = None
             for matching_torrent in matching_torrents:
@@ -661,32 +788,12 @@ class QbittorrentClientMixin:
                         else:
                             logger.debug(f"[yellow]Skipping partial-subtitle torrent as fallback: {torrent_hash}")
                         continue
-                    if prefer_small_pieces:
-                        # **Track best match based on piece size**
-                        try:
-                            torrent_data = Torrent.read(torrent_file_path)
-                            piece_size = torrent_data.piece_size
-                            best_piece_size_raw_value: Any = best_match.get("piece_size") if best_match else None
-                            best_piece_size: int | None = best_piece_size_raw_value if isinstance(best_piece_size_raw_value, int) else None
-                            if best_match is None or (best_piece_size is not None and piece_size < best_piece_size):
-                                best_match = {"hash": torrent_hash, "torrent_path": torrent_path if torrent_path else torrent_file_path, "piece_size": piece_size}
-                                logger.info(f"[green]Updated best match: {best_match}")
-                        except Exception as e:
-                            logger.info(f"[bold red]Error reading torrent data for {torrent_hash}: {e}")
-                            continue
-                    else:
-                        # If `prefer_small_pieces` is False, return first valid torrent
-                        logger.debug(f"[green]Returning first valid torrent: {torrent_hash}")
-                        return torrent_hash
-                else:
-                    logger.debug(f"[bold red]{torrent_hash} failed validation")
-                    torrent_file_path.unlink()
+                    logger.debug(f"[green]Returning first valid torrent: {torrent_hash}")
+                    return torrent_hash
+                logger.debug(f"[bold red]{torrent_hash} failed validation")
+                torrent_file_path.unlink()
 
-            # **Return the best match if `prefer_small_pieces` is enabled**
-            if best_match:
-                logger.info(f"[green]Using best match torrent with hash: {best_match['hash']}")
-                result = str(best_match["hash"]) if "hash" in best_match else None
-            elif video_only_fallback:
+            if video_only_fallback:
                 logger.info(f"[yellow]No matching torrent with all local subtitles found; using video-only fallback: {video_only_fallback}")
                 result = video_only_fallback
             else:
@@ -1115,19 +1222,8 @@ class QbittorrentClientMixin:
         start_time = time.time()
         logger.debug(f"[yellow]Searching for torrents in qBittorrent for path: {content_path}[/yellow]")
         try:
-            trackers_config = cast(dict[str, Any], self.config.get("TRACKERS", {}))
-            mtv_config_value = trackers_config.get("MORETHANTV", {})
-            mtv_config = cast(dict[str, Any], mtv_config_value) if isinstance(mtv_config_value, dict) else {}
             piece_limit = bool(self.config["DEFAULT"].get("prefer_max_16_torrent", False))
-            mtv_torrent = bool(mtv_config.get("prefer_mtv_torrent", False))
-            piece_size_constraints_enabled: str | bool
-            # MORETHANTV preference takes priority as it's more restrictive (8 MiB vs 16 MiB)
-            if mtv_torrent:
-                piece_size_constraints_enabled = "MORETHANTV"
-            elif piece_limit:
-                piece_size_constraints_enabled = "16MiB"
-            else:
-                piece_size_constraints_enabled = False
+            piece_size_constraints_enabled: str | bool = "16MiB" if piece_limit else False
 
             meta.piece_size_constraints_enabled = piece_size_constraints_enabled
 
@@ -1180,10 +1276,7 @@ class QbittorrentClientMixin:
                     constraints_enabled = meta.piece_size_constraints_enabled
 
                     stop_due_to_constraints = (
-                        not constraints_enabled
-                        or found_piece_size == "no_constraints"
-                        or found_piece_size == "MORETHANTV"
-                        or (found_piece_size == "16MiB" and constraints_enabled == "16MiB")
+                        not constraints_enabled or found_piece_size == "no_constraints" or (found_piece_size == "16MiB" and constraints_enabled == "16MiB")
                     )
                     should_stop = stop_due_to_constraints
 
@@ -1656,12 +1749,9 @@ class QbittorrentClientMixin:
             Path(extracted_torrent_dir).mkdir(parents=True, exist_ok=True)
 
             # Set up piece size preference logic
-            mtv_config = self.config.get("TRACKERS", {}).get("MORETHANTV", {})
-            prefer_small_pieces = mtv_config.get("prefer_mtv_torrent", False)
             piece_limit = self.config["DEFAULT"].get("prefer_max_16_torrent", False)
 
-            # Use piece preference if MORETHANTV preference is true, otherwise use general piece limit
-            use_piece_preference = prefer_small_pieces or piece_limit
+            use_piece_preference = piece_limit
             piece_size_best_match: dict[str, Any] | None = None  # Track the best match for fallback if piece preference is enabled
             subtitle_fallback: dict[str, str] | None = None
             found_valid_torrent = False
@@ -1688,13 +1778,8 @@ class QbittorrentClientMixin:
                         try:
                             torrent_data = Torrent.read(torrent_file_path)
                             piece_size = torrent_data.piece_size
-                            # For prefer_small_pieces: prefer smallest pieces
-                            # For piece_limit: prefer torrents with piece size <= 16 MiB (16777216 bytes)
                             is_better_match = False
-                            if prefer_small_pieces:
-                                # MORETHANTV preference: always prefer smaller pieces
-                                is_better_match = True if piece_size_best_match is None else piece_size < piece_size_best_match["piece_size"]
-                            elif piece_limit and piece_size <= 16777216:
+                            if piece_limit and piece_size <= 16777216:
                                 # General preference: prefer <= 16 MiB pieces, then smaller within that range
                                 if piece_size_best_match is None:
                                     is_better_match = True
@@ -1752,13 +1837,8 @@ class QbittorrentClientMixin:
                                 try:
                                     torrent_data = Torrent.read(alt_torrent_file_path)
                                     piece_size = torrent_data.piece_size
-                                    # For prefer_small_pieces: prefer smallest pieces
-                                    # For piece_limit: prefer torrents with piece size <= 16 MiB (16777216 bytes)
                                     is_better_match = False
-                                    if prefer_small_pieces:
-                                        # MORETHANTV preference: always prefer smaller pieces
-                                        is_better_match = True if piece_size_best_match is None else piece_size < piece_size_best_match["piece_size"]
-                                    elif piece_limit and piece_size <= 16777216:
+                                    if piece_limit and piece_size <= 16777216:
                                         # General preference: prefer <= 16 MiB pieces, then smaller within that range
                                         if piece_size_best_match is None:
                                             is_better_match = True
@@ -1809,8 +1889,7 @@ class QbittorrentClientMixin:
             # **Return the best match if piece preference is enabled**
             if use_piece_preference and piece_size_best_match and not found_valid_torrent:
                 try:
-                    preference_type = "MORETHANTV preference" if prefer_small_pieces else "16 MiB piece limit"
-                    logger.info(f"[green]Using best match torrent ({preference_type}) with hash: {piece_size_best_match['hash']}")
+                    logger.info(f"[green]Using best match torrent (16 MiB piece limit) with hash: {piece_size_best_match['hash']}")
                     await TorrentCreator.create_base_from_existing_torrent(piece_size_best_match["torrent_path"], meta.base_dir, meta.uuid)
                     if meta.debug:
                         piece_size_mib = piece_size_best_match["piece_size"] / 1024 / 1024
@@ -1822,9 +1901,7 @@ class QbittorrentClientMixin:
 
                     # Check if the best match actually meets the piece size constraint
                     piece_size = piece_size_best_match["piece_size"]
-                    if prefer_small_pieces and piece_size <= 8388608:  # 8 MiB
-                        meta.found_preferred_piece_size = "MORETHANTV"
-                    elif piece_limit and piece_size <= 16777216:  # 16 MiB
+                    if piece_limit and piece_size <= 16777216:  # 16 MiB
                         meta.found_preferred_piece_size = "16MiB"
                     else:
                         # Found a torrent but it doesn't meet the constraint

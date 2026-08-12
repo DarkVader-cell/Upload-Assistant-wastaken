@@ -3,7 +3,6 @@
 import ast
 import asyncio
 import contextlib
-import filecmp
 import gc
 import json
 import logging
@@ -29,6 +28,7 @@ from torf import Torrent as _Torrent  # pyright: ignore[reportMissingImports,rep
 
 from bin.get_mkbrr import MkbrrBinaryManager
 from src.add_comparison import ComparisonManager
+from src.app_paths import CODE_DIR, STATE_DIR
 from src.args import Args, read_paths_from_stdin
 from src.artwork import is_public_http_url, is_valid_cover_image
 from src.audio_spectrogram import process_audio_spectrograms
@@ -41,6 +41,7 @@ from src.console import current_release_log_path, logger  # pyright: ignore[repo
 from src.console import rich_handler as _rich_handler
 from src.disc_menus import process_disc_menus
 from src.dupe_checking import DupeChecker
+from src.dynamic_hdr_plot import dynamic_hdr_plot_enabled, process_dynamic_hdr_plots
 from src.early_tasks import cancel_and_drain_early_artifact_tasks, get_early_artifact_tasks, start_early_artifact_tasks
 from src.early_tasks import is_usenet_only as _is_usenet_only
 from src.get_desc import gen_desc
@@ -68,7 +69,8 @@ from src.trackerstatus import TrackerStatusManager
 from src.uphelper import UploadHelper
 from src.uploadscreens import UploadScreensManager
 
-base_dir = str(Path(__file__).resolve().parent)
+# Runtime artifacts are user-owned; CODE_DIR remains the read-only checkout.
+base_dir = str(STATE_DIR)
 CLI_UI: Any = cli_ui
 TORF_Torrent: Any = cast(Any, _Torrent)
 RICH_HANDLER: Any = cast(Any, _rich_handler)
@@ -172,25 +174,19 @@ def _handle_shutdown_signal(signum: int, _frame: Any) -> None:
 # ── Restore built-in data/ files when a Docker volume mount hides them ──
 # The Dockerfile copies the original data/ tree to defaults/data/ so that
 # volume mounts over /Upload-Assistant/data/ don't lose critical files
-# (__init__.py, version.py, example_config.py, templates/).
+# (__init__.py, example_config.py, templates/).
 _data_dir = Path(base_dir) / "data"
-_defaults_data_dir = Path(base_dir) / "defaults" / "data"
+_defaults_data_dir = CODE_DIR / "data"
 
 # Directories that should never be copied into user-facing data/
 _SKIP_DIRS = {"__pycache__", ".mypy_cache", ".ruff_cache"}
 
-# Built-in metadata files that should track the image version even when
-# /Upload-Assistant/data is a persistent volume from an older container.
-_ALWAYS_SYNC_ROOT_FILES = {"version.py"}
-
 if Path(_defaults_data_dir).is_dir():
     Path(_data_dir).mkdir(parents=True, exist_ok=True)
     _restored_count = 0
-    _synced_count = 0
     _restore_errors: list[str] = []
     # Walk the defaults tree and copy anything missing in the live data dir.
     # Never overwrite user files (config.py, cookies/, tags.json, etc.).
-    # Root version.py is image metadata, not user config, so keep it current.
     for dirpath, dirnames, filenames in os.walk(_defaults_data_dir):
         # Prune unwanted directories in-place so os.walk skips them entirely
         dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
@@ -208,25 +204,14 @@ if Path(_defaults_data_dir).is_dir():
                 continue
             target_file = Path(target_dir) / fname
             src_file = Path(dirpath) / fname
-            should_sync = False
-            if rel_dir == "." and fname in _ALWAYS_SYNC_ROOT_FILES and Path(target_file).exists():
-                try:
-                    should_sync = not filecmp.cmp(src_file, target_file, shallow=False)
-                except OSError:
-                    should_sync = True
-            if not Path(target_file).exists() or should_sync:
+            if not Path(target_file).exists():
                 try:
                     shutil.copy2(src_file, target_file)
-                    if should_sync:
-                        _synced_count += 1
-                    else:
-                        _restored_count += 1
+                    _restored_count += 1
                 except OSError as exc:
                     _restore_errors.append(f"{Path(rel_dir) / fname}: {exc}")
     if _restored_count:
         logger.info(f"Restored {_restored_count} built-in file(s) into data/ from defaults.", extra={"markup": False})
-    if _synced_count:
-        logger.info(f"Synced {_synced_count} built-in metadata file(s) into data/ from defaults.", extra={"markup": False})
     if _restore_errors:
         logger.warning(f"[red]Warning: failed to restore {len(_restore_errors)} file(s) into data/:[/red]")
         for _err in _restore_errors[:5]:
@@ -369,6 +354,12 @@ else:
 
 async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
     """Merges saved metadata with the current meta, respecting overwrite rules."""
+    current_path = str(meta.path or "")
+    saved_path = str(saved_meta.get("path") or "")
+    if current_path and (not saved_path or Path(current_path).expanduser().resolve(strict=False) != Path(saved_path).expanduser().resolve(strict=False)):
+        logger.warning("[yellow]Ignoring saved metadata from a different upload path.[/yellow]")
+        return {}
+
     overwrite_list = [
         "anon",
         "asin",
@@ -1519,6 +1510,12 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                 except Exception as e:
                     logger.error(f"[red]Error processing audio spectrograms: {e}[/red]")
 
+            if dynamic_hdr_plot_enabled(meta, config):
+                try:
+                    await process_dynamic_hdr_plots(meta, config, uploadscreens_manager)
+                except Exception as e:
+                    logger.error(f"[red]Error processing dynamic HDR plots: {e}[/red]")
+
             # Take Screenshots
             try:
                 # Keep the later upload count in sync with screenshots removed
@@ -1665,7 +1662,6 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                     "GREATPOSTERWALL",
                     "HAWKEUNO",
                     "LUMINARR",
-                    "MORETHANTV",
                     "ONLYENCODES",
                     "ANTHELION",
                     "AITHER",
@@ -2029,7 +2025,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
         trackers_normalized = [t.strip().upper() for t in trackers_list]
 
         base_piece_mb: int | None = cast(int | None, meta.base_torrent_piece_mb)
-        if base_piece_mb is None and any(t in {"HDBITS", "MORETHANTV", "PASSTHEPOPCORN"} for t in trackers_normalized):
+        if base_piece_mb is None and any(t in {"HDBITS", "PASSTHEPOPCORN"} for t in trackers_normalized):
             try:
                 torrent = await asyncio.to_thread(TORF_Torrent.read, torrent_path)
                 base_piece_mb = torrent.piece_size // (1024 * 1024)
@@ -2038,18 +2034,6 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
             except Exception as e:
                 logger.debug(f"[yellow]Unable to cache BASE.torrent piece size: {e}")
                 base_piece_mb = None
-
-        if "MORETHANTV" in trackers_normalized:
-            mtv_cfg = config.get("TRACKERS", {}).get("MORETHANTV", {})
-            if str(mtv_cfg.get("skip_if_rehash", "false")).lower() == "true" and base_piece_mb and base_piece_mb > 8:
-                meta.trackers = [t for t in trackers_list if t.strip().upper() != "MORETHANTV"]
-                trackers_list = [str(t) for t in cast(list[Any], meta.trackers or []) if str(t).strip()]
-                trackers_normalized = [t.strip().upper() for t in trackers_list]
-                logger.debug("[yellow]Removed MORETHANTV from trackers due to skip_if_rehash config and 8 MiB limit.[/yellow]")
-                if not meta.trackers:
-                    logger.info("[red]No trackers remain after removing MORETHANTV for skip_if_rehash.[/red]")
-                    meta.we_are_uploading = False
-                    return True
 
     if meta.randomized >= 1 and not meta.mkbrr and not is_usenet_only:
         TORRENT_CREATOR.create_random_torrents(meta.base_dir, meta.uuid, meta.randomized, cast(str, meta.path))
@@ -2217,7 +2201,7 @@ def get_remote_version(url: str) -> tuple[str | None, str | None]:
                 return match.group(1), content
             logger.info("[red]Version not found in remote file.")
             return None, None
-        logger.error(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
+        logger.warning(f"[yellow]Could not fetch remote version file (HTTP {response.status_code}); continuing with local version[/yellow]")
         return None, None
     except requests.RequestException as e:
         logger.info(f"[red]An error occurred while fetching the remote version file: {e}")
@@ -2261,8 +2245,9 @@ def extract_changelog(content: str, to_version: str) -> str | None:
 
 
 async def update_notification(base_dir: str, execution_context: ExecutionContext | None = None) -> str:
-    version_file = Path(base_dir) / "data" / "version.py"
-    remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/master/data/version.py"
+    version_file = CODE_DIR / "src" / "version.py"
+    # The upstream project publishes from development; master no longer exists.
+    remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/development/src/version.py"
 
     notice = config["DEFAULT"].get("update_notification", True)
     verbose = config["DEFAULT"].get("verbose_notification", False)
@@ -2285,7 +2270,7 @@ async def update_notification(base_dir: str, execution_context: ExecutionContext
                 match = re.search(r'__version__\s*=\s*"([^"]+)"', remote_content)
                 remote_version = match.group(1) if match else None
             else:
-                logger.error(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
+                logger.warning(f"[yellow]Could not fetch remote version file (HTTP {response.status_code}); continuing with local version[/yellow]")
                 remote_version, remote_content = None, None
         except Exception as error:
             logger.info(f"[red]An error occurred while fetching the remote version file: {error}")
@@ -2296,7 +2281,6 @@ async def update_notification(base_dir: str, execution_context: ExecutionContext
     if _parse_version_tuple(remote_version) > _parse_version_tuple(local_version):
         logger.info(f"[red][NOTICE] [green]Update available: [/green][yellow]{remote_version}")
         logger.info(f"[red][NOTICE] [green]Current version: [/green][yellow]{local_version}")
-        await asyncio.sleep(1)
         if verbose and remote_content:
             changelog = extract_changelog(remote_content, remote_version)
             if changelog:
@@ -2534,6 +2518,10 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
         if not meta.path:
             exit(0)
+
+        from bin.get_mediainfo import MediaInfoBinaryManager
+
+        await MediaInfoBinaryManager.ensure_mediainfo_binary(base_dir)
 
         path = meta.path
         path = str(Path(path).resolve())
@@ -3244,7 +3232,11 @@ async def process_cross_seeds(meta: Meta) -> None:
 
 async def get_mkbrr_path(base_dir: str | None = None) -> str | None:
     try:
-        resolved_base_dir = base_dir or str(Path(__file__).resolve().parent)
+        # Prefer the immutable binary shipped with the application. Downloads
+        # are cached in the user-owned runtime directory only when needed.
+        if bundled_mkbrr := MkbrrBinaryManager.find_existing_binary(CODE_DIR):
+            return bundled_mkbrr
+        resolved_base_dir = base_dir or str(STATE_DIR)
         mkbrr_path = await MkbrrBinaryManager.ensure_mkbrr_binary(resolved_base_dir, version="v1.24.0")
         return mkbrr_path if mkbrr_path else None
     except Exception as e:

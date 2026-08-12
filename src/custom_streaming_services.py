@@ -6,6 +6,9 @@ conflicting with these project-specific additions.
 """
 
 CUSTOM_STREAMING_SERVICES = {
+    # Movies Anywhere is also abbreviated as YKW in some release names.
+    "YKW": "MA",
+
     # Indian and South Asian streaming services
     "Prime Video": "AMZN",
     "Amazon Prime Video": "AMZN",

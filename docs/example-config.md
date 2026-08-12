@@ -2,15 +2,17 @@
 
 This document explains the configuration options found in `data/example_config.py`.
 
-Upload Assistant loads configuration from `data/config.py`.
+Upload Assistant loads configuration from its user-owned state directory: `%LOCALAPPDATA%\\Upload-Assistant\\data\\config.py` on Windows, `$XDG_DATA_HOME/upload-assistant/data/config.py` (normally `~/.local/share/upload-assistant/data/config.py`) on Linux, or `$UA_DATA_DIR/data/config.py` when overridden.
+
+On the first run after upgrading, a legacy `data/config.py` in the checkout is **moved** to this location, so only one active configuration remains.
 
 ## How to use
 
 - Generate a config interactively:
   - Run `python config-generator.py` from the repo root.
 - Or create your config manually:
-  - Copy `data/example_config.py` to `data/config.py`
-  - Edit `data/config.py` with your own values
+  - Run `config-generator.py`, or let the first start create the user config from `data/example_config.py`
+  - Edit the user-owned `config.py` with your own values
 
 ## Config file shape
 
@@ -24,7 +26,7 @@ The config is a Python dict named `config` with these top-level sections:
 Notes:
 
 - Many numeric values are stored as strings (e.g. `"4"`, `"14000"`). Keep the same type unless you know a specific option is numeric.
-- Tracker lists are usually a comma-separated string using tracker identifiers (e.g. `"MORETHANTV, BEYONDHD"`).
+- Tracker lists are usually a comma-separated string using tracker identifiers (e.g. `"BEYONDHD, AITHER"`).
 
 ## How Upload Assistant uses this config (implementation context)
 
@@ -32,7 +34,7 @@ Upload Assistant is structured around a runtime `meta` dict.
 
 At a high level:
 
-1. `data/config.py` is imported and read across the codebase.
+1. The user-owned `data/config.py` is imported and read across the codebase.
 2. `src/prep.py` builds and normalizes `meta` from the input path + CLI args + `config` defaults.
 3. Tracker metadata is fetched via `src/get_tracker_data.py` / `src/trackermeta.py` and individual tracker modules under `src/trackers/`.
 4. Screenshots are captured/optimized via `src/takescreens.py`.
@@ -41,7 +43,7 @@ At a high level:
 
 Important gotchas:
 
-- Some options are read at module import time (notably in `src/takescreens.py`). If you edit `data/config.py` while Upload Assistant is running, you may need to restart the process for changes to take effect.
+- Some options are read at module import time (notably in `src/takescreens.py`). If you edit the user `config.py` while Upload Assistant is running, you may need to restart the process for changes to take effect.
 - Many `DEFAULT` values are copied into `meta` during preparation, and later code reads `meta` rather than reading `config` again.
 - Several settings can be overridden by CLI flags (or by `user-args.json` overrides when enabled).
 
@@ -86,7 +88,7 @@ CLI workflow controls:
 Order matters: `img_host_1` is primary, later hosts are fallbacks.
 
 - `img_host_1`..`img_host_5` (str): Image host names. Valid examples include `imgbb`, `imgbox`, `pixhost`, `lensdump`, `ptscreens`, `onlyimage`, `dalexni`, `zipline`, `midnightscene`, `passtheimage`, `seedpool_cdn`, `utppm`, `lostimg`.
-- **Confirmed OnlyImage tracker compatibility (non-exhaustive):** LUMINARR (`LUME`), ANTHELION (`ANT`), AITHER (`ATH`), BLUTOPIA (`BLU`), ONLYENCODES (`OE`), HAWKEUNO (`HUNO`), MORETHANTV (`MTV`), LST, DARKPEERS (`DP`), RACING4EVERYONE (`RF`), and YUSCENE (`YUS`). `ANT` was independently reconfirmed; this list is not intended to be exhaustive.
+- **Confirmed OnlyImage tracker compatibility (non-exhaustive):** LUMINARR (`LUME`), ANTHELION (`ANT`), AITHER (`ATH`), BLUTOPIA (`BLU`), ONLYENCODES (`OE`), HAWKEUNO (`HUNO`), LST, DARKPEERS (`DP`), RACING4EVERYONE (`RF`), and YUSCENE (`YUS`). `ANT` was independently reconfirmed; this list is not intended to be exhaustive.
 - `image_upload_concurrency` (int): Maximum number of image uploads running at once. Set to `0` to use the image host default.
 - `image_upload_delay` (float): Minimum delay in seconds between starting image uploads.
 
@@ -158,6 +160,9 @@ Implementation notes:
 - `process_limit` (str): Max number of screenshot optimization processes.
 - `threads` (str): Thread limit per process during image optimization.
 - `ffmpeg_limit` (bool): Limit CPU usage when running ffmpeg.
+- `add_dynamic_hdr_plot` (bool): Generate and add Dolby Vision/HDR10+ metadata plots when dynamic metadata is detected. The required tools download automatically on first use. Extraction reads each selected video file in full and can take a while for large releases.
+- `dynamic_hdr_plot_header` (str): BBCode header used above dynamic HDR plots.
+- `dynamic_hdr_plot_max_files` (int): Maximum video files to plot for a multi-file release (default: `1`).
 
 Implementation notes:
 
@@ -301,7 +306,7 @@ A comma-separated list of tracker identifiers to upload to by default.
 Example:
 
 ```python
-"default_trackers": "MORETHANTV, BEYONDHD, AITHER"
+"default_trackers": "BEYONDHD, AITHER"
 ```
 
 ### Per-tracker blocks

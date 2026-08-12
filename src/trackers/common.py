@@ -2559,6 +2559,56 @@ class Common:
         response = (await prompt_in_thread(cli_ui.ask_string, f"{message} (Y/n): ", default="") or "").strip().lower()
         return response == "" or response == "y"
 
+    @staticmethod
+    def _unit3d_title_key(value: object) -> str:
+        """Return a release-title key without year or release metadata."""
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        try:
+            import guessit
+
+            parsed = guessit.guessit(text)
+            guessed_title = parsed.get("title")
+            if isinstance(guessed_title, str) and guessed_title.strip():
+                text = guessed_title
+        except Exception:
+            # Title validation is a safety guard; a parser failure must not
+            # prevent the normal tracker flow from continuing.
+            pass
+        text = re.sub(r"\b(?:19|20)\d{2}\b", "", text)
+        return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
+    @classmethod
+    def _unit3d_result_matches_source(cls, meta: Meta, attributes: dict[str, Any]) -> bool:
+        """Reject unrelated first search results before applying tracker IDs."""
+        source_value = str(getattr(meta, "regex_title", "") or getattr(meta, "filename", ""))
+        source_title = cls._unit3d_title_key(source_value)
+        if not source_title:
+            return True
+
+        result_title = ""
+        for key in ("name", "title", "release_name", "torrent_name"):
+            value = attributes.get(key)
+            if isinstance(value, str) and value.strip():
+                result_title = value
+                break
+        if not result_title:
+            files = attributes.get("files")
+            if isinstance(files, list) and files and isinstance(files[0], dict):
+                result_title = str(files[0].get("name") or "")
+        if not result_title:
+            return True
+
+        # A title beginning with a number (for example, "12 Years a Slave")
+        # can be misparsed by guessit as a season/episode. Preserve a raw
+        # compact comparison as a safe fallback for those titles.
+        source_compact = re.sub(r"[^a-z0-9]+", "", source_value.casefold())
+        result_compact = re.sub(r"[^a-z0-9]+", "", result_title.casefold())
+        return source_title == cls._unit3d_title_key(result_title) or (
+            bool(source_compact) and source_compact in result_compact
+        )
+
     async def _apply_region_distributor(self, meta: Meta, attributes: dict[str, Any]) -> None:
         region_id = attributes.get("region_id", 0)
         distributor_id = attributes.get("distributor_id", 0)
@@ -2681,6 +2731,13 @@ class Common:
 
             if data and isinstance(data, list):  # Ensure data is a list before accessing it
                 attributes = data[0].get("attributes", {})
+
+                if not id and not self._unit3d_result_matches_source(meta, attributes):
+                    logger.warning(
+                        f"[yellow]Ignoring {tracker} metadata IDs because its search result "
+                        "does not match the source filename.[/yellow]"
+                    )
+                    return None, None, None, None, None, None, None, [], None
 
                 # Extract data from the attributes
                 category = attributes.get("category")

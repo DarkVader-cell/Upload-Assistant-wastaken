@@ -10,12 +10,13 @@ from typing import Any, cast
 import defusedxml.xmlrpc
 import httpx
 import qbittorrentapi
+from deluge_client import DelugeRPCClient
 from torf import Torrent
 
 from src.console import logger
 from src.meta import Meta
 from src.torrent_clients import DelugeClientMixin, QbittorrentClientMixin, RtorrentClientMixin, TransmissionClientMixin
-from src.torrent_clients.path_utils import coerce_str_list, is_path_under
+from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local
 from src.torrentcreate import SUBTITLE_EXTENSIONS
 
 # Secure XML-RPC client using defusedxml to prevent XML attacks
@@ -108,6 +109,18 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                     tracker_ids[tracker_key] = tracker_id
 
         return tracker_ids
+
+    async def resolve_reused_source_path(self, meta: Meta) -> str | None:
+        """Resolve the original local content path for an automatically reused torrent."""
+        client_name = meta.reuse_torrent_client
+        if not client_name:
+            return None
+        client_config = self.config.get("TORRENT_CLIENTS", {}).get(client_name)
+        if not isinstance(client_config, dict):
+            return None
+        if str(client_config.get("torrent_client", "")).lower() == "qbit":
+            return await self.get_reused_source_path(meta, client_config)
+        return None
 
     async def add_to_client(self, meta: Meta, tracker: str, cross: bool = False) -> None:
         """Add the prepared torrent to each configured client."""
@@ -249,15 +262,8 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
             return None
 
         # Determine piece size preferences
-        trackers_config = cast(dict[str, Any], self.config.get("TRACKERS", {}))
-        mtv_config = trackers_config.get("MORETHANTV", {})
         piece_limit = bool(self.config["DEFAULT"].get("prefer_max_16_torrent", False))
-        if isinstance(mtv_config, dict):
-            mtv_config_dict = cast(dict[str, Any], mtv_config)
-            mtv_torrent = bool(mtv_config_dict.get("prefer_mtv_torrent", False))
-        else:
-            mtv_torrent = False
-        prefer_small_pieces = mtv_torrent or piece_limit
+        prefer_small_pieces = piece_limit
         best_match = None  # Track the best match for fallback if prefer_small_pieces is enabled
         video_only_fallback: tuple[str, str] | None = None
 
@@ -292,7 +298,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                 continue
 
             try:
-                result = await self._search_single_client_for_torrent(meta, client_name, prefer_small_pieces, mtv_torrent, piece_limit, best_match)
+                result = await self._search_single_client_for_torrent(meta, client_name, prefer_small_pieces, piece_limit, best_match)
             except Exception as error:
                 logger.info(f"[yellow]Torrent search failed for client '{client_name}', continuing with remaining clients: {error}[/yellow]")
                 continue
@@ -304,9 +310,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                     # A partially subtitle-bearing torrent would produce an invalid
                     # BASE_SUBS.torrent and omit selected local subtitles.
                     if self._torrent_has_no_subtitles(candidate_path) and (
-                        video_only_fallback is None
-                        or not prefer_small_pieces
-                        or self._is_preferred_piece_size_candidate(candidate_path, video_only_fallback[0], mtv_torrent, piece_limit)
+                        video_only_fallback is None or not prefer_small_pieces or self._is_preferred_piece_size_candidate(candidate_path, video_only_fallback[0], piece_limit)
                     ):
                         video_only_fallback = (candidate_path, client_name)
                     continue
@@ -341,13 +345,19 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
         return None
 
     async def _search_single_client_for_torrent(
-        self, meta: Meta, client_name: str, prefer_small_pieces: bool, mtv_torrent: bool, piece_limit: bool, best_match: dict[str, Any] | None
+        self, meta: Meta, client_name: str, prefer_small_pieces: bool, piece_limit: bool, best_match: dict[str, Any] | None
     ) -> dict[str, Any] | str | None:
         """Search a single client for an existing torrent by hash or via API search (qbit only)."""
 
         client = self.config["TORRENT_CLIENTS"][client_name]
         torrent_client = client.get("torrent_client", "").lower()
-        torrent_storage_dir = client.get("torrent_storage_dir")
+        torrent_storage_dir_value = client.get("torrent_storage_dir")
+        torrent_storage_dir = str(torrent_storage_dir_value).strip() if torrent_storage_dir_value else ""
+        if torrent_storage_dir:
+            # Seedbox configs commonly use ``~`` for Deluge's session folder.
+            # Path does not expand it itself, so normalize it before looking up
+            # the state torrent files.
+            torrent_storage_dir = os.path.expandvars(str(Path(torrent_storage_dir).expanduser()))
         qbt_client: qbittorrentapi.Client | None = None
         proxy_url: str | None = None
 
@@ -420,6 +430,73 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                     return resolved_path
 
         # Search the client if no pre-specified hash matches
+        if torrent_client == "deluge" and torrent_storage_dir:
+            try:
+                deluge_client = DelugeRPCClient(client["deluge_url"], int(client["deluge_port"]), client["deluge_user"], client["deluge_pass"])
+                await asyncio.wait_for(asyncio.to_thread(deluge_client.connect), timeout=15.0)
+                if deluge_client.connected:
+                    torrent_status = await asyncio.wait_for(
+                        asyncio.to_thread(deluge_client.call, "core.get_torrents_status", {}, ["name", "save_path"]),
+                        timeout=20.0,
+                    )
+                    source_path = Path(str(meta.path)) if meta.path is not None else None
+                    source_name = source_path.name.casefold() if source_path else ""
+                    local_paths = coerce_str_list(client.get("local_path"))
+                    remote_paths = coerce_str_list(client.get("remote_path"))
+                    checked_hashes: set[str] = set()
+                    for torrent_hash, status in torrent_status.items():
+                        torrent_name = status.get(b"name", status.get("name", b""))
+                        save_path = status.get(b"save_path", status.get("save_path", b""))
+                        if isinstance(torrent_name, bytes):
+                            torrent_name = torrent_name.decode(errors="replace")
+                        if isinstance(save_path, bytes):
+                            save_path = save_path.decode(errors="replace")
+                        if str(torrent_name).casefold() != source_name:
+                            continue
+
+                        # map_client_path_to_local takes local_path first and
+                        # remote_path second (the inverse of map_save_path).
+                        mapped_save_path = map_client_path_to_local(save_path, local_paths[0] if local_paths else None, remote_paths[0] if remote_paths else None)
+                        if source_path is None or not is_path_under(source_path, mapped_save_path):
+                            continue
+
+                        if isinstance(torrent_hash, bytes):
+                            torrent_hash = torrent_hash.decode(errors="replace")
+                        torrent_hash = str(torrent_hash).strip().lower()
+                        checked_hashes.add(torrent_hash)
+                        torrent_path = Path(torrent_storage_dir) / f"{torrent_hash}.torrent"
+                        valid, resolved_path = await self.is_valid_torrent(meta, str(torrent_path), str(torrent_hash), torrent_client, client)
+                        if valid:
+                            meta.reuse_torrent_client = client_name
+                            logger.info(f"[green]Found valid torrent in Deluge by name: {torrent_name}[/green]")
+                            return resolved_path
+
+                    # Deluge's reported name/save_path is not reliable across
+                    # WebUI versions and path mappings.  The session directory
+                    # is authoritative for the torrent metainfo, so validate
+                    # its files directly as a fallback.
+                    storage_path = Path(torrent_storage_dir)
+                    if storage_path.is_dir():
+                        for torrent_path in storage_path.glob("*.torrent"):
+                            torrent_hash = torrent_path.stem.casefold()
+                            if torrent_hash in checked_hashes:
+                                continue
+                            valid, resolved_path = await self.is_valid_torrent(meta, str(torrent_path), torrent_hash, torrent_client, client)
+                            if valid:
+                                meta.reuse_torrent_client = client_name
+                                logger.info(f"[green]Found valid torrent in Deluge session storage: {torrent_path.name}[/green]")
+                                return resolved_path
+                    else:
+                        logger.info(f"[yellow]Deluge torrent storage directory is not accessible: {storage_path}[/yellow]")
+                else:
+                    logger.info("[yellow]Connected to Deluge RPC but the client is not connected[/yellow]")
+            except asyncio.TimeoutError:
+                logger.warning("[yellow]Deluge torrent search timed out after 35 seconds; continuing without torrent reuse[/yellow]")
+            except Exception as error:
+                logger.info(f"[yellow]Deluge torrent search failed; continuing without torrent reuse: {error}[/yellow]")
+        elif torrent_client == "deluge":
+            logger.info("[yellow]Deluge reuse requires torrent_storage_dir to be set to Deluge's session directory[/yellow]")
+
         if torrent_client == "qbit" and client.get("enable_search"):
             qbt_session: httpx.AsyncClient | None = None
             try:
@@ -529,10 +606,6 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                         return resolved_path
 
                     # Track best match for small pieces
-                    if piece_size <= 8388608 and mtv_torrent:
-                        logger.info(f"[green]Found a valid torrent with preferred piece size from client search: [bold yellow]{found_hash}")
-                        return resolved_path
-
                     if piece_size < 16777216 and piece_limit:  # 16 MiB
                         logger.info(f"[green]Found a valid torrent with piece size under 16 MiB from client search: [bold yellow]{found_hash}")
                         return resolved_path
@@ -698,7 +771,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
         return not any(Path(str(path)).suffix.casefold() in SUBTITLE_EXTENSIONS for path in torrent.files)
 
     @staticmethod
-    def _is_preferred_piece_size_candidate(candidate_path: str, current_path: str, mtv_torrent: bool, piece_limit: bool) -> bool:
+    def _is_preferred_piece_size_candidate(candidate_path: str, current_path: str, piece_limit: bool) -> bool:
         """Whether a candidate outranks the current fallback by configured piece preference."""
         try:
             candidate_piece_size = Torrent.read(candidate_path).piece_size
@@ -706,8 +779,6 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
         except Exception:
             return False
 
-        if mtv_torrent:
-            return candidate_piece_size < current_piece_size
         if piece_limit:
             limit = 16 * 1024 * 1024
             candidate_within_limit = candidate_piece_size <= limit

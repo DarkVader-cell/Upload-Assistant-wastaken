@@ -39,6 +39,35 @@ class SkipTheCommercials(UNIT3D):
         self.common = Common(config)
         self.rehost_images_manager = RehostImagesManager(config)
 
+    async def get_name(self, meta: Meta) -> dict[str, str]:
+        """Apply STC's language marker without changing the shared base name."""
+        result = await super().get_name(meta)
+        name = str(result.get("name", ""))
+        if meta.category != "TV" or meta.dual_audio:
+            return {"name": name}
+
+        raw_languages = meta.audio_languages or []
+        if isinstance(raw_languages, str):
+            raw_languages = [raw_languages]
+        languages = [str(language).strip() for language in raw_languages if str(language).strip()]
+        unique_languages = list(dict.fromkeys(languages))
+        language_tag = ""
+        if len(unique_languages) == 1 and unique_languages[0].casefold() not in {"english", "eng", "en"}:
+            language_tag = unique_languages[0]
+        elif len(unique_languages) > 1:
+            language_tag = "MULTI"
+
+        if not language_tag:
+            return {"name": name}
+
+        marker = f"{meta.season}{meta.episode}"
+        if marker and marker in name:
+            name = name.replace(marker, f"{marker} {language_tag}", 1)
+        elif meta.season and str(meta.season) in name:
+            season = str(meta.season)
+            name = name.replace(season, f"{season} {language_tag}", 1)
+        return {"name": name}
+
     async def get_type_id(
         self,
         meta: Meta,

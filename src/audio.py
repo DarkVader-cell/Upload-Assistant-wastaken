@@ -526,7 +526,11 @@ async def _get_audio_v2(
         extra = format_extra.get(additional_str, "")
 
     format_settings = format_settings_extra.get(format_settings, "")
-    format_settings = "EX" if format_settings == "EX" and chan == "5.1" else ""
+    # WEB/WEB-DL releases frequently carry a misleading Dolby Surround EX
+    # flag in their container metadata.  Do not leak that flag into release
+    # names; retain it only for non-web sources where it is meaningful.
+    source_key = str(getattr(meta, "source", "") or "").upper().replace("-", "")
+    format_settings = "EX" if format_settings == "EX" and chan == "5.1" and not source_key.startswith("WEB") else ""
 
     if codec == "":
         codec = format_str

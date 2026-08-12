@@ -111,11 +111,16 @@ NOTE: If using Windows paths, change `\` into `\\`. For example `C:\Downloads\TV
   "NAME" : {
              "torrent_client" : "deluge",
              "deluge_url" : "localhost",
-             "deluge_port" : "8080",
+             "deluge_port" : "58846",
              "deluge_user" : "username",
-             "deluge_password" : "password",
+             "deluge_pass" : "password",
+             "torrent_storage_dir" : "/path/to/deluge/state",
          },
   ```
+
+For the project’s Whatbox deployment, see [Whatbox deployment used by this
+project](seedbox.md#whatbox-deployment-used-by-this-project). Deluge reuse
+requires both RPC access and a container-visible `torrent_storage_dir`.
 
 - Example watch folder config:
 

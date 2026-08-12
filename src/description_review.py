@@ -22,10 +22,12 @@ def load_review(temp_dir: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def save_review(temp_dir: Path, content: str, version: int) -> dict[str, Any]:
+def save_review(temp_dir: Path, content: str, version: int, source_path: str | None = None) -> dict[str, Any]:
     """Atomically persist a user draft without relying on a browser path."""
     temp_dir.mkdir(parents=True, exist_ok=True)
     payload = {"content": content, "version": version}
+    if source_path:
+        payload["source_path"] = str(Path(source_path).expanduser().resolve(strict=False))
     path = review_path(temp_dir)
     temporary = path.with_suffix(f".tmp.{os.getpid()}")
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -49,8 +51,21 @@ def source_items(meta: dict[str, Any]) -> list[dict[str, str]]:
     return items
 
 
+def _review_matches_source(meta: dict[str, Any], review: dict[str, Any]) -> bool:
+    """Reject a draft saved for a different release sharing the same basename."""
+    current_path = meta.get("path")
+    saved_path = review.get("source_path")
+    if not isinstance(current_path, str) or not current_path:
+        return True
+    if not isinstance(saved_path, str) or not saved_path:
+        return False
+    return Path(current_path).expanduser().resolve(strict=False) == Path(saved_path).expanduser().resolve(strict=False)
+
+
 def draft(meta: dict[str, Any], temp_dir: Path) -> tuple[str, int]:
     review = load_review(temp_dir)
+    if not _review_matches_source(meta, review):
+        review = {}
     content = review.get("content")
     if isinstance(content, str):
         try:
@@ -69,6 +84,8 @@ def apply_saved_draft(meta: Any) -> None:
     """Synchronize a saved WebUI draft into the live Meta object at use time."""
     temp_dir = Path(meta.base_dir) / "tmp" / meta.uuid
     review = load_review(temp_dir)
+    if not _review_matches_source(meta.to_dict(), review):
+        return
     content = review.get("content")
     if isinstance(content, str):
         meta.description_override = content

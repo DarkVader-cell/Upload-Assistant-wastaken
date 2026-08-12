@@ -68,6 +68,17 @@ def map_save_path(
     return mapped_path if mapped_path.endswith("/") else f"{mapped_path}/"
 
 
+def map_client_path_to_local(client_path: str | Path, local_path: str | Path | None, remote_path: str | Path | None) -> str:
+    """Map a torrent-client path back to the local filesystem path."""
+    mapped = Path(str(client_path))
+    remote = Path(str(remote_path)) if remote_path else None
+    local = Path(str(local_path)) if local_path else None
+    if remote is not None and local is not None and is_path_under(mapped, remote):
+        relative = mapped.relative_to(remote)
+        mapped = local / relative
+    return os.path.normpath(str(mapped).replace("\\", os.sep))
+
+
 def tracker_directory(link_target: str | Path, link_dir_name: str, tracker: str) -> Path:
     """Build a safe tracker link directory and reject unsafe Windows names."""
     directory_name = link_dir_name.strip() or tracker

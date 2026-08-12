@@ -120,21 +120,8 @@ class NameManager:
             year = ""
         if meta.no_aka is True:
             alt_title = ""
-        stc_naming = meta.category == "TV" and "SKIPTHECOMMERCIALS" in meta.trackers
-        stc_language = ""
-        if stc_naming:
-            raw_languages = meta.audio_languages or []
-            if isinstance(raw_languages, str):
-                raw_languages = [raw_languages]
-            languages = [str(language).strip() for language in raw_languages if str(language).strip()]
-            unique_languages = list(dict.fromkeys(languages))
-            if len(unique_languages) == 1:
-                if unique_languages[0].casefold() not in {"english", "eng", "en"}:
-                    stc_language = unique_languages[0]
-            elif len(unique_languages) > 1:
-                stc_language = "MULTI"
-        tv_title_prefix = f"{title} {alt_title} {year}" if stc_naming else f"{title} {year} {alt_title}"
-        tv_season_episode = f"{season}{episode} {stc_language}" if stc_language else f"{season}{episode}"
+        tv_title_prefix = f"{title} {year} {alt_title}"
+        tv_season_episode = f"{season}{episode}"
         if meta.debug:
             logger.debug("[cyan]get_name cat/type")
             logger.debug(f"CATEGORY: {meta.category}")

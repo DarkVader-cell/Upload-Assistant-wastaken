@@ -43,3 +43,15 @@ def test_existing_lowercase_i_service_codes_remain_unchanged():
     assert services["BBC iPlayer"] == "iP"  # noqa: S101
     assert services["iTunes"] == "iT"  # noqa: S101
     assert services["iQIYI"] == "iQIYI"  # noqa: S101
+
+
+def test_ykw_release_alias_maps_to_movies_anywhere(monkeypatch):
+    def fake_guessit(_value, _options=None):
+        return {"title": "Example"}
+
+    monkeypatch.setattr(region, "_guessit_fn", fake_guessit)
+
+    service, service_name = asyncio.run(region.get_service("Example.YKW.1080p.WEB-DL.mkv"))
+
+    assert service == "MA"  # noqa: S101
+    assert service_name == "Movies Anywhere"  # noqa: S101

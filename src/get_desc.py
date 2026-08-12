@@ -16,13 +16,13 @@ import httpx
 import langcodes
 from jinja2 import Template
 from langcodes.tag_parser import LanguageTagError
-from pymediainfo import MediaInfo
 
 from src.bbcode import BBCODE
 from src.cogs.redaction import PathAwareEncoder
 from src.console import logger
 from src.description_review import apply_saved_draft
 from src.languages import languages_manager
+from src.mediainfo import MediaInfo
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
 from src.takescreens import TakeScreensManager
@@ -89,7 +89,11 @@ async def gen_desc(
     base_dir = meta.base_dir
     uuid = meta.uuid
     specified_dir = Path(base_dir) / "tmp" / uuid
-    source_dir = Path(meta.path or "")
+    source_path = Path(meta.path or "")
+    # For single-file uploads, the adjacent NFO lives beside the media file,
+    # not underneath the file path. Directory uploads continue to search the
+    # directory itself.
+    source_dir = source_path.parent if source_path.is_file() else source_path
 
     if meta.description_override:
         description_lines.append(clean_text(meta.description_override))
@@ -659,6 +663,28 @@ class DescriptionBuilder:
             logger.warning(f"[yellow]Warning: Error getting audio spectrogram section: {e!s}[/yellow]")
         return ""
 
+    async def get_dynamic_hdr_plot_section(self, meta: Meta) -> str:
+        """Return Dolby Vision/HDR10+ dynamic metadata plots, when enabled."""
+        if not (meta.dynamic_hdr_plot or self._get_bool_config("add_dynamic_hdr_plot", False)):
+            return ""
+        plot_images = get_tracker_image_collection(meta, self.tracker, "dynamic_hdr_plot_images")
+        if not plot_images:
+            return ""
+        header = self._get_str_config("dynamic_hdr_plot_header", "[center][b]Dynamic HDR Metadata[/b][/center]")
+        desc_parts: list[str] = [header] if header is not None else []
+        desc_parts.append("\n[center]")
+        for image in plot_images:
+            if not isinstance(image, dict):
+                continue
+            web_url = image.get("web_url")
+            raw_url = image.get("raw_url")
+            img_url = image.get("img_url", raw_url) or ""
+            if web_url and raw_url:
+                desc_parts.append(self.format_screenshot(web_url, raw_url, img_url))
+                desc_parts.append("\n")
+        desc_parts.append("[/center]\n")
+        return "".join(desc_parts)
+
     def _build_book_desc_section(self, meta: Meta, header_size: int = 0, table: bool = True, underline: bool = False, bullet: str = "") -> str:
         """Build the BBCode table or list for BOOK-category uploads."""
         if self.tracker in ("TORRENTLEECH", "IMMORTALSEED", "IPTORRENTS", "SPEEDAPP"):
@@ -1092,11 +1118,12 @@ class DescriptionBuilder:
         screenshots: bool,
         tonemapped_header: bool,
         tv_info: bool,
-        ua_signature: bool,
+        ua_signature: bool,  # noqa: ARG002 - retained for tracker extension compatibility
         user_description: bool,
         music: bool = True,
+        dynamic_hdr_plot: bool = True,
         approved_image_hosts: list[str] | None = None,
-        signature: str = "",
+        signature: str = "",  # noqa: ARG002 - retained for tracker extension compatibility
         desc_header: str = "",
     ) -> str:
         apply_saved_draft(meta)
@@ -1198,15 +1225,6 @@ class DescriptionBuilder:
                 bd_info = await self.get_bdinfo_section(meta)
                 if bd_info:
                     desc_parts.append(f"[left][font=consolas]{bd_info}[/font][/left]")
-            elif self.tracker == "MORETHANTV":
-                mediainfo_sec = await self.get_mediainfo_section(meta)
-                if mediainfo_sec:
-                    desc_parts.append(f"[mediainfo]{mediainfo_sec}[/mediainfo]\n\n")
-                bd_info = await self.get_bdinfo_section(meta)
-                if bd_info:
-                    desc_parts.append(f"[mediainfo]{bd_info}[/mediainfo]\n\n")
-                if meta.is_disc == "DVD" and isinstance(meta.discs, list) and len(meta.discs) > 0 and "vob_mi" in meta.discs[0]:
-                    desc_parts.append(f"[mediainfo]{meta.discs[0]['vob_mi']}[/mediainfo]\n\n")
             elif self.tracker == "TORRENTLEECH":
                 mediainfo_sec = await self.get_mediainfo_section(meta)
                 if mediainfo_sec:
@@ -1289,12 +1307,7 @@ class DescriptionBuilder:
                     if meta_description:
                         desc_parts.append(meta_description)
             elif meta_description:
-                if self.tracker == "MORETHANTV":
-                    meta_description = re.sub(r"\[/?quote\]", "", meta_description, flags=re.IGNORECASE).strip()
-                    if meta_description:
-                        desc_parts.append(f"[spoiler=Notes]{meta_description}[/spoiler]")
-                else:
-                    desc_parts.append(meta_description)
+                desc_parts.append(meta_description)
 
         # NFO details
         if nfo:
@@ -1332,6 +1345,10 @@ class DescriptionBuilder:
         # Audio Spectrograms
         if audio_spectrogram:
             desc_parts.append(await self.get_audio_spectrogram_section(meta))
+
+        # Dynamic HDR metadata plots (Dolby Vision / HDR10+)
+        if dynamic_hdr_plot:
+            desc_parts.append(await self.get_dynamic_hdr_plot_section(meta))
 
         # Custom Signature
         if custom_signature:
@@ -2003,8 +2020,6 @@ class DescriptionBuilder:
             if "imgbox" not in web_url:
                 return f"[url={web_url}][img]{img_url}[/img][/url]\n"
             return f"[url={web_url}][img]{img_url}[/img][/url] "
-        if self.tracker == "MORETHANTV":
-            return f"[url={raw_url}][img={thumb_size}]{img_url}[/img][/url] "
         return f"[url={web_url}][img={thumb_size}]{raw_url}[/img][/url] "
 
     def tracker_specific_formats(self, tracker: str, description: str) -> str:

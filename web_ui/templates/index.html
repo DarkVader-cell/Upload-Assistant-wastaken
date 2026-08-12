@@ -124,7 +124,7 @@
     ></script>
     <script
       type="text/babel"
-      src="{{ url_for('static', filename='js/app.js') }}"
+      src="{{ url_for('static', filename='js/app.js') }}?v={{ config.get('APP_ASSET_VERSION', '2026-08-12') }}"
     ></script>
   </body>
 </html>

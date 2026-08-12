@@ -83,6 +83,7 @@ const sanitizeBbcodePreview = (html) => {
       "data-bbcode-color",
       "href",
       "src",
+      "target",
       "title",
     ],
   });
@@ -899,6 +900,18 @@ const argumentCategories = [
     ],
   },
   {
+    title: "Dynamic HDR Metadata",
+    subtitle:
+      "Generates separate metadata plots only when the release contains Dolby Vision and/or HDR10+ dynamic metadata.",
+    args: [
+      {
+        label: "--dynamic-hdr-plot",
+        description:
+          "Generate and upload Dolby Vision and HDR10+ metadata plots. Required tools download automatically on first use.",
+      },
+    ],
+  },
+  {
     title: "Misc Options",
     args: [
       {
@@ -1452,6 +1465,7 @@ function AudionutsUAGUI() {
   const [executionPreview, setExecutionPreview] = useState(null);
   const [executionScreenshots, setExecutionScreenshots] = useState([]);
   const [executionDescription, setExecutionDescription] = useState(null);
+  const [trackerDescriptionSelection, setTrackerDescriptionSelection] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [descriptionView, setDescriptionView] = useState("edit");
   const [descriptionVersion, setDescriptionVersion] = useState(0);
@@ -1475,8 +1489,8 @@ function AudionutsUAGUI() {
   const [isDescriptionReviewOpen, setIsDescriptionReviewOpen] = useState(false);
   const [progressItems, setProgressItems] = useState([]);
   const [selectedPaths, setSelectedPaths] = useState([]);
-  const [sortBy, setSortBy] = useState("name");
-  const [sortOrder, setSortOrder] = useState("asc");
+  const [sortBy, setSortBy] = useState("date");
+  const [sortOrder, setSortOrder] = useState("desc");
 
   useEffect(() => {
     storage.set(
@@ -1714,6 +1728,16 @@ function AudionutsUAGUI() {
     return data;
   };
 
+  const renderLogWithLinks = (log) => {
+    const parts = String(log || "").split(/(https?:\/\/[^\s<>\]]+)/gi);
+    return parts.map((part, index) => {
+      if (!/^https?:\/\//i.test(part)) return part;
+      const trailing = part.match(/[),.;!?]+$/)?.[0] || "";
+      const href = trailing ? part.slice(0, -trailing.length) : part;
+      return <span key={index}><a href={href} target="_blank" rel="noreferrer" className="text-sky-400 underline hover:text-sky-300">{href}</a>{trailing}</span>;
+    });
+  };
+
   const submitUnattendedSelection = async () => {
     const paths = selectedPaths.map((item) => item.path).filter(Boolean);
     if (!paths.length && selectedPath) paths.push(selectedPath);
@@ -1741,6 +1765,8 @@ function AudionutsUAGUI() {
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.success) throw new Error(data?.error || "Unable to load log");
         setOperationLog((previous) => ({ ...previous, [jobId]: data.log || "" }));
+        setOperationsOpen(true);
+        setActivePanel("operations");
       } else {
         await operationRequest(`${API_BASE}/qui/${action}/${encodeURIComponent(jobId)}`, {
           method: "POST",
@@ -1841,6 +1867,18 @@ function AudionutsUAGUI() {
                         {trackerNames.length > 0 && <div>{trackerNames.join(" · ")}</div>}
                       </div>
                     </div>
+                    {item.job_id && (historyStatus === "failed" || historyStatus === "interrupted") && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => performJobAction(item.job_id, "retry")}
+                          className="rounded bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                        >Continue upload</button>
+                        <button
+                          onClick={() => performJobAction(item.job_id, "log")}
+                          className={`rounded border px-2 py-1 text-[11px] ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}
+                        >Open log</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -1877,7 +1915,7 @@ function AudionutsUAGUI() {
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <button onClick={() => performJobAction(job.id, "log")} className={`rounded border px-2 py-1 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}>Log</button>
-                      {job.can_retry && <button onClick={() => performJobAction(job.id, "retry")} className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">Retry</button>}
+                      {job.can_retry && <button onClick={() => performJobAction(job.id, "retry")} className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">Continue upload</button>}
                       {job.can_cancel && <button onClick={() => performJobAction(job.id, "cancel")} className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-700">Cancel</button>}
                     </div>
                   </div>
@@ -1897,7 +1935,7 @@ function AudionutsUAGUI() {
                       </div>
                     </div>
                   )}
-                  {operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{operationLog[job.id]}</pre>}
+                  {operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{renderLogWithLinks(operationLog[job.id])}</pre>}
                 </div>
               );
             })}
@@ -2685,6 +2723,30 @@ function AudionutsUAGUI() {
     } catch (error) {
       console.error(`Could not ${action} screenshot:`, error);
       window.alert(`Could not ${action} screenshot. Please try again.`);
+    } finally {
+      setScreenshotActionId("");
+    }
+  };
+
+  const regenerateExecutionScreenshots = async (group = "main") => {
+    if (!sessionId || screenshotActionId) return;
+    if (!window.confirm(`Regenerate every screenshot in ${group === "main" ? "this file" : `the ${group} group`}?`)) return;
+    setScreenshotActionId(`regenerate:${group}`);
+    try {
+      const response = await apiFetch(`${API_BASE}/execution_screenshots/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, group }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        window.alert(data?.error || "Could not regenerate screenshots.");
+        return;
+      }
+      await refreshExecutionScreenshots();
+    } catch (error) {
+      console.error("Could not regenerate screenshots:", error);
+      window.alert("Could not regenerate screenshots.");
     } finally {
       setScreenshotActionId("");
     }
@@ -4344,6 +4406,20 @@ function AudionutsUAGUI() {
     const sources = Array.isArray(executionDescription?.sources)
       ? executionDescription.sources
       : [];
+    const trackerDescriptions = Array.isArray(executionDescription?.tracker_descriptions)
+      ? executionDescription.tracker_descriptions
+      : [];
+    const selectedTrackerDescription = trackerDescriptions.find(
+      (item) => item.tracker === trackerDescriptionSelection,
+    ) || trackerDescriptions[0];
+    const copyTrackerDescription = async (content) => {
+      try {
+        await navigator.clipboard.writeText(content || "");
+        window.alert("Tracker BBCode copied to the clipboard.");
+      } catch (_error) {
+        window.alert("Clipboard access failed; select and copy the text manually.");
+      }
+    };
     return (
       <div className="flex h-full flex-col">
         <div
@@ -4392,6 +4468,42 @@ function AudionutsUAGUI() {
               <p className="text-xs text-gray-500">
                 No description sources are available yet.
               </p>
+            )}
+          </section>
+          <section
+            className={`rounded-lg border p-2 ${isDarkMode ? "border-emerald-900/60 bg-gray-800" : "border-emerald-200 bg-emerald-50"}`}
+          >
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className={`text-xs font-bold uppercase tracking-wide ${isDarkMode ? "text-emerald-300" : "text-emerald-800"}`}>Tracker BBCode</p>
+                <p className="mt-1 text-[11px] opacity-70">Copy the exact tracker-specific description after screenshots or tracker formatting changes.</p>
+              </div>
+              {selectedTrackerDescription && (
+                <button
+                  onClick={() => copyTrackerDescription(selectedTrackerDescription.content)}
+                  className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                >Copy BBCode</button>
+              )}
+            </div>
+            {trackerDescriptions.length ? (
+              <>
+                <select
+                  value={selectedTrackerDescription?.tracker || ""}
+                  onChange={(event) => setTrackerDescriptionSelection(event.target.value)}
+                  className={`mb-2 w-full rounded border px-2 py-1.5 text-xs ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
+                  aria-label="Select tracker-specific BBCode"
+                >
+                  {trackerDescriptions.map((item) => <option key={item.tracker} value={item.tracker}>{item.tracker}</option>)}
+                </select>
+                <textarea
+                  readOnly
+                  value={selectedTrackerDescription?.content || ""}
+                  className={`min-h-[10rem] w-full resize-y rounded border p-2 font-mono text-[11px] ${isDarkMode ? "border-gray-700 bg-gray-950 text-gray-200" : "border-gray-300 bg-white text-gray-800"}`}
+                  aria-label="Tracker-specific BBCode"
+                />
+              </>
+            ) : (
+              <p className="text-xs opacity-70">Tracker-specific description files will appear here after the upload stage generates them.</p>
             )}
           </section>
           <section className="flex min-h-[24rem] flex-1 flex-col">
@@ -4553,6 +4665,14 @@ function AudionutsUAGUI() {
               >
                 {screenshotActionId === "add" ? <SpinnerIcon /> : <PlusIcon />}
               </button>
+              <button
+                onClick={() => regenerateExecutionScreenshots("main")}
+                disabled={isWorking || !executionScreenshots.some((item) => (item.group || "main") === "main")}
+                className="rounded-md border border-purple-500 px-2 py-1 text-xs text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
+                title="Regenerate every screenshot for this file"
+              >
+                {screenshotActionId === "regenerate:main" ? "Regenerating…" : "Regenerate file"}
+              </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3">
@@ -4584,6 +4704,15 @@ function AudionutsUAGUI() {
                         >
                           Add to this group
                         </button>
+                        {group !== "main" && (
+                          <button
+                            onClick={() => regenerateExecutionScreenshots(group)}
+                            disabled={isWorking}
+                            className="rounded-md border border-purple-500 px-2 py-1 normal-case tracking-normal text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
+                          >
+                            {screenshotActionId === `regenerate:${group}` ? "Regenerating…" : "Regenerate group"}
+                          </button>
+                        )}
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {screenshots.map((screenshot, index) => {
@@ -6230,10 +6359,10 @@ function AudionutsUAGUI() {
                   }}
                   aria-pressed={isScreenshotReviewOpen}
                   className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors flex-shrink-0 ${isScreenshotReviewOpen ? "bg-purple-600 text-white" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
-                  title="Review generated screenshots"
+                  title="Review and fix generated screenshots"
                 >
                   <ScreenshotsIcon />
-                  Screenshots
+                  Fix screenshots
                   {executionScreenshots.length
                     ? ` (${executionScreenshots.length})`
                     : ""}

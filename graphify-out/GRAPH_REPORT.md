@@ -1,16 +1,16 @@
-# Graph Report - Upload-Assistant-wastaken  (2026-08-08)
+# Graph Report - Upload-Assistant-wastaken  (2026-08-12)
 
 ## Corpus Check
-- 379 files · ~518,676 words
+- 390 files · ~521,745 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 5700 nodes · 14705 edges · 388 communities (242 shown, 146 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 803 edges (avg confidence: 0.52)
+- 5787 nodes · 14940 edges · 401 communities (246 shown, 155 thin omitted)
+- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 797 edges (avg confidence: 0.52)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c329dac9`
+- Built from commit: `5645ba89`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -175,7 +175,6 @@
 - [[_COMMUNITY_Community 157|Community 157]]
 - [[_COMMUNITY_Community 158|Community 158]]
 - [[_COMMUNITY_Community 159|Community 159]]
-- [[_COMMUNITY_Community 160|Community 160]]
 - [[_COMMUNITY_Community 161|Community 161]]
 - [[_COMMUNITY_Community 162|Community 162]]
 - [[_COMMUNITY_Community 163|Community 163]]
@@ -388,22 +387,38 @@
 - [[_COMMUNITY_Community 383|Community 383]]
 - [[_COMMUNITY_Community 384|Community 384]]
 - [[_COMMUNITY_Community 385|Community 385]]
+- [[_COMMUNITY_Community 386|Community 386]]
 - [[_COMMUNITY_Community 387|Community 387]]
+- [[_COMMUNITY_Community 388|Community 388]]
+- [[_COMMUNITY_Community 389|Community 389]]
 - [[_COMMUNITY_Community 390|Community 390]]
+- [[_COMMUNITY_Community 391|Community 391]]
+- [[_COMMUNITY_Community 392|Community 392]]
+- [[_COMMUNITY_Community 393|Community 393]]
+- [[_COMMUNITY_Community 394|Community 394]]
+- [[_COMMUNITY_Community 395|Community 395]]
+- [[_COMMUNITY_Community 396|Community 396]]
+- [[_COMMUNITY_Community 397|Community 397]]
+- [[_COMMUNITY_Community 399|Community 399]]
+- [[_COMMUNITY_Community 400|Community 400]]
+- [[_COMMUNITY_Community 401|Community 401]]
+- [[_COMMUNITY_Community 402|Community 402]]
 
 ## God Nodes (most connected - your core abstractions)
-1. `Meta` - 1777 edges
+1. `Meta` - 1799 edges
 2. `Common` - 289 edges
 3. `DescriptionBuilder` - 146 edges
-4. `TrackerSetup` - 128 edges
-5. `UNIT3D` - 127 edges
+4. `UNIT3D` - 127 edges
+5. `TrackerSetup` - 127 edges
 6. `MusicRelease` - 89 edges
 7. `CookieValidator` - 74 edges
-8. `RehostImagesManager` - 70 edges
-9. `prompt_in_thread()` - 67 edges
-10. `BBCODE` - 66 edges
+8. `RehostImagesManager` - 67 edges
+9. `BBCODE` - 66 edges
+10. `prompt_in_thread()` - 65 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `CustomTorrent` --uses--> `MkbrrBinaryManager`  [INFERRED]
+  src/torrentcreate.py → bin/get_mkbrr.py
 - `WebUIServer` --uses--> `MkbrrBinaryManager`  [INFERRED]
   upload.py → bin/get_mkbrr.py
 - `DiscParse` --uses--> `MplsParser`  [INFERRED]
@@ -412,152 +427,146 @@
   cogs/redaction.py → src/meta.py
 - `DescriptionBuilder` --uses--> `PathAwareEncoder`  [INFERRED]
   src/get_desc.py → cogs/redaction.py
-- `Prep` --uses--> `PathAwareEncoder`  [INFERRED]
-  src/prep.py → cogs/redaction.py
 
 ## Import Cycles
-- 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/uphelper.py -> src/cogs/redaction.py`
 - 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/dupe_checking.py -> src/cogs/redaction.py`
 - 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/get_desc.py -> src/cogs/redaction.py`
 - 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/prep.py -> src/cogs/redaction.py`
 - 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackerhandle.py -> src/cogs/redaction.py`
 - 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackers/digitalcore.py -> src/cogs/redaction.py`
 - 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackers/passthepopcorn.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/tvchaosuk.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/makingoff.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackerstatus.py -> src/uphelper.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/nebulance.py -> src/cogs/redaction.py`
+- 3-file cycle: `src/cogs/redaction.py -> upload.py -> src/uphelper.py -> src/cogs/redaction.py`
 - 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/retroflix.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/mteam.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/pterclub.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/dupe_checking.py -> src/trackers/UNIT3D/hawkeuno.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/prep.py -> src/music/prep.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackerhandle.py -> src/dupe_checking.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackerhandle.py -> src/get_desc.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackerhandle.py -> src/trackers/passthepopcorn.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackerhandle.py -> src/trackers/torrenthr.py -> src/cogs/redaction.py`
+- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackers/digitalcore.py -> src/get_desc.py -> src/cogs/redaction.py`
 - 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/UNIT3D/hawkeuno.py -> src/cogs/redaction.py`
 - 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/USENET/curupira.py -> src/cogs/redaction.py`
 - 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/USENET/suio.py -> src/cogs/redaction.py`
 - 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/anthelion.py -> src/cogs/redaction.py`
 - 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/beyondhd.py -> src/cogs/redaction.py`
-- 4-file cycle: `src/cogs/redaction.py -> upload.py -> src/trackersetup.py -> src/trackers/bithdtv.py -> src/cogs/redaction.py`
 
-## Communities (388 total, 146 thin omitted)
+## Communities (401 total, 155 thin omitted)
 
 ### Community 0 - "Community 0"
 Cohesion: 0.02
-Nodes (43): clean_meta_for_export(), Removes all 'status_message' keys from meta.tracker_status and         removes o, Meta, Custom metadata class that behaves as a dataclass but with support     for backw, Check if an attribute is set and is not None., set_tmdb_metadata(), calculate_piece_size(), Generate a small description from meta data.         Mainly used for Chinese tra (+35 more)
+Nodes (39): clean_meta_for_export(), Removes all 'status_message' keys from meta.tracker_status and         removes o, Meta, Custom metadata class that behaves as a dataclass but with support     for backw, Check if an attribute is set and is not None., get_image_host(), valid_ss_time(), Generate a small description from meta data.         Mainly used for Chinese tra (+31 more)
 
 ### Community 1 - "Community 1"
 Cohesion: 0.04
-Nodes (39): AttributeValueList, MozillaCookieJar, _attr_to_string(), CookieAuthUploader, CookieValidator, extract_upload_error(), find_cookie_file(), get_tracker_domain() (+31 more)
+Nodes (36): CookieAuthUploader, CookieValidator, extract_upload_error(), get_tracker_domain(), Any, Response, Extract the useful error message from common tracker upload pages., Find the auth token in a web page using a regular expression pattern. (+28 more)
 
 ### Community 2 - "Community 2"
-Cohesion: 0.07
-Nodes (15): Compatibility contracts and registry for tracker implementations., CinemaZ, Any, CZ Private Torrent Tracker, Common, Async wrapper for os.remove, Parse a cookies.txt file and return a dictionary of key value pairs         comp, Capitalizes a Portuguese title. (+7 more)
+Cohesion: 0.08
+Nodes (17): datetime, PromptResult, Redaction, buffer_console_logs(), LogBufferHandler, prompt_in_thread(), Temporarily hold console log output in memory while user prompts are active., Run an interactive prompt without blocking the event loop or interleaving logs. (+9 more)
 
 ### Community 3 - "Community 3"
 Cohesion: 0.11
-Nodes (17): ComparisonData, ComparisonGroup, ComparisonManager, Any, process_all_trackers(), Any, TrackerStatusManager, book_screens() (+9 more)
+Nodes (29): _asset_name(), get_tool(), Path, Lazy downloader for the third-party dynamic HDR metadata tools., Return the release asset name and executable extension for this host., Reject release assets whose content differs from the pinned digest., Return a PATH tool or download the pinned release below ``bin/``., _safe_extract() (+21 more)
 
 ### Community 4 - "Community 4"
-Cohesion: 0.08
-Nodes (40): AudioTrack, MusicRelease, _music_confirmation_lines(), Build a concise, tracker-neutral MUSIC review for the confirmation UI.      Musi, Regression tests for Orpheus MUSIC release/edition boundaries., Guest-heavy albums must retain the release's ALBUMARTIST credit.      This mirro, Debug must inspect an embedded/local cover without hosting or blocking., test_album_title_containing_ost_letters_is_not_a_soundtrack() (+32 more)
+Cohesion: 0.11
+Nodes (32): AudioTrack, MusicRelease, Regression tests for Orpheus MUSIC release/edition boundaries., Guest-heavy albums must retain the release's ALBUMARTIST credit.      This mirro, Debug must inspect an embedded/local cover without hosting or blocking., test_album_title_containing_ost_letters_is_not_a_soundtrack(), test_compilation_uses_multiple_artists_not_various_artists_literal(), test_directory_catalogue_and_label_are_extracted_from_braced_release_info() (+24 more)
 
 ### Community 5 - "Community 5"
 Cohesion: 0.15
 Nodes (13): test_browse_index_refreshes_stale_entries(), test_browse_index_searches_without_rescanning_every_query(), BrowseIndex, Any, Connection, Path, Persistent, low-I/O filename index for the Web UI file browser., Synchronize one changed directory, not the whole browse root. (+5 more)
 
 ### Community 6 - "Community 6"
-Cohesion: 0.15
-Nodes (3): AZTrackerBase, Any, Fetch the BDInfo/MediaInfo content from the torrent page.
+Cohesion: 0.05
+Nodes (35): AvistaZ, Any, AZ Private Torrent Tracker, CinemaZ, Any, CZ Private Torrent Tracker, AZTrackerBase, Any (+27 more)
 
 ### Community 7 - "Community 7"
-Cohesion: 0.10
-Nodes (20): Removes all 'status_message' keys from meta.tracker_status and         removes o, Extract JSON-like blocks from a string using bracket counting.          Returns, Redaction, Exception, ConfigValidationError, Raised when config validation fails with critical errors., ManualDateError, XEMNotFoundError (+12 more)
+Cohesion: 0.05
+Nodes (56): MkbrrBinaryManager, SimpleConsole, is_cli_progress_suppressed(), Return whether the current task should avoid rendering terminal progress., process_disc_menus(), Main function to process disc menu images., _CandidateEntry, _ProxyResponseError (+48 more)
 
 ### Community 8 - "Community 8"
-Cohesion: 0.11
-Nodes (19): _apply_config(), extract_imdb_id(), get_anime(), get_episode_details(), get_genres(), get_logo(), _get_parser(), get_season_details() (+11 more)
+Cohesion: 0.10
+Nodes (20): _apply_config(), extract_imdb_id(), get_anime(), get_episode_details(), get_genres(), get_logo(), _get_parser(), get_season_details() (+12 more)
 
 ### Community 9 - "Community 9"
-Cohesion: 0.05
-Nodes (32): Render the short MediaInfo section from meta.mediainfo., AmigosShare, Any, Amigos Share Club (ASC) is a BRAZILIAN Private Torrent Tracker for MOVIES / TV /, Helper function to fetch file info for a single release in parallel., Build the torrent name for GAME category., Map meta.platform to AMIGOSSHARE game category (type field) value., Map IGDB genres to AMIGOSSHARE genero field value. (+24 more)
-
-### Community 10 - "Community 10"
-Cohesion: 0.11
-Nodes (15): CathodeRayTube, Convert Upload Assistant season tokens into CRT's human-readable labels., Return a cover URL hosted by one of CRT's approved image hosts., Check whether a cover URL belongs to a CRT-approved host., Host the release cover on an image host accepted by CRT., Build common CRT tags from the available release metadata., Cathode-Ray.Tube (CRT) is a Private Torrent Tracker for CLASSIC MOVIES / TV, Return the relevant canonical metadata links for CRT's info section. (+7 more)
+Cohesion: 0.07
+Nodes (27): AmigosShare, Any, Amigos Share Club (ASC) is a BRAZILIAN Private Torrent Tracker for MOVIES / TV /, Helper function to fetch file info for a single release in parallel., Build the torrent name for GAME category., Map meta.platform to AMIGOSSHARE game category (type field) value., Map IGDB genres to AMIGOSSHARE genero field value., Map game languages to AMIGOSSHARE idioma field value. (+19 more)
 
 ### Community 11 - "Community 11"
-Cohesion: 0.09
-Nodes (35): ManualPackageManager, Any, _as_str(), _check_additional_image_collections(), _check_hosts(), _collection_directory(), _download_image_for_rehost(), _handle_image_upload() (+27 more)
+Cohesion: 0.05
+Nodes (65): ComparisonData, ComparisonGroup, ImageCollection, ComparisonManager, Any, ManualPackageManager, Any, Any (+57 more)
 
 ### Community 12 - "Community 12"
 Cohesion: 0.06
 Nodes (34): DarkPeers, Any, Darkpeers is a Private Torrent Tracker for MOVIES / TV / GENERAL, Apply DP's audio/original-audio-and-subtitles rule, not the generic OR helper., Resolve container aliases from MediaInfo when the codec is available., Read a value from the serialized music release model., Format music as ``Artist - Album (Year) - Format`` for DarkPeers., Format eBooks and audiobooks according to DarkPeers' book rules. (+26 more)
 
 ### Community 13 - "Community 13"
-Cohesion: 0.06
-Nodes (45): DirEntry, QueueItem, QueueList, read_paths_from_stdin(), Any, Policy helpers for unattended queue operations., Return whether queue creation or update may request interactive input., should_prompt_for_queue_edits() (+37 more)
+Cohesion: 0.13
+Nodes (23): QueueItem, QueueList, display_queue(), extract_safe_file_locations(), get_log_file(), handle_queue(), load_processed_files(), plan_queue() (+15 more)
 
 ### Community 14 - "Community 14"
-Cohesion: 0.08
-Nodes (46): Element, Normalise CLI book arguments (--author, --book-title, --blang, --isbn) into *met, date_event_from_str(), extract_cbr_cbz_metadata(), extract_epub_metadata(), extract_isbn_from_pdf(), extract_mobi_metadata(), extract_series_from_filename() (+38 more)
+Cohesion: 0.13
+Nodes (20): Element, date_event_from_str(), extract_cbr_cbz_metadata(), extract_epub_metadata(), extract_isbn_from_pdf(), extract_mobi_metadata(), extract_series_from_filename(), get_attr_ignore_ns() (+12 more)
 
 ### Community 15 - "Community 15"
 Cohesion: 0.08
-Nodes (25): DiscogsEnricher, _music_cache_path(), MusicBrainzEnricher, Any, Path, Opt-in external release enrichment with bounded requests and in-memory cache., Return only a MusicBrainz release that corroborates local evidence.          A t, Return an EAN/UPC-like value, or an empty string for a catalogue ID. (+17 more)
+Nodes (27): DiscogsEnricher, _music_cache_path(), MusicBrainzEnricher, Any, Path, Opt-in external release enrichment with bounded requests and in-memory cache., Return only a MusicBrainz release that corroborates local evidence.          A t, Return an EAN/UPC-like value, or an empty string for a catalogue ID. (+19 more)
 
 ### Community 16 - "Community 16"
 Cohesion: 0.11
-Nodes (59): add_screenshot(), apply_staged_remote_uploads(), _capture_disc_review_frame(), _capture_fresh_frame(), delete_screenshot(), _disc_bdinfo_for_group(), _find_item(), image_version() (+51 more)
+Nodes (61): add_screenshot(), apply_staged_remote_uploads(), _capture_disc_review_frame(), _capture_fresh_frame(), delete_screenshot(), _disc_bdinfo_for_group(), _find_item(), image_version() (+53 more)
 
 ### Community 17 - "Community 17"
-Cohesion: 0.05
-Nodes (42): Self, _build_image_start_limiter(), imgbox_upload(), Any, ImageDict, Create an async wait function that spaces image-upload starts., Initialize screenshot uploads with the application configuration., Select screenshots, throttle uploads, and collect successful results. (+34 more)
+Cohesion: 0.18
+Nodes (14): _FakeFile, Path, Reject malformed Zipline responses whose files value is not a list., Upload to MidnightScene without requiring a generic Zipline URL., Exit the fake async file context., Return deterministic fake image bytes., Run one mocked Zipline upload with the supplied response payload., Accept Zipline's object-based file response and derive all URLs. (+6 more)
 
 ### Community 18 - "Community 18"
-Cohesion: 0.05
-Nodes (19): BeautifulSoup, BJShare, Any, Extracts the audiobook bitrate from metadata, finds the closest option         f, Extracts runtime from metadata and converts total minutes into hours and minutes, Returns the year of the release.          For Movies:             - Standard yea, Check for adult classification eligibility.          Adheres to upload guideline, Get the media identifier for the upload.         Uses the identifier from an exi (+11 more)
+Cohesion: 0.07
+Nodes (12): BJShare, Any, Extracts the audiobook bitrate from metadata, finds the closest option         f, Extracts runtime from metadata and converts total minutes into hours and minutes, Returns the year of the release.          For Movies:             - Standard yea, Check for adult classification eligibility.          Adheres to upload guideline, Get the media identifier for the upload.         Uses the identifier from an exi, BJ-Share is a BRAZILIAN Private Torrent Tracker for MOVIES / TV / GENERAL (+4 more)
 
 ### Community 19 - "Community 19"
-Cohesion: 0.05
-Nodes (39): ImageCollection, PathAwareEncoder, Any, Recursively redact sensitive info in dicts/lists/strings containing JSON., JSON encoder that converts pathlib.Path objects to strings., Extract JSON-like blocks from a string using bracket counting.          Returns, Redact sensitive values, including passkeys in URLs and JSON substrings., redact_private_info() (+31 more)
+Cohesion: 0.06
+Nodes (25): AttributeCheck, RehostImagesManager, Config, Config, Aither, Any, Aither is a Private Torrent Tracker for HD MOVIES / TV, Config (+17 more)
 
 ### Community 20 - "Community 20"
 Cohesion: 0.06
 Nodes (44): autofill_missing_keys(), configure_default_section(), configure_single_client(), configure_torrent_clients(), configure_trackers(), find_missing_keys(), generate_config_file(), get_img_host() (+36 more)
 
 ### Community 21 - "Community 21"
-Cohesion: 0.07
-Nodes (12): Any, ParamsList, Path, data = {             'mod_queue_opt_in': await self.get_flag(meta, 'modq'),, Enforces a 255-character limit on the keywords payload without cutting off indiv, Read an image unchanged and return it with a content type verified from its sign, Matches /12345.abcde and returns 12345, Returns the success message from the response data as a string. (+4 more)
+Cohesion: 0.06
+Nodes (15): Any, ParamsList, Path, data = {             'mod_queue_opt_in': await self.get_flag(meta, 'modq'),, Enforces a 255-character limit on the keywords payload without cutting off indiv, Read an image unchanged and return it with a content type verified from its sign, Matches /12345.abcde and returns 12345, Returns the success message from the response data as a string. (+7 more)
 
 ### Community 22 - "Community 22"
 Cohesion: 0.07
 Nodes (10): GreatPosterWall, Any, AsyncClient, Import public image URLs to GPW's KShare host before the normal host check., GPW Private Torrent Tracker, _Client, Tests for GreatPosterWall's tracker-specific image rehost API., _Response (+2 more)
 
 ### Community 23 - "Community 23"
-Cohesion: 0.09
-Nodes (37): test_execution_preview_prefers_current_tv_artwork_url(), test_execution_preview_uses_current_movie_tmdb_artwork_field(), _append_metadata_source(), _book_cover_from_meta(), _description_review_lock(), execution_preview(), execution_preview_cover(), _execution_preview_cover_url() (+29 more)
+Cohesion: 0.08
+Nodes (55): test_execution_preview_prefers_current_tv_artwork_url(), test_execution_preview_uses_current_movie_tmdb_artwork_field(), add_execution_screenshot(), _append_metadata_source(), _book_cover_from_meta(), _description_review_lock(), execution_preview(), execution_preview_cover() (+47 more)
 
 ### Community 24 - "Community 24"
-Cohesion: 0.06
-Nodes (21): Aither, Aither is a Private Torrent Tracker for HD MOVIES / TV, Reject duplicate primary audio languages unless marked compatible., CapybaraBR, Any, CapybaraBR is a BRAZILIAN Private Torrent Tracker for MOVIES / TV / GENERAL, Any, Config (+13 more)
+Cohesion: 0.09
+Nodes (9): CapybaraBR, Any, CapybaraBR is a BRAZILIAN Private Torrent Tracker for MOVIES / TV / GENERAL, Any, Config, SAMARITANO is a BRAZILIAN Private tracker for MOVIES / TV / GENERAL, Samaritano, test_brazilian_trackers_audio_tags_require_portuguese() (+1 more)
 
 ### Community 25 - "Community 25"
-Cohesion: 0.07
-Nodes (25): Any, Extract release group - only accepts VU/UNTOUCHED markers from filename, Map release type to ShareIsland type IDs, ShareIsland is a ITALIAN Private Torrent Tracker for MOVIES / TV / GENERAL, Validate and prompt for DVD/HDDVD region/distributor before upload.         Stor, Override to use validated region ID stored in meta, Override to use validated distributor ID stored in meta, Extract basename from first file in filelist or path (+17 more)
+Cohesion: 0.09
+Nodes (19): Extract release group - only accepts VU/UNTOUCHED markers from filename, Map release type to ShareIsland type IDs, ShareIsland is a ITALIAN Private Torrent Tracker for MOVIES / TV / GENERAL, Validate and prompt for DVD/HDDVD region/distributor before upload.         Stor, Extract basename from first file in filelist or path, Unified type detection: filename markers + MediaInfo analysis, Detect release type from MediaInfo technical analysis.          Priority order:, Determine effective type with priority hierarchy:         1. Technical analysis (+11 more)
 
 ### Community 26 - "Community 26"
 Cohesion: 0.07
-Nodes (27): Clients, Any, Add the prepared torrent to each configured client., Applies an optional delay before injecting a torrent into the client.          T, Find a reusable torrent matching the prepared metadata., Initialize torrent-client operations with the application config., Search a single client for an existing torrent by hash or via API search (qbit o, Extract known tracker IDs from a torrent comment URL set. (+19 more)
+Nodes (27): Clients, Any, Resolve the original local content path for an automatically reused torrent., Add the prepared torrent to each configured client., Applies an optional delay before injecting a torrent into the client.          T, Find a reusable torrent matching the prepared metadata., Initialize torrent-client operations with the application config., Search a single client for an existing torrent by hash or via API search (qbit o (+19 more)
 
 ### Community 27 - "Community 27"
-Cohesion: 0.08
-Nodes (37): is_public_http_url(), is_valid_image_bytes(), Shared artwork validation helpers., Return whether an HTTP(S) URL resolves exclusively to public IPs., Return whether bytes contain a decodable, non-empty supported image., _apply_config(), _as_bool(), capture_disc_task() (+29 more)
+Cohesion: 0.05
+Nodes (71): RLock, is_public_http_url(), is_valid_cover_image(), is_valid_image_bytes(), Path, Shared artwork validation helpers., Return whether an HTTP(S) URL resolves exclusively to public IPs., Return whether bytes contain a decodable, non-empty supported image. (+63 more)
 
 ### Community 28 - "Community 28"
 Cohesion: 0.08
 Nodes (10): BrasilTracker, Any, Build the BBCode table for BOOK-category uploads., Map game languages from IGDB to BRASILTRACKER idioma_ori field (same logic as BJ, BT Private Torrent Tracker, Map meta.platform to BRASILTRACKER plataforma_jogo dropdown value., Map meta.platform to BRASILTRACKER sys_jogo dropdown value., Map game container/type to BRASILTRACKER formato_jogo dropdown value. (+2 more)
 
 ### Community 29 - "Community 29"
-Cohesion: 0.10
-Nodes (20): Response, Build CRT's advanced-search query., Build CRT's standalone IMDb search without title or category filters., Extract the torrent's top-level directory or sole file name., Extract CRT's plain-text BDInfo block from a torrent details page., Search CRT's advanced form for existing torrents matching the release metadata., Read the auth token exposed by CRT forms and authenticated page scripts., meta() (+12 more)
+Cohesion: 0.08
+Nodes (24): Response, Convert Upload Assistant season tokens into CRT's human-readable labels., Return a cover URL hosted by one of CRT's approved image hosts., Build common CRT tags from the available release metadata., Return the relevant canonical metadata links for CRT's info section., Render CRT's category-specific upload template from prepared metadata., Build CRT form fields, including its category-specific description template., Extract the newest matching uploaded torrent from CRT's site log. (+16 more)
 
 ### Community 30 - "Community 30"
 Cohesion: 0.05
@@ -568,8 +577,8 @@ Cohesion: 0.09
 Nodes (38): Progress, progress_display(), Any, Yield a progress panel that safely shares the console's single Live display., Run go-bdinfo and forward its stream-scan progress to CLI and Web UI., compute_nyuu_connections(), format_byte_size(), generate_random_poster() (+30 more)
 
 ### Community 32 - "Community 32"
-Cohesion: 0.09
-Nodes (14): JsonDict, Any, Create a trump report by POSTing to the /create endpoint, Fetch TRaSH guide JSON and extract release group names to ban file.          Thi, Blocking file write operation, runs in a background thread, Helper function to read the file in a blocking thread, TrackerSetup, _BannedGroupsClient (+6 more)
+Cohesion: 0.07
+Nodes (17): JsonDict, HDTorrents, Any, HD-Torrents (HDT) is a Private Torrent Tracker for HD MOVIES / TV / MUSIC / 3X, Any, Create a trump report by POSTing to the /create endpoint, Fetch TRaSH guide JSON and extract release group names to ban file.          Thi, Blocking file write operation, runs in a background thread (+9 more)
 
 ### Community 33 - "Community 33"
 Cohesion: 0.13
@@ -584,20 +593,20 @@ Cohesion: 0.08
 Nodes (20): Emuwarez, Any, Map resolution to Emuwarez nomenclature, Map source format to Emuwarez nomenclature, eMuwarez is a SPANISH Private Torrent Tracker for MOVIES / TV / GENERAL, Map video codec to Emuwarez nomenclature with HDR/DV prefix, Get the original language from existing metadata, Build audio string in Emuwarez format with proper priority order          Priori (+12 more)
 
 ### Community 36 - "Community 36"
-Cohesion: 0.25
-Nodes (11): all_ids(), _apply_tvdb_series_metadata(), _coerce_int(), get_tv_data(), get_tvdb_tvmaze_tmdb_episode_data(), get_tvmaze_tvdb(), imdb_tmdb(), imdb_tmdb_tvdb() (+3 more)
+Cohesion: 0.19
+Nodes (14): all_ids(), _apply_tvdb_series_metadata(), _coerce_int(), get_tv_data(), get_tvdb_tvmaze_tmdb_episode_data(), get_tvmaze_tvdb(), imdb_tmdb(), imdb_tmdb_tvdb() (+6 more)
 
 ### Community 37 - "Community 37"
 Cohesion: 0.10
-Nodes (36): _apply_music_cli_overrides(), _discogs_ids(), enrich_music_from_discogs(), enrich_music_from_orpheus(), _extract_embedded_artwork(), _find_discogs_release(), gather_music_prep(), _image_suffix() (+28 more)
+Nodes (37): _apply_music_cli_overrides(), _discogs_ids(), enrich_music_from_discogs(), enrich_music_from_orpheus(), _extract_embedded_artwork(), _find_discogs_release(), gather_music_prep(), _image_suffix() (+29 more)
 
 ### Community 38 - "Community 38"
-Cohesion: 0.11
-Nodes (28): Return the local and remote roots matching the torrent metadata path., DelugeClientMixin, Any, Torrent, coerce_str_list(), is_path_under(), map_save_path(), Path (+20 more)
+Cohesion: 0.09
+Nodes (31): Any, Torrent, coerce_str_list(), is_path_under(), map_client_path_to_local(), map_save_path(), Path, Return whether path is within root using case-insensitive boundaries. (+23 more)
 
 ### Community 39 - "Community 39"
-Cohesion: 0.20
-Nodes (4): Curupira, Any, Config, CRP Private Torrent Tracker
+Cohesion: 0.18
+Nodes (5): Curupira, Any, Config, CRP Private Torrent Tracker, test_dynamic_hdr_plots_are_preserved_in_curupira_screenshot_limit()
 
 ### Community 40 - "Community 40"
 Cohesion: 0.09
@@ -608,52 +617,52 @@ Cohesion: 0.16
 Nodes (35): create_user(), decrypt_bytes(), decrypt_text(), derive_aes_key(), encrypt_bytes(), encrypt_text(), EncryptionError, _generate_field_key() (+27 more)
 
 ### Community 42 - "Community 42"
-Cohesion: 0.05
-Nodes (23): BBCODE, Any, Converts [spoiler=Name] to [hide=Name], Removes [color=...] and [/color] tags., Converts [img=number] or any other parameters to just [img], Removes more than 2 consecutive newlines, Converts [right], [left], [center] to [align=right], [align=left], [align=center, BtnIdManager (+15 more)
+Cohesion: 0.07
+Nodes (7): BBCODE, Any, Converts [spoiler=Name] to [hide=Name], Removes [color=...] and [/color] tags., Converts [img=number] or any other parameters to just [img], Removes more than 2 consecutive newlines, Converts [right], [left], [center] to [align=right], [align=left], [align=center
 
 ### Community 43 - "Community 43"
 Cohesion: 0.10
 Nodes (24): AvistaZNetworkRouter, Any, Resolve unambiguous AvistaZ/CinemaZ/PrivateHD content routing., Store configuration and tracker factories used for redirect validation., Return normalized production-country ISO codes from metadata., Determine whether the release year is at least fifty years old., Identify SD content from either the explicit flag or its resolution., Interpret boolean configuration values without treating non-empty strings as tru (+16 more)
 
 ### Community 44 - "Community 44"
-Cohesion: 0.10
-Nodes (24): benchmark_browse_index(), benchmark_http_pool(), benchmark_pipeline(), compare_baseline(), main(), median_seconds(), parse_args(), Any (+16 more)
+Cohesion: 0.07
+Nodes (35): benchmark_browse_index(), benchmark_http_pool(), benchmark_pipeline(), compare_baseline(), main(), median_seconds(), parse_args(), Any (+27 more)
 
 ### Community 45 - "Community 45"
-Cohesion: 0.12
-Nodes (23): apply_metadata_submission(), encode_metadata_request(), metadata_request(), normalize_imdb_id(), normalize_tmdb_id(), parse_detached_metadata_request(), parse_metadata_submission(), Any (+15 more)
+Cohesion: 0.15
+Nodes (18): apply_metadata_submission(), encode_metadata_request(), metadata_request(), normalize_imdb_id(), normalize_tmdb_id(), parse_detached_metadata_request(), parse_metadata_submission(), Any (+10 more)
 
 ### Community 46 - "Community 46"
 Cohesion: 0.06
 Nodes (32): 10. API Overview / Synopsis, 11. NFO Content, 12. User-provided Description, 13. Disc Menu Screenshots, 14. Tone-mapped Header, 15. Screenshot Grid & Multi-file Info, 16. Audio Spectrograms, 17. Signatures (+24 more)
 
 ### Community 47 - "Community 47"
-Cohesion: 0.07
-Nodes (23): DescriptionBuilder, html_to_bbcode(), Any, Helper to get a boolean config value safely. Falls back to DEFAULT or default if, Helper to get an integer config value safely. Falls back to DEFAULT or default i, Helper to get a string config value safely. Empty string is returned if it is a, Return explicitly supplied audio-language overrides in display order., Returns a custom header if configured. (+15 more)
+Cohesion: 0.06
+Nodes (30): DescriptionBuilder, html_to_bbcode(), Any, Helper to get a boolean config value safely. Falls back to DEFAULT or default if, Helper to get an integer config value safely. Falls back to DEFAULT or default i, Helper to get a string config value safely. Empty string is returned if it is a, Return explicitly supplied audio-language overrides in display order., Returns a custom header if configured. (+22 more)
 
 ### Community 48 - "Community 48"
-Cohesion: 0.10
-Nodes (39): api_tokens(), _as_dict(), _build_config_items(), _coerce_config_value(), config_update(), _create_api_token(), _detached_job_snapshot(), execute_command() (+31 more)
+Cohesion: 0.07
+Nodes (59): api_tokens(), _as_dict(), _build_config_items(), _create_api_token(), _detached_job_by_id(), _detached_job_snapshot(), execute_command(), _get_ip_failures() (+51 more)
 
 ### Community 49 - "Community 49"
-Cohesion: 0.16
-Nodes (12): match_tracker_url(), Any, AsyncClient, BaseException, Client, QbittorrentClientMixin, Search a single qBittorrent client for matching torrents., Create SSL context for qBittorrent client based on VERIFY_WEBUI_CERTIFICATE sett (+4 more)
+Cohesion: 0.15
+Nodes (13): match_tracker_url(), Any, AsyncClient, BaseException, Client, QbittorrentClientMixin, Return the local content path owned by an automatically reused torrent., Search a single qBittorrent client for matching torrents. (+5 more)
 
 ### Community 50 - "Community 50"
-Cohesion: 0.13
-Nodes (23): collect_runtime_health(), _directory_stats(), Any, Path, Detailed local health snapshots for operators and the Web UI dashboard., _tool_available(), build_execution_plan(), ExecutionPlan (+15 more)
+Cohesion: 0.07
+Nodes (32): collect_runtime_health(), _directory_stats(), Any, Path, Detailed local health snapshots for operators and the Web UI dashboard., _tool_available(), build_execution_plan(), ExecutionPlan (+24 more)
 
 ### Community 51 - "Community 51"
-Cohesion: 0.13
-Nodes (24): add_candidate(), description_fingerprint(), DescriptionCandidate, Any, Shared policy and audit data for descriptions imported from trackers., The parts of a tracker release that may be imported., Validate the required, explicit tracker-description import policy., Hash inputs which change a generated tracker description. (+16 more)
+Cohesion: 0.12
+Nodes (23): add_candidate(), description_fingerprint(), DescriptionCandidate, Any, Shared policy and audit data for descriptions imported from trackers., The parts of a tracker release that may be imported., Validate the required, explicit tracker-description import policy., Hash inputs which change a generated tracker description. (+15 more)
 
 ### Community 52 - "Community 52"
-Cohesion: 0.13
-Nodes (4): PassThePopcorn, Any, Path, PTP Private Torrent Tracker
+Cohesion: 0.12
+Nodes (5): PassThePopcorn, Any, Path, Response, PTP Private Torrent Tracker
 
 ### Community 53 - "Community 53"
-Cohesion: 0.11
-Nodes (16): Args, CustomArgumentParser, Any, Custom ArgumentParser to handle short (-h) and long (--help) help messages., Show short help for `-h` and full help for `--help`, Normalise CLI game arguments (--platform) into *meta*., Custom formatter for short help (-h)     Only displays essential options., Customize short help output (only show essential arguments). (+8 more)
+Cohesion: 0.23
+Nodes (9): Args, Normalise CLI game arguments (--platform) into *meta*., test_no_music_discogs_cli_disables_automatic_lookup(), test_runtime_cli_flags_are_parsed(), test_archive_password_cli_override_marks_static_password(), test_archive_password_cli_override_preserves_random_mode(), test_book_overview_cli_override_long_flag(), test_book_overview_cli_override_short_flag() (+1 more)
 
 ### Community 54 - "Community 54"
 Cohesion: 0.09
@@ -661,11 +670,11 @@ Nodes (15): ConfigApp(), ConfigErrorBoundary, ConfigLeaf(), formatDisplayLabel()
 
 ### Community 55 - "Community 55"
 Cohesion: 0.15
-Nodes (28): NoAudioMediaError, export_info(), get_conformance_error(), mi_resolution(), Any, setup_mediainfo_library(), validate_file_path(), validate_mediainfo() (+20 more)
+Nodes (27): NoAudioMediaError, export_info(), get_conformance_error(), mi_resolution(), Any, setup_mediainfo_library(), validate_file_path(), validate_mediainfo() (+19 more)
 
 ### Community 56 - "Community 56"
-Cohesion: 0.13
-Nodes (8): _hdb_candidate_codec(), _hdb_candidate_type(), _hdb_dupe_entry(), HDBits, Any, Config, HDB Private Torrent Tracker, test_hdb_candidate_projection_preserves_disc_evidence()
+Cohesion: 0.16
+Nodes (4): HDBits, Any, Config, HDB Private Torrent Tracker
 
 ### Community 57 - "Community 57"
 Cohesion: 0.12
@@ -676,16 +685,16 @@ Cohesion: 0.07
 Nodes (30): /api/2fa/disable, /api/2fa/enable, /api/2fa/setup, /api/2fa/status, /api/access_log/entries, /api/access_log/level, /api/browse, /api/browse_roots (+22 more)
 
 ### Community 59 - "Community 59"
-Cohesion: 0.11
-Nodes (12): Any, Fetch one candidate without allowing it to mutate the live release., Apply the selected isolated result without leaking worker-only state., Allow an interactive run to edit the selected tracker description., Get tracker timestamps from the log file, Save timestamp for when tracker was processed, Get trackers that are available (60+ seconds since last processed), Reuse a cached tracker response only when the user supplied a torrent ID. (+4 more)
+Cohesion: 0.12
+Nodes (11): Any, Fetch one candidate without allowing it to mutate the live release., Apply the selected isolated result without leaking worker-only state., Allow an interactive run to edit the selected tracker description., Get tracker timestamps from the log file, Save timestamp for when tracker was processed, Get trackers that are available (60+ seconds since last processed), Reuse a cached tracker response only when the user supplied a torrent ID. (+3 more)
 
 ### Community 60 - "Community 60"
 Cohesion: 0.10
 Nodes (13): Any, Ensure copy returns a Meta instance with deep copied attributes., Convert to a dictionary representing defined fields., Return dict-like items view., Return dict-like keys view., Return dict-like values view., Update attributes from a dictionary or another Meta instance., Get attribute value by name, returning default if not set or None. (+5 more)
 
 ### Community 61 - "Community 61"
-Cohesion: 0.11
-Nodes (15): Music release analysis, enrichment and tracker-facing preparation., AuxiliaryFiles, MetadataSource, MetadataValue, Any, Path, Typed, tracker-neutral representation of a music release.  The model deliberatel, Return the provenance priority used when deciding real conflicts. (+7 more)
+Cohesion: 0.12
+Nodes (12): Music release analysis, enrichment and tracker-facing preparation., AuxiliaryFiles, MetadataSource, MetadataValue, Any, Path, Typed, tracker-neutral representation of a music release.  The model deliberatel, Return the provenance priority used when deciding real conflicts. (+4 more)
 
 ### Community 62 - "Community 62"
 Cohesion: 0.22
@@ -700,11 +709,11 @@ Cohesion: 0.16
 Nodes (24): _cache_fingerprint(), generate_spectrogram(), get_audio_streams(), get_spectrogram_sources(), get_stft_parameters(), _load_cached_images(), _positive_config_int(), process_audio_spectrograms() (+16 more)
 
 ### Community 65 - "Community 65"
-Cohesion: 0.08
-Nodes (27): current_execution_context(), Per-run dependency container shared by CLI and Web UI execution., Return the context owned by the current async task, when available., HttpClientPool, T, Reusable HTTP sessions and in-flight request coalescing., Cancel owned in-flight work and close every pooled connection., Own and reuse compatible ``httpx.AsyncClient`` instances per execution. (+19 more)
+Cohesion: 0.13
+Nodes (14): current_execution_context(), Return the context owned by the current async task, when available., Low-overhead execution metrics used by benchmarks and diagnostics., Collect counters and elapsed timings without exposing user data., RuntimeMetrics, ProcessResult, Path, Process (+6 more)
 
 ### Community 66 - "Community 66"
-Cohesion: 0.15
+Cohesion: 0.14
 Nodes (3): FunFile, Any, FF Private Torrent Tracker
 
 ### Community 67 - "Community 67"
@@ -712,36 +721,36 @@ Cohesion: 0.10
 Nodes (12): Any, Return the normalised video codec label., Return the normalised audio codec label., Return the container format, preferring mediainfo General track., Extract screenshot URLs from meta image_list.          Handles both plain URL st, Return a human-readable file size (GB or MB)., Generate the BBCode description for the forum post.          Args:             m, Return duration in minutes from mediainfo General track. (+4 more)
 
 ### Community 68 - "Community 68"
-Cohesion: 0.13
-Nodes (22): ArtifactStore, preparation_key(), preparation_signature(), Any, Path, Content-addressed storage for reusable release preparation outputs., Deduplicate generated files while keeping release manifests immutable., Atomic stage-level checkpoint persistence for resumable pipelines. (+14 more)
+Cohesion: 0.12
+Nodes (23): ArtifactStore, preparation_key(), preparation_signature(), Any, Path, Content-addressed storage for reusable release preparation outputs., Deduplicate generated files while keeping release manifests immutable., Atomic stage-level checkpoint persistence for resumable pipelines. (+15 more)
 
 ### Community 69 - "Community 69"
 Cohesion: 0.11
 Nodes (20): PeerGarden, Any, Config, PeerGarden is a UNIT3D-based tracker, Resolve video resolutions to PeerGarden resolution IDs., Build PeerGarden-specific upload flags., Build PeerGarden-specific upload payload, filtering out prohibited fields., Initialize the PeerGarden tracker adapter. (+12 more)
 
 ### Community 70 - "Community 70"
-Cohesion: 0.10
-Nodes (14): Path, Download 7-Zip binaries for the host architecture., SevenZipBinaryManager, SimpleConsole, NyuuBinaryManager, Path, Download Nyuu binaries for the host architecture., SimpleConsole (+6 more)
+Cohesion: 0.07
+Nodes (27): Path, Pinned SHA-256 verification for third-party executable downloads., Fail closed unless a downloaded executable archive matches its pinned hash., verify_downloaded_asset(), Path, Download 7-Zip binaries for the host architecture., SevenZipBinaryManager, SimpleConsole (+19 more)
 
 ### Community 71 - "Community 71"
 Cohesion: 0.09
 Nodes (20): DupeInput, DupeChecker, filter_dupes(), has_matching_hdr(), is_season_episode_match(), normalize_filename(), Any, Normalize HDR terms for consistent comparison.         Simplifies all HDR entrie (+12 more)
 
 ### Community 72 - "Community 72"
-Cohesion: 0.14
-Nodes (18): GoogleBooksManager, Any, Search Google Books API by ISBN.         Returns a dict of metadata or None if n, Helper to parse raw Google Books API response data uniformly., cache_for(), is_cache_miss(), Persistent, provider-scoped cache for external metadata responses., Return one cache facade per root/configuration instead of rebuilding it per call (+10 more)
+Cohesion: 0.08
+Nodes (30): GoogleBooksManager, Any, Search Google Books API by ISBN.         Returns a dict of metadata or None if n, Helper to parse raw Google Books API response data uniformly., IGDBAPI, Any, cache_for(), is_cache_miss() (+22 more)
 
 ### Community 73 - "Community 73"
-Cohesion: 0.12
-Nodes (21): _bitrate_mode(), _clean(), _first(), _format_for(), MusicReleaseAnalyzer, _number(), Any, MetadataSource (+13 more)
+Cohesion: 0.11
+Nodes (23): _bitrate_mode(), _clean(), _first(), _format_for(), MusicReleaseAnalyzer, _number(), Any, MetadataSource (+15 more)
 
 ### Community 74 - "Community 74"
 Cohesion: 0.07
 Nodes (25): Any, Config, Load a saved base description without blocking the event loop., Create description directory and return file path., Build disc information section.          Note: TVCHAOSUK does not currently acce, Build description for movie releases (multi-block, no pre tags)., Build description for TV pack releases (multi-block, no pre tags)., Build description for single episode releases (multi-block, no pre tags). (+17 more)
 
 ### Community 75 - "Community 75"
-Cohesion: 0.08
-Nodes (17): Blutopia, Any, Blutopia (BLU) is a Private Torrent Tracker for HD MOVIES / TV, DesiTorrents, Any, Returns the resolution ID for the release., DesiTorrents is an INDIAN Private Torrent Tracker for MOVIES / TV, Returns the category ID for the release. (+9 more)
+Cohesion: 0.06
+Nodes (21): Blutopia, Any, Blutopia (BLU) is a Private Torrent Tracker for HD MOVIES / TV, DesiTorrents, Any, Returns the resolution ID for the release., DesiTorrents is an INDIAN Private Torrent Tracker for MOVIES / TV, Returns the category ID for the release. (+13 more)
 
 ### Community 76 - "Community 76"
 Cohesion: 0.18
@@ -752,44 +761,44 @@ Cohesion: 0.19
 Nodes (21): MovieLink, Release, clean_image_url(), _derive_release_type(), download_cover_images(), extract_bluray_links(), extract_bluray_release_info(), extract_cover_images() (+13 more)
 
 ### Community 78 - "Community 78"
-Cohesion: 0.14
-Nodes (18): DiscMenus, process_disc_menus(), Any, Uploads disc menu images from a local directory., Saves the uploaded disc menu images to a JSON file., Main function to process disc menu images., Handles the processing and uploading of disc menu images., Processes disc menu images from a local directory and uploads them. (+10 more)
+Cohesion: 0.18
+Nodes (12): discard_previous_menu_capture_files(), DiscMenus, Any, Path, Uploads disc menu images from a local directory., Saves the uploaded disc menu images to a JSON file., Remove only prior output for the menu VOB about to be captured., Handles the processing and uploading of disc menu images. (+4 more)
 
 ### Community 79 - "Community 79"
-Cohesion: 0.11
-Nodes (15): guessit_fn(), NameManager, Any, Build a game release name losely based on the SCENE 2021_GAMEiSO ruleset., Normalize a title for safe comparison of TMDB titles and AKA values., Read a serialized MusicRelease field without its provenance., Build MUSIC names with the LST Discogs-based naming convention., Prompt user for disc field with appropriate mandatory/optional text. (+7 more)
+Cohesion: 0.08
+Nodes (20): guessit_fn(), NameManager, Any, Build a game release name losely based on the SCENE 2021_GAMEiSO ruleset., Normalize a title for safe comparison of TMDB titles and AKA values., Read a serialized MusicRelease field without its provenance., Build MUSIC names with the LST Discogs-based naming convention., Prompt user for disc field with appropriate mandatory/optional text. (+12 more)
 
 ### Community 80 - "Community 80"
-Cohesion: 0.16
-Nodes (4): MoreThanTV, Any, Config, MTV Private Torrent Tracker
+Cohesion: 0.15
+Nodes (19): Normalise CLI book arguments (--author, --book-title, --blang, --isbn) into *met, clean_translator_from_author(), detect_newspaper(), extract_first_author(), is_valid_book_language(), Return ``(full_english_name, iso_639_3_alpha3)`` for any language input., Return True if the language is valid (not undefined, unknown, or empty)., Validate and sanitize book_language and book_language_iso in meta. Clear them if (+11 more)
 
 ### Community 81 - "Community 81"
-Cohesion: 0.24
-Nodes (9): Path, download_dvd_mediainfo(), download_file(), extract_linux(), get_filename(), get_url(), Path, Disc (+1 more)
+Cohesion: 0.16
+Nodes (13): BDInfoBinaryManager, Path, Download autobrr/go-bdinfo binaries for the host architecture.      Default vers, SimpleConsole, download_dvd_mediainfo(), download_file(), extract_linux(), get_filename() (+5 more)
 
 ### Community 82 - "Community 82"
 Cohesion: 0.25
 Nodes (19): Add-DirectoryToUserPath(), ConvertTo-ProcessArgumentString(), Ensure-Ffmpeg(), Ensure-IsolatedPython(), Fail(), Find-InstalledPython(), Get-OsArchitectureName(), Get-PythonInstallerUrl() (+11 more)
 
 ### Community 83 - "Community 83"
-Cohesion: 0.20
-Nodes (16): bloated_check(), determine_channel_count(), dts_core_additional_check(), fallback_channel_count(), _get_audio_v2(), handle_atmos_channel_count(), is_atmos_or_immersive_audio(), LossyDtsDuplicateError (+8 more)
+Cohesion: 0.16
+Nodes (20): AudioManager, bloated_check(), determine_channel_count(), dts_core_additional_check(), fallback_channel_count(), _get_audio_v2(), handle_atmos_channel_count(), is_atmos_or_immersive_audio() (+12 more)
 
 ### Community 84 - "Community 84"
-Cohesion: 0.16
-Nodes (17): apply_saved_draft(), get_base_description(), load_review(), Any, Path, Persistent, execution-scoped description drafts for CLI and WebUI review., Atomically persist a user draft without relying on a browser path., Synchronize a saved WebUI draft into the live Meta object at use time. (+9 more)
+Cohesion: 0.21
+Nodes (19): apply_saved_draft(), draft(), load_review(), Any, Path, Persistent, execution-scoped description drafts for CLI and WebUI review., Atomically persist a user draft without relying on a browser path., Return inspectable read-only inputs used to build the base description. (+11 more)
 
 ### Community 85 - "Community 85"
-Cohesion: 0.10
-Nodes (11): AudioManager, Prep, Any, Delegate to :func:`src.book_prep.gather_book_prep`., Delegate to :func:`src.prep_game.resolve_game_filelist`., Delegate to :func:`src.prep_game.gather_game_prep`., Run the non-destructive MUSIC pipeline instead of video preparation., Make the current release available to WebUI controls during preparation. (+3 more)
+Cohesion: 0.11
+Nodes (10): Prep, Any, Delegate to :func:`src.book_prep.gather_book_prep`., Delegate to :func:`src.prep_game.resolve_game_filelist`., Delegate to :func:`src.prep_game.gather_game_prep`., Run the non-destructive MUSIC pipeline instead of video preparation., Make the current release available to WebUI controls during preparation., Generate local screenshots while metadata and tracker IDs are fetched. (+2 more)
 
 ### Community 86 - "Community 86"
-Cohesion: 0.18
-Nodes (5): MTeam, Any, MTEAM Private Torrent Tracker, https://test2.m-team.cc/api/swagger-ui/index.html#/種子/createOredit, https://wiki.m-team.cc/zh-tw/upload-title-rules
+Cohesion: 0.15
+Nodes (6): MTeam, Any, Config, MTEAM Private Torrent Tracker, https://test2.m-team.cc/api/swagger-ui/index.html#/種子/createOredit, https://wiki.m-team.cc/zh-tw/upload-title-rules
 
 ### Community 87 - "Community 87"
-Cohesion: 0.13
-Nodes (14): NordicQuality, Config, NordicQuality UNIT3D tracker adapter., test_nordicquality_accepts_book_music_and_game_categories(), test_nordicquality_accepts_nordic_subtitle_language_codes_when_unattended(), test_nordicquality_accepts_nordic_subtitles_when_unattended(), test_nordicquality_allows_attended_confirmation_after_missing_subtitles(), test_nordicquality_category_ids() (+6 more)
+Cohesion: 0.12
+Nodes (18): NordicQuality, Config, NordicQuality UNIT3D tracker adapter., test_nordicquality_accepts_book_music_and_game_categories(), test_nordicquality_accepts_nordic_subtitle_language_codes_when_unattended(), test_nordicquality_accepts_nordic_subtitles_when_unattended(), test_nordicquality_allows_attended_confirmation_after_missing_subtitles(), test_nordicquality_category_ids() (+10 more)
 
 ### Community 88 - "Community 88"
 Cohesion: 0.10
@@ -816,28 +825,28 @@ Cohesion: 0.05
 Nodes (38): Config file shape, `DEFAULT` section, `default_trackers`, Deluge, Description extras, Description formatting hooks, HDR tonemapping, How to Export Cookies (+30 more)
 
 ### Community 94 - "Community 94"
-Cohesion: 0.13
-Nodes (27): RLock, clear_group(), forget_file(), group_for(), _load(), _lock(), _path(), Any (+19 more)
+Cohesion: 0.23
+Nodes (11): _prep_with_screenshot_spy(), Path, _TakeScreens, test_early_bdmv_capture_includes_alternate_playlists(), test_early_bdmv_capture_includes_extra_discs(), test_early_screenshots_remain_enabled_without_description_images(), test_early_screenshots_wait_for_description_images(), test_partial_registered_group_captures_only_missing_screenshots() (+3 more)
 
 ### Community 95 - "Community 95"
 Cohesion: 0.15
 Nodes (18): compare_bdinfo(), generate_warning(), get_relevant_lines(), has_bdinfo_content(), load_bdinfo_file(), normalize_and_filter(), Any, Generates user-friendly warning messages based on the comparison state. (+10 more)
 
 ### Community 96 - "Community 96"
-Cohesion: 0.21
-Nodes (11): DupeEntry, Any, Ask one interactive question at a time without blocking the event loop., Check if any duplicate has BDInfo content and ask the user         if they want, UploadHelper, MonkeyPatch, test_bdinfo_comparison_prompt_uses_rich_markup(), test_dupe_check_honors_skip_dupe_check_for_existing_season_pack() (+3 more)
+Cohesion: 0.18
+Nodes (13): DupeEntry, _music_confirmation_lines(), Any, Ask one interactive question at a time without blocking the event loop., Build a concise, tracker-neutral MUSIC review for the confirmation UI.      Musi, Check if any duplicate has BDInfo content and ask the user         if they want, UploadHelper, MonkeyPatch (+5 more)
 
 ### Community 97 - "Community 97"
 Cohesion: 0.19
 Nodes (17): format_duration(), get_edition(), guessit_fn(), _has_release_token(), Any, Return whether a scene-release marker appears as its own token.      Release nam, Remove standalone release markers while preserving adjacent text., Convert seconds to a human-readable HH:MM:SS format. (+9 more)
 
 ### Community 98 - "Community 98"
-Cohesion: 0.12
-Nodes (6): MediaInfoParser, Any, Async wrapper for os.path.exists, Decide which torrent filename/prefix to use (BASE or BASE_SUBS) depending on, Get region and distributor information from API response, Modifies the torrent file to include the tracker's announce URL, a comment, and
+Cohesion: 0.10
+Nodes (10): MediaInfoParser, Any, Async wrapper for os.path.exists, Decide which torrent filename/prefix to use (BASE or BASE_SUBS) depending on, Return a release-title key without year or release metadata., Reject unrelated first search results before applying tracker IDs., Get region and distributor information from API response, Modifies the torrent file to include the tracker's announce URL, a comment, and (+2 more)
 
 ### Community 99 - "Community 99"
-Cohesion: 0.12
-Nodes (24): _as_dict(), ConfigValidationWarning, format_validation_results(), group_warnings(), Any, Represents a non-critical config warning., Create a warning with optional config location metadata., Render the warning with its section and key when available. (+16 more)
+Cohesion: 0.11
+Nodes (27): _as_dict(), ConfigValidationError, ConfigValidationWarning, format_validation_results(), group_warnings(), Any, Raised when config validation fails with critical errors., Represents a non-critical config warning. (+19 more)
 
 ### Community 100 - "Community 100"
 Cohesion: 0.14
@@ -848,12 +857,12 @@ Cohesion: 0.12
 Nodes (16): Access control, API tokens, Argument list, Cloudflare proxy access, Config editor, CORS and remote access, File browser, Login / First run (+8 more)
 
 ### Community 102 - "Community 102"
-Cohesion: 0.12
-Nodes (11): BDInfoBinaryManager, Download autobrr/go-bdinfo binaries for the host architecture.      Default vers, SimpleConsole, PlaylistInfo, DiscParse, Any, Calculate weighted score for playlist selection.          Weighted scoring syste, Parse the FILES section of the BDInfo input.         Handles filenames with mark (+3 more)
+Cohesion: 0.18
+Nodes (7): PlaylistInfo, DiscParse, Any, Calculate weighted score for playlist selection.          Weighted scoring syste, Parse the FILES section of the BDInfo input.         Handles filenames with mark, Setup MediaInfo binary for DVD processing using the complete setup from exportmi, test_cached_standalone_bd_summary_is_reused_without_full_report()
 
 ### Community 103 - "Community 103"
-Cohesion: 0.18
-Nodes (5): Any, UploadError, Config, TTG Private Torrent Tracker, ToTheGlory
+Cohesion: 0.13
+Nodes (9): Exception, ManualDateError, Any, UploadError, WeirdSystemError, XEMNotFoundError, Config, TTG Private Torrent Tracker (+1 more)
 
 ### Community 104 - "Community 104"
 Cohesion: 0.21
@@ -884,24 +893,24 @@ Cohesion: 0.17
 Nodes (12): Blutopia (BLU), DesiTorrents (DT), Docker build and runtime, Luminarr (LUME), Persistent release history, Qui and unattended operations, Safe torrent-client profile removal, Screenshot delete and refill (+4 more)
 
 ### Community 111 - "Community 111"
-Cohesion: 0.07
-Nodes (34): test_explicit_input_prompt_is_detected(), test_informational_colon_line_is_not_treated_as_prompt(), _assert_safe_resolved_path(), _detached_job_by_id(), _detached_worker(), _discard_session_state(), _looks_like_subprocess_prompt(), _persist_detached_jobs_locked() (+26 more)
+Cohesion: 0.11
+Nodes (16): test_explicit_input_prompt_is_detected(), test_informational_colon_line_is_not_treated_as_prompt(), _detached_worker(), _discard_session_state(), logout(), _looks_like_subprocess_prompt(), Update the active preview target for an in-process Web UI execution., Remove ANSI escape codes from text (+8 more)
 
 ### Community 112 - "Community 112"
-Cohesion: 0.27
-Nodes (8): PrivateHD, Config, PHD Private Torrent Tracker, make_meta(), test_crf_above_twenty_is_reported(), test_eac3_audio_is_allowed_when_format_commercial_name_is_missing(), test_hdtv_transport_stream_is_allowed(), tracker()
+Cohesion: 0.24
+Nodes (12): _build_image_start_limiter(), ImageDict, Create an async wait function that spaces image-upload starts., Select screenshots, throttle uploads, and collect successful results., Upload the selected screenshots and return uploaded image metadata., _upload_screens(), Path, test_image_start_limiter_staggers_concurrent_starts() (+4 more)
 
 ### Community 113 - "Community 113"
 Cohesion: 0.17
 Nodes (5): AlphaRatio, AR Private Torrent Tracker, Retrieve the saved auth key from cookie_auth.py., Upload torrent to ALPHARATIO using centralized cookie_upload., Parse MediaInfo asynchronously using thread executor
 
 ### Community 114 - "Community 114"
-Cohesion: 0.24
-Nodes (3): FileList, Any, FL Private Torrent Tracker
+Cohesion: 0.19
+Nodes (6): find_cookie_file(), Find the cookie file for a tracker.     First checks if the tracker's config has, Retrieve the saved auth key for ALPHARATIO tracker., FileList, Any, FL Private Torrent Tracker
 
 ### Community 115 - "Community 115"
-Cohesion: 0.21
-Nodes (3): PTerClub, Config, PTERCLUB (PT之友俱乐部) is a CHINESE Private Torrent Tracker for HD MUSIC VIDEOS / MO
+Cohesion: 0.16
+Nodes (5): LoginError, PTerClub, Config, Response, PTERCLUB (PT之友俱乐部) is a CHINESE Private Torrent Tracker for HD MUSIC VIDEOS / MO
 
 ### Community 116 - "Community 116"
 Cohesion: 0.10
@@ -912,8 +921,8 @@ Cohesion: 0.16
 Nodes (8): Any, Config, seedpool is a Private Torrent Tracker for 0-DAY MOVIES / TV / GENERAL, Seedpool, Regression tests for Seedpool category and type mappings., test_seedpool_maps_music_book_and_game_types_to_current_site_ids(), test_seedpool_supports_music_game_and_book_categories(), _tracker()
 
 ### Community 118 - "Community 118"
-Cohesion: 0.07
-Nodes (34): Protocol, AttributeCheck, ProgressEvent, test_qui_event_broker_supports_cursor_based_incremental_sync(), test_qui_sync_blueprint_exposes_events_summary_and_bulk_retry(), TypedDict, _AccessLoggerLike, _AuthLike (+26 more)
+Cohesion: 0.08
+Nodes (39): Protocol, _iso_or_epoch(), Any, Connection, Path, Persistent, searchable release execution history.  The store deliberately keeps, Derive a stable history status from Upload-Assistant tracker results., Store compact release records and query them without loading all rows. (+31 more)
 
 ### Community 119 - "Community 119"
 Cohesion: 0.22
@@ -940,39 +949,39 @@ Cohesion: 0.22
 Nodes (12): download_dvd_mediainfo_docker(), download_file(), extract_linux_binaries(), get_filename(), get_url(), Path, Download DVD-specific MediaInfo binaries for Docker container., Get the appropriate filename for MediaInfo download based on system and architec (+4 more)
 
 ### Community 125 - "Community 125"
-Cohesion: 0.15
-Nodes (7): FakeProxySession, FakeQuiSession, test_native_qui_duplicate_check_uses_instance_api(), test_proxy_retry_checks_for_existing_torrent_before_second_post(), test_proxy_retry_retries_a_transient_http_status(), test_proxy_retry_retries_httpx_connection_errors(), test_qui_api_settings_require_url_key_and_instance()
+Cohesion: 0.12
+Nodes (10): Response, A qBittorrent proxy response which is safe to retry., _RetryableProxyResponseError, FakeProxySession, FakeQuiSession, test_native_qui_duplicate_check_uses_instance_api(), test_proxy_retry_checks_for_existing_torrent_before_second_post(), test_proxy_retry_retries_a_transient_http_status() (+2 more)
 
 ### Community 126 - "Community 126"
-Cohesion: 0.11
-Nodes (11): Any, Minimum behavior consumed by shared tracker orchestration., Normalized view over the legacy mutable tracker class dictionary., TrackerAdapter, TrackerFactory, TrackerRegistry, Resolve Upload Assistant release types to PeerGarden type IDs., test_extensions_are_opt_in_and_reject_conflicts() (+3 more)
+Cohesion: 0.12
+Nodes (10): Any, Minimum behavior consumed by shared tracker orchestration., Normalized view over the legacy mutable tracker class dictionary., TrackerAdapter, TrackerFactory, TrackerRegistry, Resolve Upload Assistant release types to PeerGarden type IDs., test_tracker_registry_keeps_live_legacy_mapping_compatibility() (+2 more)
 
 ### Community 127 - "Community 127"
-Cohesion: 0.05
-Nodes (71): ProcessInfo, clear_progress_callback(), set_progress_callback(), _apply_progress_event(), _as_str_list(), _cfg_delete(), _cfg_file_path(), _cfg_read() (+63 more)
+Cohesion: 0.04
+Nodes (79): ProcessInfo, clear_progress_callback(), set_progress_callback(), _apply_progress_event(), _as_str_list(), _cfg_delete(), _cfg_file_path(), _cfg_read() (+71 more)
 
 ### Community 128 - "Community 128"
 Cohesion: 0.18
 Nodes (4): Cinematik, Any, Config, Cinematik is a Private tracker for full BD and DVD discs of non-mainstream movie
 
 ### Community 129 - "Community 129"
-Cohesion: 0.20
-Nodes (6): HawkeUno, Any, hawke-uno (HUNO) is a Private Torrent Tracker for HD MOVIES / TV, _noop(), test_hawkeuno_image_host_policy_does_not_require_legacy_method(), test_hawkeuno_uses_api_release_tag_for_repack()
+Cohesion: 0.26
+Nodes (3): BitHDTV, Any, BHDTV Private Torrent Tracker
 
 ### Community 130 - "Community 130"
 Cohesion: 0.23
 Nodes (10): Luminarr, Any, Luminarr is a Private Torrent Tracker for MOVIES / TV, Return the evidenced x264/x265 encoder family, not only the codec., _meta(), test_luminarr_1080p_animation_and_non_encodes_are_unchanged(), test_luminarr_1080p_live_action_codec_depends_on_hdr(), test_luminarr_reads_encoder_library_evidence() (+2 more)
 
 ### Community 132 - "Community 132"
-Cohesion: 0.18
-Nodes (8): clean_meta_for_export(), PathAwareEncoder, Any, Redact sensitive values, including passkeys in URLs and JSON substrings., Recursively redact sensitive info in dicts/lists/strings containing JSON., JSON encoder that converts pathlib.Path objects to strings., redact_private_info(), redact_value()
+Cohesion: 0.12
+Nodes (11): clean_meta_for_export(), PathAwareEncoder, Any, Redact sensitive values, including passkeys in URLs and JSON substrings., Recursively redact sensitive info in dicts/lists/strings containing JSON., Removes all 'status_message' keys from meta.tracker_status and         removes o, JSON encoder that converts pathlib.Path objects to strings., Extract JSON-like blocks from a string using bracket counting.          Returns (+3 more)
 
 ### Community 133 - "Community 133"
 Cohesion: 0.38
 Nodes (12): append_pyenv_init(), clone_or_update_repo(), fail(), install_dependencies(), install_pyenv_if_needed(), install_python_if_needed(), log(), require_command() (+4 more)
 
 ### Community 134 - "Community 134"
-Cohesion: 0.18
+Cohesion: 0.16
 Nodes (6): Local streaming-service aliases kept separate from upstream mappings.  Keeping l, get_region(), get_service(), guessit_fn(), Any, Regression tests for streaming-service aliases and filename recognition.
 
 ### Community 135 - "Community 135"
@@ -980,36 +989,36 @@ Cohesion: 0.29
 Nodes (12): detect_platform_from_files(), extract_version_from_nfo(), extract_version_from_text(), gather_game_prep(), get_7z_path(), list_archive_contents_with_7z(), map_to_clean_code(), normalize_version() (+4 more)
 
 ### Community 136 - "Community 136"
-Cohesion: 0.24
-Nodes (9): _configure_module(), Extension, ExtensionRegistry, load_extensions(), _load_file(), Any, ModuleType, Path (+1 more)
+Cohesion: 0.21
+Nodes (11): _configure_module(), Extension, ExtensionRegistry, load_extensions(), _load_file(), Any, ModuleType, Path (+3 more)
 
 ### Community 137 - "Community 137"
 Cohesion: 0.26
 Nodes (3): ImmortalSeed, Any, IS Private Torrent Tracker
 
 ### Community 138 - "Community 138"
-Cohesion: 0.24
-Nodes (7): FakeCookieValidator, FakeResponse, FakeSearchResponse, FakeSession, test_get_database_overview_extracts_synopsis(), test_search_existing_queries_both_media_identifiers_before_title_fallback(), test_search_existing_queries_title_once_without_media_identifiers()
+Cohesion: 0.27
+Nodes (6): FakeCookieValidator, FakeResponse, FakeSearchResponse, FakeSession, test_search_existing_queries_both_media_identifiers_before_title_fallback(), test_search_existing_queries_title_once_without_media_identifiers()
 
 ### Community 139 - "Community 139"
-Cohesion: 0.14
-Nodes (8): AdaptiveScheduler, _NullAsyncLock, ProviderStats, Any, Path, T, Bound concurrency, serialize same-provider mutations, and learn ordering., test_adaptive_scheduler_serializes_provider_mutations_and_persists()
+Cohesion: 0.18
+Nodes (3): Any, Racing4Everyone, RACING4EVERYONE (R4E) is a Private Torrent Tracker for RACING
 
 ### Community 140 - "Community 140"
 Cohesion: 0.15
 Nodes (12): Building locally, Can I use this with Docker on Windows?, Can I utilize the -vs/--vapoursynth parameter?, Config-generator, How do I update the docker image?, How do I use an image of a specific commit?, Supported Architectures, The command for running is really long and I dont want to type it. (+4 more)
 
 ### Community 141 - "Community 141"
-Cohesion: 0.31
-Nodes (5): Any, Torrent, Add fast resume data to a metafile dict., RtorrentClientMixin, create_base_from_existing_torrent()
+Cohesion: 0.44
+Nodes (4): Any, Torrent, Add fast resume data to a metafile dict., RtorrentClientMixin
 
 ### Community 142 - "Community 142"
 Cohesion: 0.29
 Nodes (4): DigitalCore, Any, Edits the name according to DIGITALCORE's naming conventions.         Scene uplo, DIGITALCORE (DC) is a Private Torrent Tracker for 0DAY / GENERAL
 
 ### Community 143 - "Community 143"
-Cohesion: 0.33
-Nodes (8): AvistaZ, Any, AZ Private Torrent Tracker, make_meta(), test_eac3_audio_is_allowed(), test_grouped_and_megabit_audio_bitrates_are_normalized(), test_hdtv_mpeg2_transport_stream_is_allowed(), test_low_audio_bitrate_is_reported_for_non_webdl()
+Cohesion: 0.17
+Nodes (13): extract_changelog(), _gather_initial_prep(), get_local_version(), _parse_version_tuple(), Path, Resolve initial settings and gather media metadata for one release., Extracts the local version from the version.py file., Extracts the changelog entries between the specified versions. (+5 more)
 
 ### Community 144 - "Community 144"
 Cohesion: 0.20
@@ -1017,11 +1026,11 @@ Nodes (5): InfinityHD, Any, Config, INFINITYHD is a Private Torrent Tracker for 
 
 ### Community 145 - "Community 145"
 Cohesion: 0.20
-Nodes (3): Portugas, Config, Portugas is a PORTUGUESE Private Torrent Tracker for 0DAY / GENERAL
+Nodes (7): AttributeValueList, MozillaCookieJar, _attr_to_string(), Convert BeautifulSoup attribute values to a plain string., Save updated cookies after a successful validation., Perform automatic login to ALPHARATIO and save cookies in Netscape format., Validate login cookies for a tracker by checking specific indicators on a test p
 
 ### Community 146 - "Community 146"
 Cohesion: 0.06
-Nodes (75): access_log_entries_api(), access_log_level_api(), add_execution_screenshot(), argument_presets(), browse_path(), browse_roots(), browse_search(), config_options() (+67 more)
+Nodes (58): access_log_entries_api(), access_log_level_api(), argument_presets(), _assert_safe_resolved_path(), browse_path(), browse_roots(), browse_search(), config_options() (+50 more)
 
 ### Community 147 - "Community 147"
 Cohesion: 0.24
@@ -1060,8 +1069,8 @@ Cohesion: 0.18
 Nodes (5): Config, UTOPIA is a UKRAINIAN Private Tracker for HD MOVIES and TV, Build UTOPIA-compliant torrent name from meta components.         https://utp.to, Override UNIT3D description to use img_url (medium) for display         and raw_, Utopia
 
 ### Community 156 - "Community 156"
-Cohesion: 0.09
-Nodes (28): _iso_or_epoch(), Any, Connection, Path, Persistent, searchable release execution history.  The store deliberately keeps, Derive a stable history status from Upload-Assistant tracker results., Store compact release records and query them without loading all rows., release_status() (+20 more)
+Cohesion: 0.17
+Nodes (13): test_release_history_filters_status_without_loading_unrelated_rows(), test_release_history_upserts_qui_job_with_prepared_metadata(), test_torrent_client_reference_cleanup_does_not_confuse_client_type(), test_torrent_client_reference_cleanup_selects_safe_fallback(), Any, Reference cleanup helpers for source-compatible config mutations., Return path/value updates needed after deleting a torrent client.      ``None``, torrent_client_reference_updates() (+5 more)
 
 ### Community 157 - "Community 157"
 Cohesion: 0.25
@@ -1080,12 +1089,12 @@ Cohesion: 0.14
 Nodes (10): MakingOff, Validate tracker credentials and configure the authenticated session.          L, Making Off is a BRAZILIAN Private Torrent Tracker for MOVIES / TV / GENERAL, Determine audio language(s) in PT-BR.          Resolution order: meta audio_lang, Retrieve tokens required to create a new forum topic.          Args:, Performs a search on the forum.          Args:             phrase (str): The tex, Extract only exact IMDb matches from the MakingOff catalogue cards., Search the catalogue, which supports exact IMDb identifiers. (+2 more)
 
 ### Community 162 - "Community 162"
-Cohesion: 0.25
-Nodes (3): Ptskit, Any, PTSKIT is a CHINESE Private Torrent Tracker for MOVIES / TV / GENERAL
+Cohesion: 0.09
+Nodes (15): BeautifulSoup, Map meta.platform to BJSHARE platform ID for the Jogos category., Extracts the original title to ensure consistency with the BJSHARE database., Return the IMDb or TMDb identifier used by an existing BJShare group., Extract the existing overview/synopsis from a BJShare group details page., Build CRT's advanced-search query., Build CRT's standalone IMDb search without title or category filters., Extract the torrent's top-level directory or sole file name. (+7 more)
 
 ### Community 163 - "Community 163"
-Cohesion: 0.24
-Nodes (8): IGDBAPI, Any, AsyncClient, Timeout, Use the active execution pool, with an owned-client compatibility fallback., Return a pooled client for a stable provider/configuration tuple., shared_http_client(), _stable_mapping()
+Cohesion: 0.17
+Nodes (3): Locadora, Config, LOCADORA is a BRAZILIAN Private Torrent Tracker for MOVIES / TV / ANIME
 
 ### Community 164 - "Community 164"
 Cohesion: 0.22
@@ -1108,24 +1117,24 @@ Cohesion: 0.28
 Nodes (4): ConvertTo-ProcessArgumentString(), Find-ExistingPython(), Invoke-Process(), Test-PythonVersionMatch()
 
 ### Community 169 - "Community 169"
-Cohesion: 0.39
-Nodes (7): canonicalize_release_group(), get_tag(), guessit_fn(), _is_true(), Any, test_fried_chicken_please_group_is_canonicalized_before_validation(), test_unknown_release_group_is_unchanged()
+Cohesion: 0.17
+Nodes (6): Any, Override to use validated region ID stored in meta, Override to use validated distributor ID stored in meta, Get additional tracker-specific upload data, Remove BBCode tags from text, keeping only plain content, Build ShareIsland BBCode template
 
 ### Community 170 - "Community 170"
 Cohesion: 0.31
 Nodes (3): Config, SWARMAZON is a Private Torrent Tracker for MOVIES / TV / GENERAL, Swarmazon
 
 ### Community 171 - "Community 171"
-Cohesion: 0.22
-Nodes (7): _apply_config(), check_image_link(), check_images_concurrently(), Any, ImageDict, Timeout, TrackerMetaManager
+Cohesion: 0.23
+Nodes (10): _apply_config(), check_image_link(), check_images_concurrently(), handle_image_list(), Any, ImageDict, Timeout, TrackerMetaManager (+2 more)
 
 ### Community 172 - "Community 172"
 Cohesion: 0.12
 Nodes (23): Event, Temporarily hide terminal progress while background preparation runs., suppress_cli_progress(), cancel_and_drain_early_artifact_tasks(), create_base_torrents_early(), get_early_artifact_tasks(), is_usenet_only(), needs_usenet_archive() (+15 more)
 
 ### Community 173 - "Community 173"
-Cohesion: 0.06
-Nodes (48): do_the_thing(), _download_music_cover(), extract_changelog(), _gather_initial_prep(), get_local_version(), get_mkbrr_path(), get_remote_version(), _handle_shutdown_signal() (+40 more)
+Cohesion: 0.17
+Nodes (12): do_the_thing(), main(), Reset global shutdown state for clean in-process runs from web UI., Store the active Web UI execution session for in-process preview updates., Persist a non-secret release summary without delaying the upload loop., Adds a processed file to the log, deduplicating and always appending it to the e, _record_release_history(), _reset_shutdown_state() (+4 more)
 
 ### Community 174 - "Community 174"
 Cohesion: 0.22
@@ -1144,44 +1153,40 @@ Cohesion: 0.25
 Nodes (8): Category / type / source / resolution, External IDs, Game fields, Metadata overrides (IDs, category/type/source, title shaping), Misc metadata flags, Tags / edition / language, Title shaping toggles, TV fields
 
 ### Community 179 - "Community 179"
-Cohesion: 0.25
-Nodes (8): Notes about `local_path` / `remote_path`, Options, Quick start, Requirements, Running Upload Assistant, Seedbox / Linux Install, Updating, What this installer does
+Cohesion: 0.20
+Nodes (10): Notes about `local_path` / `remote_path`, Options, Quick start, Requirements, Running Upload Assistant, Seedbox / Linux Install, Updating, What this installer does (+2 more)
 
 ### Community 180 - "Community 180"
-Cohesion: 0.38
-Nodes (6): has_non_disc_candidate_evidence(), is_full_disc_candidate(), Classify duplicate candidates using structured tracker evidence first., test_full_disc_candidate_with_partial_file_count_remains_a_dupe(), test_structured_disc_candidate_detection_uses_container_and_type(), test_structured_encode_is_not_treated_as_existing_full_disc()
+Cohesion: 0.24
+Nodes (10): has_non_disc_candidate_evidence(), is_full_disc_candidate(), Classify duplicate candidates using structured tracker evidence first., _hdb_candidate_codec(), _hdb_candidate_type(), _hdb_dupe_entry(), test_full_disc_candidate_with_partial_file_count_remains_a_dupe(), test_hdb_candidate_projection_preserves_disc_evidence() (+2 more)
 
 ### Community 181 - "Community 181"
 Cohesion: 0.24
 Nodes (6): R, BaseException, T, Bounded preparation concurrency with explicit prompt/mutation gates., SafeParallelPreparation, test_safe_parallel_preparation_bounds_work_and_serializes_mutations()
 
 ### Community 182 - "Community 182"
-Cohesion: 0.10
-Nodes (27): is_valid_cover_image(), Path, Return whether *path* is a decodable cover image accepted by uploads., Path, test_book_cover_cli_arg(), test_invalid_cover_is_not_accepted(), test_prompt_book_meta_accepts_file_path(), test_prompt_book_meta_accepts_url() (+19 more)
+Cohesion: 0.29
+Nodes (10): Path, test_book_cover_cli_arg(), test_invalid_cover_is_not_accepted(), test_prompt_book_meta_accepts_file_path(), test_prompt_music_meta_accepts_file_path(), test_prompt_music_meta_rejects_invalid_file_before_accepting_cover(), test_unit3d_attaches_only_a_decodable_book_cover(), _music_field_source() (+2 more)
 
 ### Community 183 - "Community 183"
 Cohesion: 0.27
 Nodes (5): Search for existing releases on the forum before uploading.          Args:, Detect whether the release is a Brazilian production.          Checks origin_cou, Resolve the display title, preferring PT-BR.          For Brazilian films, tries, Generate the forum topic title.          Format for Brazilian films:  [Hidef] PT, Apply MakingOff's definition of HD, falling back to UA resolution.
 
 ### Community 184 - "Community 184"
-Cohesion: 0.12
-Nodes (11): PathLike, build_mkbrr_exclude_string(), create_torrent(), CustomTorrent, get_mkbrr_path(), Any, Torrent, Determine the correct mkbrr binary based on OS and architecture. (+3 more)
+Cohesion: 0.14
+Nodes (9): PathLike, calculate_piece_size(), create_torrent(), CustomTorrent, Any, Torrent, torf_cb(), test_base_subs_contains_external_subtitle_with_custom_torrent() (+1 more)
 
 ### Community 186 - "Community 186"
 Cohesion: 0.31
 Nodes (3): ItaTorrents, Config, ItaTorrents is an ITALIAN Private tracker for MOVIES / TV / GENERAL
 
-### Community 187 - "Community 187"
-Cohesion: 0.17
-Nodes (3): _Client, _Response, test_openlibrary_uses_central_cache_for_metadata_and_authors()
-
 ### Community 188 - "Community 188"
-Cohesion: 0.48
-Nodes (5): download_bdinfo_for_docker(), download_file(), Path, secure_extract_tar(), SimpleConsole
+Cohesion: 0.18
+Nodes (7): _FakeHttpClient, _FakeResponse, Store the fake JSON response payload., Return the stored fake JSON payload., Create a fake HTTP client returning payload., Exit the fake HTTP client context., Return the configured fake upload response.
 
 ### Community 190 - "Community 190"
-Cohesion: 0.32
-Nodes (3): LoginError, Response, Response
+Cohesion: 0.18
+Nodes (7): CustomArgumentParser, Any, Custom ArgumentParser to handle short (-h) and long (--help) help messages., Show short help for `-h` and full help for `--help`, Custom formatter for short help (-h)     Only displays essential options., Customize short help output (only show essential arguments)., ShortHelpFormatter
 
 ### Community 217 - "Community 217"
 Cohesion: 0.48
@@ -1208,7 +1213,7 @@ Cohesion: 0.39
 Nodes (4): Any, Sync function to make the request inside ThreadPoolExecutor., Searches TVMaze for a show using TVDB ID, IMDb ID, or a title query.          -, TvmazeManager
 
 ### Community 331 - "Community 331"
-Cohesion: 0.24
+Cohesion: 0.26
 Nodes (10): _cache_signature(), _default_config(), MetadataCache, _project_root(), Any, Path, Create the separately configured cache for explicit tracker torrent IDs., Locate the configured Upload-Assistant checkout independently of cwd. (+2 more)
 
 ### Community 332 - "Community 332"
@@ -1216,8 +1221,8 @@ Cohesion: 0.25
 Nodes (4): Validate tracker-specific requirements before uploading.          Args:, Return whether a MediaInfo/UA language value denotes Portuguese., Detect a Portuguese subtitle track, sidecar subtitle, or hard sub., Return release-identifying text used for deterministic quality checks.
 
 ### Community 333 - "Community 333"
-Cohesion: 0.61
-Nodes (7): make_meta(), test_cinemaz_keeps_hybrid_when_no_quality_marker_exists(), test_cinemaz_places_hybrid_after_a_4k_quality_marker(), test_cinemaz_preserves_hybrid_in_the_title_when_repositioning_marker(), test_cinemaz_title_rules_are_normalized(), test_privatehd_removes_brackets_and_preserves_its_cut_terms(), tracker()
+Cohesion: 0.25
+Nodes (9): read_paths_from_stdin(), InteractiveInput, Path, test_queue_uses_multiple_explicit_existing_paths(), test_read_paths_from_interactive_stdin_preserves_shell_sensitive_characters(), test_read_paths_from_piped_stdin_ignores_blank_lines(), test_read_paths_from_stdin_rejects_empty_input(), test_webui_rejects_paths_from_stdin_instead_of_reading_process_stdin() (+1 more)
 
 ### Community 334 - "Community 334"
 Cohesion: 0.33
@@ -1248,40 +1253,40 @@ Cohesion: 0.50
 Nodes (3): Process, _stop_process(), test_cancelling_run_ffmpeg_terminates_only_its_owned_process()
 
 ### Community 341 - "Community 341"
-Cohesion: 0.29
-Nodes (4): MkbrrBinaryManager, Path, Download mkbrr binary for Docker/Linux - synchronous version., SimpleConsole
+Cohesion: 0.18
+Nodes (9): Path, Download mkbrr binary for Docker/Linux - synchronous version., Return a user-provided mkbrr binary before attempting a download., get_mkbrr_path(), Determine the correct mkbrr binary based on OS and architecture., MonkeyPatch, Path, test_existing_local_mkbrr_is_used_on_unsupported_platform() (+1 more)
 
 ### Community 342 - "Community 342"
 Cohesion: 0.50
 Nodes (3): CLI overrides, Music uploads, Orpheus
 
 ### Community 343 - "Community 343"
-Cohesion: 0.29
-Nodes (3): OnlyEncodes, Config, OnlyEncodes+ is a Private Tracker for MOVIES / TV
+Cohesion: 0.33
+Nodes (3): OnlyEncodes, OnlyEncodes+ is a Private Tracker for MOVIES / TV, test_onlyencodes_uses_tmdb_title_instead_of_imdb_display_title()
 
 ### Community 344 - "Community 344"
-Cohesion: 0.08
-Nodes (22): datetime, PromptResult, prompt_in_thread(), Run an interactive prompt without blocking the event loop or interleaving logs., WeirdSystemError, _anitopy_parse(), _guessit_data(), guessit_fn() (+14 more)
+Cohesion: 0.19
+Nodes (14): _anitopy_parse(), _guessit_data(), guessit_fn(), Any, _safe_int(), SeasonEpisodeManager, canonicalize_release_group(), get_tag() (+6 more)
 
 ### Community 345 - "Community 345"
-Cohesion: 0.26
-Nodes (3): HDTorrents, Any, HD-Torrents (HDT) is a Private Torrent Tracker for HD MOVIES / TV / MUSIC / 3X
+Cohesion: 0.24
+Nodes (10): gather_book_prep(), get_audiobook_bitrate(), get_audiobook_duration(), _mi_extra(), Any, Case-insensitive lookup of a freeform tag in a MediaInfo General track's extra d, Set up BOOK/Audiobook category fields and extract embedded MediaInfo metadata., Calculate the sum of durations of all audio files in the file list using MediaIn (+2 more)
 
 ### Community 361 - "Community 361"
-Cohesion: 0.67
-Nodes (6): make_meta(), test_low_video_bitrate_is_reported(), test_raw_remux_and_4k_uploads_require_six_screenshots(), test_sd_content_from_major_english_country_is_allowed(), test_vp9_is_an_allowed_video_codec(), tracker()
+Cohesion: 0.24
+Nodes (6): BtnIdManager, generate_guid(), get_bhd_torrents(), get_btn_torrents(), parse_tmdb_id(), Parses TMDb ID, ensures correct formatting, and assigns category.
 
 ### Community 362 - "Community 362"
 Cohesion: 0.32
 Nodes (3): CheckpointStore, Any, Path
 
 ### Community 363 - "Community 363"
-Cohesion: 0.25
-Nodes (4): _AuthErrorResponse, _FakeAsyncClient, MonkeyPatch, test_hdbits_search_returns_six_values_for_api_error()
+Cohesion: 0.22
+Nodes (6): _AuthErrorResponse, _FakeAsyncClient, MonkeyPatch, test_hdbits_explicit_id_uses_hdb_meta_key(), test_hdbits_search_returns_six_values_for_api_error(), test_hdbits_use_for_search_false_skips_explicit_id()
 
 ### Community 364 - "Community 364"
-Cohesion: 0.29
-Nodes (4): Par2BinaryManager, Path, Download par2cmdline-turbo binaries for the host architecture., SimpleConsole
+Cohesion: 0.20
+Nodes (7): PathAwareEncoder, Any, Recursively redact sensitive info in dicts/lists/strings containing JSON., JSON encoder that converts pathlib.Path objects to strings., Redact sensitive values, including passkeys in URLs and JSON substrings., redact_private_info(), redact_value()
 
 ### Community 365 - "Community 365"
 Cohesion: 0.53
@@ -1300,8 +1305,8 @@ Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: Were all performance optimizations, build optimizations, and bug fixes applied, and what remains pending from UpBrr or wastaken?, Source Nodes
 
 ### Community 369 - "Community 369"
-Cohesion: 0.24
-Nodes (6): Any, Client, Wait, check_mod_q_and_draft(), process_trackers(), Any
+Cohesion: 0.29
+Nodes (8): Any, Policy helpers for unattended queue operations., Return whether queue creation or update may request interactive input., should_prompt_for_queue_edits(), Regression tests for unattended queue-edit policy., test_attended_queue_operations_may_prompt(), test_unattended_confirmed_queue_operations_may_prompt(), test_unattended_queue_operations_do_not_prompt()
 
 ### Community 370 - "Community 370"
 Cohesion: 0.40
@@ -1328,52 +1333,76 @@ Cohesion: 0.18
 Nodes (7): Any, RTF Private Torrent Tracker, Search for existing torrents on RETROFLIX tracker.          Searches for duplica, Test if the stored API key is valid.          RETROFLIX API keys expire weekly,, Generate a new API key for RETROFLIX tracker.          Authenticates using usern, Upload a torrent to RETROFLIX tracker.          Args:             meta: Metadata, RetroFlix
 
 ### Community 380 - "Community 380"
-Cohesion: 0.50
-Nodes (5): draft(), Return inspectable read-only inputs used to build the base description., source_items(), execution_description(), Return the editable base-description draft and its read-only sources.
+Cohesion: 0.25
+Nodes (5): DirEntry, gather_files_recursive(), Gather files and first-level subfolders.         Each subfolder is treated as a, Check if a directory should be included in the queue.         Returns True if th, should_include_directory()
 
 ### Community 382 - "Community 382"
 Cohesion: 0.22
 Nodes (4): OldToonsWorld, Any, Config, Old Toons World (OTW) is a Private Torrent Tracker for ANIMATED MOVIES / TV
 
 ### Community 383 - "Community 383"
-Cohesion: 0.60
-Nodes (3): MyAnonamouseManager, Any, Search MyAnonamouse API by torrent ID.         Returns a dict of metadata or Non
+Cohesion: 0.36
+Nodes (7): assert_public_http_url(), _blocked_ip(), public_http_url(), Raised when a URL points at a disallowed local/private network target., UnsafeURL, test_safe_url_rejects_private_network_targets(), ValueError
 
 ### Community 384 - "Community 384"
-Cohesion: 0.60
-Nodes (4): par_scaled_dimensions(), Return a meaningful PAR-corrected size, snapping rounding noise to source dimens, test_par_meaningful_correction_emits_even_dimensions(), test_par_rounding_noise_keeps_stored_dimensions()
+Cohesion: 0.25
+Nodes (3): Config, ReelFLiX (HD4Free, LegacyHD) is a Private Torrent Tracker for HD MOVIES, ReelFlix
 
 ### Community 385 - "Community 385"
 Cohesion: 0.50
 Nodes (4): Basic commands, Create the configuration, Install with the `.exe`, Windows Installation
 
+### Community 386 - "Community 386"
+Cohesion: 0.25
+Nodes (3): Any, The Old School (TOS) is a FRENCH Private Torrent Tracker for MOVIES / TV / GENER, TheOldSchool
+
 ### Community 387 - "Community 387"
 Cohesion: 0.40
 Nodes (4): Answer, Outcome, Q: How were all complementary workflow features implemented?, Source Nodes
+
+### Community 388 - "Community 388"
+Cohesion: 0.43
+Nodes (5): gen_desc(), test_base_description_is_kept_in_meta_without_creating_description_file(), test_description_file_is_not_rendered_twice_when_both_sections_are_enabled(), test_nfo_for_single_file_upload_is_read_from_parent_directory(), test_webui_description_api_saves_an_execution_scoped_override()
+
+### Community 389 - "Community 389"
+Cohesion: 0.33
+Nodes (3): LastDigitalUnderground, Config, Last Digital Underground (LDU) is a Private Torrent Tracker for MOVIES / TV / GE
 
 ### Community 390 - "Community 390"
 Cohesion: 0.20
 Nodes (3): Any, Config, Unit3dTemplate
 
+### Community 391 - "Community 391"
+Cohesion: 0.33
+Nodes (6): imgbox_upload(), Any, Initialize screenshot uploads with the application configuration., Upload one image to the selected host and return its generated URLs., Upload images to Imgbox and store their returned URLs., upload_image_task()
+
+### Community 392 - "Community 392"
+Cohesion: 0.40
+Nodes (4): Answer, Outcome, Q: What documentation and final bug fixes cover the optimized Upload Assistant workflow?, Source Nodes
+
+### Community 393 - "Community 393"
+Cohesion: 0.40
+Nodes (3): Self, Enter the fake async file context., Enter the fake HTTP client context.
+
 ## Knowledge Gaps
-- **424 isolated node(s):** `proseWrap`, `update-docker.sh script`, `argumentCategories`, `metadataProviderStyles`, `metadataProviderIcons` (+419 more)
+- **428 isolated node(s):** `proseWrap`, `update-docker.sh script`, `argumentCategories`, `metadataProviderStyles`, `metadataProviderIcons` (+423 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **146 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **155 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Meta` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 14`, `Community 16`, `Community 17`, `Community 18`, `Community 19`, `Community 21`, `Community 22`, `Community 24`, `Community 25`, `Community 26`, `Community 27`, `Community 28`, `Community 29`, `Community 31`, `Community 32`, `Community 34`, `Community 35`, `Community 36`, `Community 37`, `Community 38`, `Community 39`, `Community 40`, `Community 42`, `Community 43`, `Community 44`, `Community 47`, `Community 49`, `Community 50`, `Community 51`, `Community 52`, `Community 53`, `Community 55`, `Community 56`, `Community 57`, `Community 59`, `Community 60`, `Community 61`, `Community 62`, `Community 64`, `Community 65`, `Community 66`, `Community 67`, `Community 69`, `Community 70`, `Community 71`, `Community 72`, `Community 74`, `Community 75`, `Community 77`, `Community 78`, `Community 79`, `Community 80`, `Community 81`, `Community 83`, `Community 84`, `Community 85`, `Community 86`, `Community 87`, `Community 90`, `Community 91`, `Community 92`, `Community 94`, `Community 95`, `Community 96`, `Community 97`, `Community 98`, `Community 99`, `Community 100`, `Community 102`, `Community 103`, `Community 104`, `Community 105`, `Community 106`, `Community 107`, `Community 112`, `Community 113`, `Community 114`, `Community 115`, `Community 116`, `Community 117`, `Community 118`, `Community 119`, `Community 120`, `Community 121`, `Community 122`, `Community 123`, `Community 126`, `Community 128`, `Community 129`, `Community 130`, `Community 131`, `Community 132`, `Community 134`, `Community 135`, `Community 137`, `Community 141`, `Community 142`, `Community 143`, `Community 144`, `Community 145`, `Community 153`, `Community 154`, `Community 155`, `Community 156`, `Community 160`, `Community 161`, `Community 162`, `Community 164`, `Community 165`, `Community 169`, `Community 170`, `Community 171`, `Community 172`, `Community 173`, `Community 174`, `Community 175`, `Community 180`, `Community 182`, `Community 183`, `Community 184`, `Community 186`, `Community 190`, `Community 219`, `Community 221`, `Community 326`, `Community 331`, `Community 332`, `Community 343`, `Community 344`, `Community 345`, `Community 363`, `Community 369`, `Community 373`, `Community 374`, `Community 376`, `Community 379`, `Community 382`, `Community 390`?**
-  _High betweenness centrality (0.559) - this node is a cross-community bridge._
-- **Why does `Common` connect `Community 2` to `Community 0`, `Community 1`, `Community 3`, `Community 6`, `Community 9`, `Community 10`, `Community 11`, `Community 18`, `Community 19`, `Community 21`, `Community 22`, `Community 24`, `Community 25`, `Community 28`, `Community 32`, `Community 34`, `Community 39`, `Community 40`, `Community 42`, `Community 44`, `Community 47`, `Community 52`, `Community 56`, `Community 57`, `Community 59`, `Community 61`, `Community 62`, `Community 69`, `Community 74`, `Community 75`, `Community 79`, `Community 80`, `Community 83`, `Community 84`, `Community 85`, `Community 86`, `Community 90`, `Community 91`, `Community 98`, `Community 100`, `Community 103`, `Community 104`, `Community 105`, `Community 106`, `Community 112`, `Community 113`, `Community 114`, `Community 115`, `Community 116`, `Community 117`, `Community 121`, `Community 122`, `Community 123`, `Community 129`, `Community 130`, `Community 142`, `Community 143`, `Community 144`, `Community 145`, `Community 153`, `Community 154`, `Community 155`, `Community 161`, `Community 162`, `Community 165`, `Community 170`, `Community 171`, `Community 173`, `Community 175`, `Community 186`, `Community 219`, `Community 220`, `Community 221`, `Community 331`, `Community 343`, `Community 344`, `Community 379`, `Community 382`, `Community 390`?**
-  _High betweenness centrality (0.029) - this node is a cross-community bridge._
-- **Why does `BBCODE` connect `Community 42` to `Community 0`, `Community 1`, `Community 2`, `Community 98`, `Community 103`, `Community 74`, `Community 171`, `Community 11`, `Community 47`, `Community 114`, `Community 19`, `Community 84`, `Community 52`, `Community 86`, `Community 115`, `Community 56`, `Community 62`?**
-  _High betweenness centrality (0.017) - this node is a cross-community bridge._
-- **Are the 166 inferred relationships involving `Meta` (e.g. with `PathAwareEncoder` and `Redaction`) actually correct?**
-  _`Meta` has 166 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 83 inferred relationships involving `Common` (e.g. with `AudioManager` and `LossyDtsDuplicateError`) actually correct?**
-  _`Common` has 83 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 37 inferred relationships involving `DescriptionBuilder` (e.g. with `PathAwareEncoder` and `BBCODE`) actually correct?**
-  _`DescriptionBuilder` has 37 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 91 inferred relationships involving `TrackerSetup` (e.g. with `Meta` and `TrackerRegistry`) actually correct?**
-  _`TrackerSetup` has 91 INFERRED edges - model-reasoned connections that need verification._
+- **Why does `Meta` connect `Community 0` to `Community 1`, `Community 2`, `Community 3`, `Community 4`, `Community 6`, `Community 7`, `Community 8`, `Community 9`, `Community 10`, `Community 11`, `Community 12`, `Community 13`, `Community 16`, `Community 18`, `Community 19`, `Community 21`, `Community 22`, `Community 24`, `Community 25`, `Community 26`, `Community 27`, `Community 28`, `Community 29`, `Community 31`, `Community 32`, `Community 34`, `Community 35`, `Community 36`, `Community 37`, `Community 38`, `Community 39`, `Community 40`, `Community 42`, `Community 43`, `Community 44`, `Community 47`, `Community 49`, `Community 50`, `Community 51`, `Community 52`, `Community 53`, `Community 55`, `Community 56`, `Community 57`, `Community 59`, `Community 60`, `Community 61`, `Community 62`, `Community 64`, `Community 66`, `Community 67`, `Community 69`, `Community 70`, `Community 71`, `Community 72`, `Community 74`, `Community 75`, `Community 77`, `Community 78`, `Community 79`, `Community 80`, `Community 81`, `Community 83`, `Community 84`, `Community 85`, `Community 86`, `Community 87`, `Community 90`, `Community 91`, `Community 92`, `Community 94`, `Community 95`, `Community 96`, `Community 97`, `Community 98`, `Community 99`, `Community 100`, `Community 102`, `Community 103`, `Community 104`, `Community 105`, `Community 106`, `Community 107`, `Community 112`, `Community 113`, `Community 114`, `Community 115`, `Community 116`, `Community 117`, `Community 119`, `Community 120`, `Community 121`, `Community 122`, `Community 123`, `Community 125`, `Community 126`, `Community 128`, `Community 129`, `Community 130`, `Community 131`, `Community 132`, `Community 134`, `Community 135`, `Community 137`, `Community 139`, `Community 141`, `Community 142`, `Community 143`, `Community 144`, `Community 145`, `Community 153`, `Community 154`, `Community 155`, `Community 156`, `Community 161`, `Community 162`, `Community 163`, `Community 164`, `Community 165`, `Community 169`, `Community 170`, `Community 171`, `Community 172`, `Community 173`, `Community 174`, `Community 175`, `Community 180`, `Community 182`, `Community 183`, `Community 184`, `Community 186`, `Community 190`, `Community 219`, `Community 221`, `Community 326`, `Community 331`, `Community 332`, `Community 333`, `Community 341`, `Community 343`, `Community 344`, `Community 345`, `Community 361`, `Community 363`, `Community 364`, `Community 373`, `Community 374`, `Community 376`, `Community 379`, `Community 382`, `Community 384`, `Community 386`, `Community 388`, `Community 389`, `Community 390`?**
+  _High betweenness centrality (0.513) - this node is a cross-community bridge._
+- **Why does `Common` connect `Community 2` to `Community 0`, `Community 1`, `Community 6`, `Community 7`, `Community 9`, `Community 11`, `Community 18`, `Community 19`, `Community 21`, `Community 22`, `Community 24`, `Community 25`, `Community 27`, `Community 28`, `Community 32`, `Community 34`, `Community 36`, `Community 39`, `Community 40`, `Community 42`, `Community 47`, `Community 52`, `Community 56`, `Community 57`, `Community 59`, `Community 61`, `Community 62`, `Community 69`, `Community 74`, `Community 75`, `Community 79`, `Community 83`, `Community 86`, `Community 90`, `Community 91`, `Community 98`, `Community 100`, `Community 103`, `Community 104`, `Community 105`, `Community 106`, `Community 113`, `Community 114`, `Community 115`, `Community 116`, `Community 117`, `Community 121`, `Community 122`, `Community 123`, `Community 129`, `Community 130`, `Community 139`, `Community 142`, `Community 144`, `Community 153`, `Community 154`, `Community 155`, `Community 161`, `Community 163`, `Community 165`, `Community 169`, `Community 170`, `Community 171`, `Community 175`, `Community 186`, `Community 219`, `Community 220`, `Community 221`, `Community 331`, `Community 343`, `Community 379`, `Community 382`, `Community 384`, `Community 386`, `Community 389`, `Community 390`, `Community 399`, `Community 400`, `Community 401`, `Community 402`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+- **Why does `BBCODE` connect `Community 42` to `Community 0`, `Community 2`, `Community 98`, `Community 103`, `Community 361`, `Community 74`, `Community 171`, `Community 11`, `Community 47`, `Community 114`, `Community 115`, `Community 52`, `Community 86`, `Community 56`, `Community 62`?**
+  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+- **Are the 165 inferred relationships involving `Meta` (e.g. with `PathAwareEncoder` and `Redaction`) actually correct?**
+  _`Meta` has 165 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 82 inferred relationships involving `Common` (e.g. with `AudioManager` and `LossyDtsDuplicateError`) actually correct?**
+  _`Common` has 82 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 36 inferred relationships involving `DescriptionBuilder` (e.g. with `PathAwareEncoder` and `BBCODE`) actually correct?**
+  _`DescriptionBuilder` has 36 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 4 inferred relationships involving `UNIT3D` (e.g. with `Redaction` and `DescriptionBuilder`) actually correct?**
+  _`UNIT3D` has 4 INFERRED edges - model-reasoned connections that need verification._
