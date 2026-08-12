@@ -118,21 +118,34 @@ def test_webui_tracker_description_is_saved_without_prompting(tmp_path, monkeypa
 
 def test_description_review_draft_prefers_saved_webui_content(tmp_path):
     temp_dir = tmp_path / "tmp" / "release"
-    save_review(temp_dir, "webui text", 4)
+    save_review(temp_dir, "webui text", 4, "/media/release.mkv")
 
-    assert draft({"description": "tracker text"}, temp_dir) == ("webui text", 4)
+    assert draft({"description": "tracker text", "path": "/media/release.mkv"}, temp_dir) == ("webui text", 4)
 
 
 def test_saved_webui_draft_replaces_the_tracker_description(tmp_path):
     from src.description_review import apply_saved_draft
 
     meta = Meta({"base_dir": str(tmp_path), "uuid": "release", "description": "tracker text"})
-    save_review(tmp_path / "tmp" / "release", "edited text", 1)
+    save_review(tmp_path / "tmp" / "release", "edited text", 1, str(tmp_path / "release.mkv"))
+    meta.path = str(tmp_path / "release.mkv")
 
     apply_saved_draft(meta)
 
     assert meta.description == "edited text"
     assert meta.description_override == "edited text"
+
+
+def test_saved_webui_draft_from_previous_path_is_ignored(tmp_path):
+    from src.description_review import apply_saved_draft
+
+    save_review(tmp_path / "tmp" / "release", "old upload", 1, str(tmp_path / "old.mkv"))
+    meta = Meta({"base_dir": str(tmp_path), "uuid": "release", "path": str(tmp_path / "new.mkv"), "description": "new upload"})
+
+    apply_saved_draft(meta)
+
+    assert meta.description == "new upload"
+    assert meta.description_override == ""
 
 
 def test_explicit_tracker_ids_are_collected_concurrently_and_best_candidate_is_applied(tmp_path, monkeypatch):

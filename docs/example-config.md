@@ -86,7 +86,7 @@ CLI workflow controls:
 Order matters: `img_host_1` is primary, later hosts are fallbacks.
 
 - `img_host_1`..`img_host_5` (str): Image host names. Valid examples include `imgbb`, `imgbox`, `pixhost`, `lensdump`, `ptscreens`, `onlyimage`, `dalexni`, `zipline`, `midnightscene`, `passtheimage`, `seedpool_cdn`, `utppm`, `lostimg`.
-- **Confirmed OnlyImage tracker compatibility (non-exhaustive):** LUMINARR (`LUME`), ANTHELION (`ANT`), AITHER (`ATH`), BLUTOPIA (`BLU`), ONLYENCODES (`OE`), HAWKEUNO (`HUNO`), MORETHANTV (`MTV`), LST, DARKPEERS (`DP`), RACING4EVERYONE (`RF`), and YUSCENE (`YUS`). `ANT` was independently reconfirmed; this list is not intended to be exhaustive.
+- **Confirmed OnlyImage tracker compatibility (non-exhaustive):** LUMINARR (`LUME`), ANTHELION (`ANT`), AITHER (`ATH`), BLUTOPIA (`BLU`), ONLYENCODES (`OE`), HAWKEUNO (`HUNO`), LST, DARKPEERS (`DP`), RACING4EVERYONE (`RF`), and YUSCENE (`YUS`). `ANT` was independently reconfirmed; this list is not intended to be exhaustive.
 - `image_upload_concurrency` (int): Maximum number of image uploads running at once. Set to `0` to use the image host default.
 - `image_upload_delay` (float): Minimum delay in seconds between starting image uploads.
 

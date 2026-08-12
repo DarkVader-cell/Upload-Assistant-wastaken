@@ -39,11 +39,11 @@ COPY --link bin/get_dvd_mediainfo_docker.py bin/
 RUN python bin/get_dvd_mediainfo_docker.py
 
 FROM binary-fetch-base AS mkbrr
-COPY --link bin/__init__.py bin/get_mkbrr.py bin/
+COPY --link bin/__init__.py bin/download_integrity.py bin/get_mkbrr.py bin/
 RUN python -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"
 
 FROM binary-fetch-base AS bdinfo
-COPY --link bin/get_bdinfo_docker.py bin/
+COPY --link bin/download_integrity.py bin/get_bdinfo_docker.py bin/
 RUN python bin/get_bdinfo_docker.py
 
 # The final image contains only the runtime interpreter, application, downloaded

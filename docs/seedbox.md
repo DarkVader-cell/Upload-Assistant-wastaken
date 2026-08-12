@@ -71,6 +71,90 @@ source .venv/bin/activate
 python upload.py "/path/to/content" --trackers yourtracker
 ```
 
+## Whatbox deployment used by this project
+
+The Whatbox instance uses the `cactus.whatbox.ca` SSH host, rootless Podman,
+and the checkout at `~/Upload-Assistant-wastaken`. The WebUI container is
+`upload-assistant-wastaken` and is defined by `docker-compose.local.yml`.
+This is a standalone container: it does not require Gluetun, Radarr, or
+Sonarr. Radarr/Sonarr metadata integrations remain optional application
+features.
+
+Connect and inspect it with:
+
+```bash
+ssh artemisprime@cactus.whatbox.ca
+cd ~/Upload-Assistant-wastaken
+podman ps -a
+```
+
+```bash
+podman compose -f docker-compose.local.yml up -d upload-assistant-wastaken
+podman logs --tail 100 upload-assistant-wastaken
+```
+
+The WebUI is exposed on port `12345`, for example
+`http://cactus.whatbox.ca:12345` when the Whatbox firewall allows that port.
+
+Restart without rebuilding:
+
+```bash
+podman restart upload-assistant-wastaken
+```
+
+After changing Upload Assistant source, rebuild and recreate it with:
+
+```bash
+podman compose -f docker-compose.local.yml up -d --build upload-assistant-wastaken
+```
+
+Do not remove the persistent `docker-data/` directories when recreating the
+container.
+
+### Whatbox qBittorrent and Deluge reuse
+
+The Whatbox deployment uses the host's qBittorrent Web API on port `17416` for
+new injections. Upload Assistant runs with host networking so `127.0.0.1`
+refers to the Whatbox host. Content is hardlinked into `Uploads/<TRACKER>`;
+the original files remain under `files`.
+
+Deluge remains enabled as the searching/reuse client. This allows an existing
+Deluge torrent to be reused when its files match the current upload, without
+bulk-importing all Deluge state into qBittorrent.
+
+```python
+"whatbox_qbittorrent": {
+    "torrent_client": "qbit",
+    "qbit_url": "http://127.0.0.1",
+    "qbit_port": "17416",
+    "qbit_user": "<qBittorrent username>",
+    "qbit_pass": "<qBittorrent password>",
+    "torrent_storage_dir": "/mnt/seeding/.config/qBittorrent/BT_backup",
+    "qbit_cat": "Uploads",
+    "linking": "hardlink",
+    "linked_folder": ["/mnt/seeding/Uploads"],
+    "local_path": ["/mnt/seeding"],
+    "remote_path": ["/mnt/mpathr/artemisprime"],
+},
+"whatbox_deluge": {
+    "torrent_client": "deluge",
+    "deluge_url": "<Whatbox Deluge RPC host>",
+    "deluge_port": "58846",
+    "deluge_user": "<Deluge username>",
+    "deluge_pass": "<Deluge password>",
+    "torrent_storage_dir": "/path/inside/container/to/deluge/state",
+    "local_path": ["/mnt/seeding"],
+    "remote_path": ["/mnt/seeding"],
+},
+```
+
+Set `DEFAULT["default_torrent_client"]` and `injecting_client_list` to
+`"whatbox_qbittorrent"`; keep `searching_client_list` set to
+`["whatbox_deluge"]`. Correct local/remote path order is important: `local_path`
+is how Upload Assistant sees the files, while `remote_path` is how Deluge
+reports them. A successful reuse run logs `Found valid torrent in Deluge`;
+otherwise it falls back to torrent creation and may run mkbrr.
+
 ## Updating
 
 Run the installer again:

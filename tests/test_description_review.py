@@ -86,6 +86,27 @@ def test_base_description_is_kept_in_meta_without_creating_description_file(tmp_
     asyncio.run(run())
 
 
+def test_nfo_for_single_file_upload_is_read_from_parent_directory(tmp_path):
+    async def run():
+        media_file = tmp_path / "Release.mkv"
+        media_file.write_bytes(b"media")
+        (tmp_path / "Release.nfo").write_text("NFO CONTENT", encoding="utf-8")
+        meta = Meta(
+            {
+                "base_dir": str(tmp_path),
+                "uuid": "release",
+                "path": str(media_file),
+                "nfo": True,
+            }
+        )
+
+        await gen_desc(meta, None, None)
+
+        assert meta.description_nfo_content == "NFO CONTENT"
+
+    asyncio.run(run())
+
+
 def test_description_file_is_not_rendered_twice_when_both_sections_are_enabled(tmp_path):
     async def run():
         description_file = tmp_path / "description.txt"

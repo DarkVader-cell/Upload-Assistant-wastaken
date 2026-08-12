@@ -4940,7 +4940,7 @@ def save_execution_description():
             return jsonify({"success": False, "error": "Description changed in another browser tab", "version": current_version}), 409
 
         next_version = current_version + 1
-        save_review(temp_dir, content, next_version)
+        save_review(temp_dir, content, next_version, str(meta_data.get("path") or ""))
     return jsonify({"success": True, "content": content, "version": next_version})
 
 
@@ -4976,7 +4976,7 @@ def reset_execution_description():
             return jsonify({"success": False, "error": "Description changed in another browser tab", "version": current_version}), 409
 
         next_version = current_version + 1
-        save_review(temp_dir, content, next_version)
+        save_review(temp_dir, content, next_version, str(meta_data.get("path") or ""))
     return jsonify({"success": True, "content": content, "version": next_version})
 
 

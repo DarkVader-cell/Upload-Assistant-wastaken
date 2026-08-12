@@ -89,7 +89,11 @@ async def gen_desc(
     base_dir = meta.base_dir
     uuid = meta.uuid
     specified_dir = Path(base_dir) / "tmp" / uuid
-    source_dir = Path(meta.path or "")
+    source_path = Path(meta.path or "")
+    # For single-file uploads, the adjacent NFO lives beside the media file,
+    # not underneath the file path. Directory uploads continue to search the
+    # directory itself.
+    source_dir = source_path.parent if source_path.is_file() else source_path
 
     if meta.description_override:
         description_lines.append(clean_text(meta.description_override))
@@ -1114,12 +1118,12 @@ class DescriptionBuilder:
         screenshots: bool,
         tonemapped_header: bool,
         tv_info: bool,
-        ua_signature: bool,
+        ua_signature: bool,  # noqa: ARG002 - retained for tracker extension compatibility
         user_description: bool,
         music: bool = True,
         dynamic_hdr_plot: bool = True,
         approved_image_hosts: list[str] | None = None,
-        signature: str = "",
+        signature: str = "",  # noqa: ARG002 - retained for tracker extension compatibility
         desc_header: str = "",
     ) -> str:
         apply_saved_draft(meta)

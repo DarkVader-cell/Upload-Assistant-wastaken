@@ -370,6 +370,12 @@ else:
 
 async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
     """Merges saved metadata with the current meta, respecting overwrite rules."""
+    current_path = str(meta.path or "")
+    saved_path = str(saved_meta.get("path") or "")
+    if current_path and (not saved_path or Path(current_path).expanduser().resolve(strict=False) != Path(saved_path).expanduser().resolve(strict=False)):
+        logger.warning("[yellow]Ignoring saved metadata from a different upload path.[/yellow]")
+        return {}
+
     overwrite_list = [
         "anon",
         "asin",
@@ -1672,7 +1678,6 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                     "GREATPOSTERWALL",
                     "HAWKEUNO",
                     "LUMINARR",
-                    "MORETHANTV",
                     "ONLYENCODES",
                     "ANTHELION",
                     "AITHER",
@@ -2212,7 +2217,7 @@ def get_remote_version(url: str) -> tuple[str | None, str | None]:
                 return match.group(1), content
             logger.info("[red]Version not found in remote file.")
             return None, None
-        logger.error(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
+        logger.warning(f"[yellow]Could not fetch remote version file (HTTP {response.status_code}); continuing with local version[/yellow]")
         return None, None
     except requests.RequestException as e:
         logger.info(f"[red]An error occurred while fetching the remote version file: {e}")
@@ -2257,7 +2262,8 @@ def extract_changelog(content: str, to_version: str) -> str | None:
 
 async def update_notification(base_dir: str, execution_context: ExecutionContext | None = None) -> str:
     version_file = Path(base_dir) / "data" / "version.py"
-    remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/master/data/version.py"
+    # The upstream project publishes from development; master no longer exists.
+    remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/development/data/version.py"
 
     notice = config["DEFAULT"].get("update_notification", True)
     verbose = config["DEFAULT"].get("verbose_notification", False)
@@ -2280,7 +2286,7 @@ async def update_notification(base_dir: str, execution_context: ExecutionContext
                 match = re.search(r'__version__\s*=\s*"([^"]+)"', remote_content)
                 remote_version = match.group(1) if match else None
             else:
-                logger.error(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
+                logger.warning(f"[yellow]Could not fetch remote version file (HTTP {response.status_code}); continuing with local version[/yellow]")
                 remote_version, remote_content = None, None
         except Exception as error:
             logger.info(f"[red]An error occurred while fetching the remote version file: {error}")

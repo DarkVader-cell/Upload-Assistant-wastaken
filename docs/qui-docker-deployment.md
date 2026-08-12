@@ -76,15 +76,21 @@ Qui reaches it through the existing `172.60.0.1:5000` route.
 
 ## Qui External Programs
 
-The existing Qui programs should continue to use `/config/ua-submit` with
-their current path mappings. That wrapper posts to `/api/qui/submit`, adds
-unattended mode, and reads the API token from `/config/.ua-token`.
+The local Qui external program uses `/config/ua-submit` with the local UA
+token. The Whatbox entry uses `/config/ua-submit-whatbox`, which posts to the
+Whatbox WebUI and reads `/config/.ua-token-whatbox`.
+
+For the Whatbox qBittorrent instance, the external-program path mapping must
+rewrite the qBittorrent host path `/mnt/mpathr/artemisprime` to the path seen
+by the Whatbox Upload Assistant container, `/mnt/seeding`. Its argument
+template is `{content_path} -client qbittorrent`; the wrapper supplies the
+unattended mode and session prefix.
 
 For dashboards or automation, use `/api/qui/events` with a persisted cursor for incremental updates, `/api/qui/summary` for low-cost counts, `/api/qui/retry` for validated bulk recovery, and `/api/release_history` for cross-restart release outcomes. `/api/qui/status` remains the authoritative live resynchronization snapshot. All endpoints use the same Upload Assistant API token policy as the submit wrapper.
 
-No Qui database migration is required. Both existing external-program entries
-already point to this wrapper; historical stale IPs in old logs are not active
-configuration.
+No Qui database migration is required for normal installs. Existing external-
+program entries can be edited in Qui's External Programs settings; historical
+stale IPs in old logs are not active configuration.
 
 ## Branches
 

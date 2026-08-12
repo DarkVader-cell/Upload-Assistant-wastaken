@@ -30,6 +30,7 @@ service names. Indian and South Asian services currently include:
 | `SPLAY` | Sainaplay, Saina Play, SainaPlay |
 | `DSCV` | Discovery+ |
 | `CRKI` | Chorki, chorki |
+| `MA` | Movies Anywhere, YKW |
 
 Service codes are uppercase except for the established conventional codes
 `iP`, `iT`, and `iQIYI`. SonyLIV is also detected when a filename joins it to

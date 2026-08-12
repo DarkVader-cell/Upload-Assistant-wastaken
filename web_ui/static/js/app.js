@@ -83,6 +83,7 @@ const sanitizeBbcodePreview = (html) => {
       "data-bbcode-color",
       "href",
       "src",
+      "target",
       "title",
     ],
   });

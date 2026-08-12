@@ -10,12 +10,13 @@ from typing import Any, cast
 import defusedxml.xmlrpc
 import httpx
 import qbittorrentapi
+from deluge_client import DelugeRPCClient
 from torf import Torrent
 
 from src.console import logger
 from src.meta import Meta
 from src.torrent_clients import DelugeClientMixin, QbittorrentClientMixin, RtorrentClientMixin, TransmissionClientMixin
-from src.torrent_clients.path_utils import coerce_str_list, is_path_under
+from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local
 from src.torrentcreate import SUBTITLE_EXTENSIONS
 
 # Secure XML-RPC client using defusedxml to prevent XML attacks
@@ -297,7 +298,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                 continue
 
             try:
-                result = await self._search_single_client_for_torrent(meta, client_name, prefer_small_pieces, mtv_torrent, piece_limit, best_match)
+                result = await self._search_single_client_for_torrent(meta, client_name, prefer_small_pieces, piece_limit, best_match)
             except Exception as error:
                 logger.info(f"[yellow]Torrent search failed for client '{client_name}', continuing with remaining clients: {error}[/yellow]")
                 continue
@@ -350,7 +351,13 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
 
         client = self.config["TORRENT_CLIENTS"][client_name]
         torrent_client = client.get("torrent_client", "").lower()
-        torrent_storage_dir = client.get("torrent_storage_dir")
+        torrent_storage_dir_value = client.get("torrent_storage_dir")
+        torrent_storage_dir = str(torrent_storage_dir_value).strip() if torrent_storage_dir_value else ""
+        if torrent_storage_dir:
+            # Seedbox configs commonly use ``~`` for Deluge's session folder.
+            # Path does not expand it itself, so normalize it before looking up
+            # the state torrent files.
+            torrent_storage_dir = os.path.expandvars(str(Path(torrent_storage_dir).expanduser()))
         qbt_client: qbittorrentapi.Client | None = None
         proxy_url: str | None = None
 
@@ -423,6 +430,73 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                     return resolved_path
 
         # Search the client if no pre-specified hash matches
+        if torrent_client == "deluge" and torrent_storage_dir:
+            try:
+                deluge_client = DelugeRPCClient(client["deluge_url"], int(client["deluge_port"]), client["deluge_user"], client["deluge_pass"])
+                await asyncio.wait_for(asyncio.to_thread(deluge_client.connect), timeout=15.0)
+                if deluge_client.connected:
+                    torrent_status = await asyncio.wait_for(
+                        asyncio.to_thread(deluge_client.call, "core.get_torrents_status", {}, ["name", "save_path"]),
+                        timeout=20.0,
+                    )
+                    source_path = Path(str(meta.path)) if meta.path is not None else None
+                    source_name = source_path.name.casefold() if source_path else ""
+                    local_paths = coerce_str_list(client.get("local_path"))
+                    remote_paths = coerce_str_list(client.get("remote_path"))
+                    checked_hashes: set[str] = set()
+                    for torrent_hash, status in torrent_status.items():
+                        torrent_name = status.get(b"name", status.get("name", b""))
+                        save_path = status.get(b"save_path", status.get("save_path", b""))
+                        if isinstance(torrent_name, bytes):
+                            torrent_name = torrent_name.decode(errors="replace")
+                        if isinstance(save_path, bytes):
+                            save_path = save_path.decode(errors="replace")
+                        if str(torrent_name).casefold() != source_name:
+                            continue
+
+                        # map_client_path_to_local takes local_path first and
+                        # remote_path second (the inverse of map_save_path).
+                        mapped_save_path = map_client_path_to_local(save_path, local_paths[0] if local_paths else None, remote_paths[0] if remote_paths else None)
+                        if source_path is None or not is_path_under(source_path, mapped_save_path):
+                            continue
+
+                        if isinstance(torrent_hash, bytes):
+                            torrent_hash = torrent_hash.decode(errors="replace")
+                        torrent_hash = str(torrent_hash).strip().lower()
+                        checked_hashes.add(torrent_hash)
+                        torrent_path = Path(torrent_storage_dir) / f"{torrent_hash}.torrent"
+                        valid, resolved_path = await self.is_valid_torrent(meta, str(torrent_path), str(torrent_hash), torrent_client, client)
+                        if valid:
+                            meta.reuse_torrent_client = client_name
+                            logger.info(f"[green]Found valid torrent in Deluge by name: {torrent_name}[/green]")
+                            return resolved_path
+
+                    # Deluge's reported name/save_path is not reliable across
+                    # WebUI versions and path mappings.  The session directory
+                    # is authoritative for the torrent metainfo, so validate
+                    # its files directly as a fallback.
+                    storage_path = Path(torrent_storage_dir)
+                    if storage_path.is_dir():
+                        for torrent_path in storage_path.glob("*.torrent"):
+                            torrent_hash = torrent_path.stem.casefold()
+                            if torrent_hash in checked_hashes:
+                                continue
+                            valid, resolved_path = await self.is_valid_torrent(meta, str(torrent_path), torrent_hash, torrent_client, client)
+                            if valid:
+                                meta.reuse_torrent_client = client_name
+                                logger.info(f"[green]Found valid torrent in Deluge session storage: {torrent_path.name}[/green]")
+                                return resolved_path
+                    else:
+                        logger.info(f"[yellow]Deluge torrent storage directory is not accessible: {storage_path}[/yellow]")
+                else:
+                    logger.info("[yellow]Connected to Deluge RPC but the client is not connected[/yellow]")
+            except asyncio.TimeoutError:
+                logger.warning("[yellow]Deluge torrent search timed out after 35 seconds; continuing without torrent reuse[/yellow]")
+            except Exception as error:
+                logger.info(f"[yellow]Deluge torrent search failed; continuing without torrent reuse: {error}[/yellow]")
+        elif torrent_client == "deluge":
+            logger.info("[yellow]Deluge reuse requires torrent_storage_dir to be set to Deluge's session directory[/yellow]")
+
         if torrent_client == "qbit" and client.get("enable_search"):
             qbt_session: httpx.AsyncClient | None = None
             try:
