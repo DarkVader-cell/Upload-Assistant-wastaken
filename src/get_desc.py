@@ -1382,6 +1382,44 @@ class DescriptionBuilder:
 
         return description_str
 
+    async def unit3d_edit_desc(
+        self,
+        meta: Meta,
+        signature: str = "",
+        desc_header: str = "",
+        approved_image_hosts: list[str] | None = None,
+        audio_spectrogram: bool = True,
+    ) -> str:
+        """Build the standard UNIT3D description used by manual uploads.
+
+        Keep this compatibility entry point for the tracker handling path and
+        extensions that use the older, more descriptive method name.
+        """
+        return await self.general_description_generator(
+            meta,
+            audio_spectrogram=audio_spectrogram,
+            bluray=True,
+            book=True,
+            custom_header=True,
+            custom_signature=True,
+            description=True,
+            game=True,
+            languages=False,
+            logo=True,
+            mediainfo=False,
+            menu_screenshots=True,
+            nfo=False,
+            screenshots=True,
+            tonemapped_header=True,
+            tv_info=True,
+            ua_signature=True,
+            user_description=True,
+            music=True,
+            signature=signature,
+            desc_header=desc_header,
+            approved_image_hosts=approved_image_hosts,
+        )
+
     async def _check_saved_pack_image_links(self, meta: Meta, approved_image_hosts: list[str]) -> dict[str, Any]:
         pack_images_file = Path(meta.base_dir) / "tmp" / meta.uuid / "pack_image_links.json"
         pack_images_data: dict[str, Any] = {}
