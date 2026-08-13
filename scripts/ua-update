@@ -24,7 +24,7 @@ update_whatbox() {
     export SSHPASS="$UA_WHATBOX_PASSWORD"
     sshpass -e ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password \
         -o StrictHostKeyChecking=yes "$whatbox_user@$whatbox_host" \
-        "cd ~/$whatbox_repo && podman pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest && podman tag ghcr.io/darkvader-cell/upload-assistant-wastaken:latest localhost/upload-assistant-wastaken:local && podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken && podman ps --filter name=upload-assistant-wastaken --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'"
+        "cd ~/$whatbox_repo && podman pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest && podman tag ghcr.io/darkvader-cell/upload-assistant-wastaken:latest localhost/upload-assistant-wastaken:local && podman rm -f upload-assistant-wastaken 2>/dev/null || true; podman pod rm -f upload-assistant-wastaken 2>/dev/null || true; cd ~/$whatbox_repo && podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken && podman ps --filter name=upload-assistant-wastaken --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'"
 }
 
 case "${1:-}" in
