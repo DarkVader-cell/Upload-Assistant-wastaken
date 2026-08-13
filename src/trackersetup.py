@@ -43,11 +43,15 @@ from src.trackers.makingoff import MakingOff
 from src.trackers.mteam import MTeam
 from src.trackers.nebulance import Nebulance
 from src.trackers.NEXUSPHP.lajidui import Lajidui
+from src.trackers.NEXUSPHP.lemonhd import LemonHD
 from src.trackers.NEXUSPHP.longpt import LongPT
+from src.trackers.NEXUSPHP.oneptba import OnePTBA
 from src.trackers.NEXUSPHP.ptcafe import PTCafe
 from src.trackers.NEXUSPHP.ptfans import PTFans
 from src.trackers.NEXUSPHP.ptgtk import PTGTK
+from src.trackers.NEXUSPHP.ptzone import PTZone
 from src.trackers.NEXUSPHP.railgunpt import RailgunPT
+from src.trackers.NEXUSPHP.xingyungept import XingyungePT
 from src.trackers.orpheus import Orpheus
 from src.trackers.passthepopcorn import PassThePopcorn
 from src.trackers.pterclub import PTerClub
@@ -1395,6 +1399,7 @@ tracker_class_map: dict[str, Any] = {
     "IMMORTALSEED": ImmortalSeed,
     "ITATORRENTS": ItaTorrents,
     "LAJIDUI": Lajidui,
+    "LEMONHD": LemonHD,
     "LOCADORA": Locadora,
     "LASTDIGITALUNDERGROUND": LastDigitalUnderground,
     "LONGPT": LongPT,
@@ -1415,6 +1420,7 @@ tracker_class_map: dict[str, Any] = {
     "PTERCLUB": PTerClub,
     "PTFANS": PTFans,
     "PTGTK": PTGTK,
+    "PTZONE": PTZone,
     "PASSTHEPOPCORN": PassThePopcorn,
     "PTSKIT": Ptskit,
     "PEERGARDEN": PeerGarden,
@@ -1440,6 +1446,8 @@ tracker_class_map: dict[str, Any] = {
     "TOTHEGLORY": ToTheGlory,
     "TORRENTEROS": Torrenteros,
     "TVCHAOSUK": TVChaosUK,
+    "1PTBA": OnePTBA,
+    "XINGYUNGEPT": XingyungePT,
     "ULCX": ULCX,
     "UTOPIA": Utopia,
     "YUSCENE": YUSCENE,

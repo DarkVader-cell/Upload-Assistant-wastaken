@@ -57,12 +57,11 @@ from src.runtime.pipeline import FunctionStage, Pipeline, StageResult, StageStat
 from src.runtime.planner import build_execution_plan, preparation_pipeline_signature
 from src.runtime.queue import SafeParallelPreparation
 from src.takescreens import TakeScreensManager, download_artwork_from_meta
-from src.temp_paths import artwork_dir, screenshots_dir
+from src.temp_paths import artwork_dir, music_release_snapshot_path, screenshots_dir
 from src.torrentcreate import TorrentCreator
 from src.trackerhandle import process_trackers
 from src.trackers.alpharatio import AlphaRatio
 from src.trackers.common import Common
-from src.trackers.digitalcore import DigitalCore
 from src.trackers.passthepopcorn import PassThePopcorn
 from src.trackersetup import TrackerSetup, api_trackers, http_trackers, other_api_trackers, tracker_class_map
 from src.trackerstatus import TrackerStatusManager
@@ -901,23 +900,24 @@ def _download_music_cover(url: str) -> bytes | None:
 
 
 async def _write_music_snapshot(meta: Meta) -> None:
-    path = Path(meta.base_dir) / "tmp" / str(meta.uuid) / "music_release.json"
+    path = music_release_snapshot_path(meta.base_dir, str(meta.uuid))
     path.parent.mkdir(parents=True, exist_ok=True)
     async with aiofiles.open(path, "w", encoding="utf-8") as file:
         await file.write(json.dumps(meta.music_release, indent=2, cls=PathAwareEncoder))
 
 
-def _music_cover_allowed_hosts(config: Mapping[str, Any], trackers: Iterable[Any]) -> list[str]:
-    """Return image hosts accepted by DigitalCore and every selected constrained tracker."""
-    approved_hosts = set(getattr(DigitalCore(config=config), "approved_image_hosts", ()))
+def _music_cover_allowed_hosts(trackers: Iterable[Any]) -> list[str] | None:
+    """Return the hosts accepted by every selected tracker with a host policy."""
+    approved_hosts: set[str] | None = None
     for tracker_name in trackers:
         tracker_class = tracker_class_map.get(str(tracker_name).upper())
         if tracker_class is None:
             continue
-        tracker_hosts = getattr(tracker_class(config=config), "approved_image_hosts", None)
+        tracker_hosts = getattr(tracker_class, "approved_image_hosts", None)
         if tracker_hosts:
-            approved_hosts &= {str(host) for host in tracker_hosts}
-    return sorted(approved_hosts)
+            hosts = {str(host) for host in tracker_hosts}
+            approved_hosts = hosts if approved_hosts is None else approved_hosts & hosts
+    return sorted(approved_hosts) if approved_hosts is not None else None
 
 
 async def _host_music_cover(meta: Meta, uploadscreens_manager: UploadScreensManager, allowed_hosts: list[str] | None = None) -> None:
@@ -1311,6 +1311,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
         trackers = meta.trackers
 
         for tracker in [
+            "1PTBA",
             "ASIANCINEMA",
             "AITHER",
             "AMIGOSSHARE",
@@ -1325,6 +1326,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
             "INFINITYHD",
             "LAJIDUI",
             "LASTDIGITALUNDERGROUND",
+            "LEMONHD",
             "LONGPT",
             "LATTEAM",
             "MAKINGOFF",
@@ -1332,6 +1334,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
             "PTCAFE",
             "PTGTK",
             "PTSKIT",
+            "PTZONE",
             "RAILGUNPT",
             "SAMARITANO",
             "SHAREISLAND",
@@ -1340,6 +1343,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
             "TORRENTEROS",
             "TVCHAOSUK",
             "ULCX",
+            "XINGYUNGEPT",
         ]:
             if tracker in trackers:
                 status_dict = meta.tracker_status.setdefault(tracker, {})
@@ -1632,8 +1636,8 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
             if "image_list" not in meta:
                 meta.image_list = []
             if meta.category == "MUSIC":
-                allowed_hosts = _music_cover_allowed_hosts(config, cast(list[Any], meta.trackers))
-                if not allowed_hosts:
+                allowed_hosts = _music_cover_allowed_hosts(cast(list[Any], meta.trackers))
+                if allowed_hosts == []:
                     logger.warning("[yellow]MUSIC: no image host is approved by all selected trackers.[/yellow]")
                     return False
                 await _host_music_cover(meta, uploadscreens_manager, allowed_hosts)

@@ -39,6 +39,17 @@ def test_text_reports_always_request_mediainfo_version() -> None:
     assert run.call_args.args[0] == ["mediainfo", "--inform_version=1", "video.mkv"]
 
 
+def test_mediainfo_uses_tolerant_utf8_output_decoding() -> None:
+    completed = Mock(returncode=0, stdout="General", stderr="")
+    with patch("src.mediainfo._binary", return_value="mediainfo"), patch("src.mediainfo.subprocess.run", return_value=completed) as run:
+        from src.mediainfo import run_mediainfo
+
+        run_mediainfo("audio.m4b")
+
+    assert run.call_args.kwargs["encoding"] == "utf-8"
+    assert run.call_args.kwargs["errors"] == "replace"
+
+
 def test_mediainfo_timeout_becomes_runtime_error() -> None:
     with patch("src.mediainfo._binary", return_value="mediainfo"), patch("src.mediainfo.subprocess.run", side_effect=subprocess.TimeoutExpired("mediainfo", 900)):
         from src.mediainfo import run_mediainfo
@@ -119,3 +130,15 @@ def test_macos_falls_back_to_path_when_downloaded_binary_is_unavailable(tmp_path
         patch("bin.get_mediainfo.shutil.which", return_value="/opt/homebrew/bin/mediainfo"),
     ):
         assert MediaInfoBinaryManager.find_existing_binary(tmp_path) == "/opt/homebrew/bin/mediainfo"
+
+
+def test_linux_falls_back_to_path_when_downloaded_binary_is_unavailable(tmp_path) -> None:
+    from bin.get_mediainfo import MediaInfoBinaryManager
+
+    with (
+        patch.object(MediaInfoBinaryManager, "_is_android", return_value=False),
+        patch.object(MediaInfoBinaryManager, "_is_macos", return_value=False),
+        patch.object(MediaInfoBinaryManager, "_platform_info", return_value=("linux", "MediaInfo_CLI_26.05_Lambda_x86_64.zip", "mediainfo", "zip")),
+        patch("bin.get_mediainfo.shutil.which", return_value="/usr/bin/mediainfo"),
+    ):
+        assert MediaInfoBinaryManager.find_existing_binary(tmp_path) == "/usr/bin/mediainfo"

@@ -655,8 +655,7 @@ class DescriptionBuilder:
                     img_url = spec_img.get("img_url", raw_url) or ""
                     if web_url and raw_url:
                         desc_parts.append(self.format_screenshot(web_url, raw_url, img_url))
-                        if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                            desc_parts.append("\n")
+                        self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
             desc_parts.append("[/center]\n")
             return "".join(desc_parts)
         except Exception as e:
@@ -1272,7 +1271,23 @@ class DescriptionBuilder:
         if self.tracker == "MTEAM" and meta.mteam_description:
             desc_parts.append(meta.mteam_description)
 
-        if self.tracker in {"LAJIDUI", "LONGPT", "PTCAFE", "PTFANS", "PTGTK", "RAILGUNPT", "NEXUSPHP"} and meta.nexusphp_description:
+        if (
+            self.tracker
+            in {
+                "1PTBA",
+                "LAJIDUI",
+                "LEMONHD",
+                "LONGPT",
+                "PTCAFE",
+                "PTFANS",
+                "PTGTK",
+                "PTZONE",
+                "RAILGUNPT",
+                "XINGYUNGEPT",
+                "NEXUSPHP",
+            }
+            and meta.nexusphp_description
+        ):
             desc_parts.append(meta.nexusphp_description)
 
         meta_description_value = meta.description
@@ -1367,39 +1382,6 @@ class DescriptionBuilder:
 
         return description_str
 
-    async def unit3d_edit_desc(
-        self,
-        meta: Meta,
-        signature: str = "",
-        desc_header: str = "",
-        approved_image_hosts: list[str] | None = None,
-        audio_spectrogram: bool = True,
-    ) -> str:
-        return await self.general_description_generator(
-            meta,
-            audio_spectrogram=audio_spectrogram,
-            bluray=True,
-            book=True,
-            custom_header=True,
-            custom_signature=True,
-            description=True,
-            game=True,
-            languages=False,
-            logo=True,
-            mediainfo=False,
-            menu_screenshots=True,
-            nfo=False,
-            screenshots=True,
-            tonemapped_header=True,
-            tv_info=True,
-            ua_signature=True,
-            user_description=True,
-            music=True,
-            signature=signature,
-            desc_header=desc_header,
-            approved_image_hosts=approved_image_hosts,
-        )
-
     async def _check_saved_pack_image_links(self, meta: Meta, approved_image_hosts: list[str]) -> dict[str, Any]:
         pack_images_file = Path(meta.base_dir) / "tmp" / meta.uuid / "pack_image_links.json"
         pack_images_data: dict[str, Any] = {}
@@ -1493,8 +1475,7 @@ class DescriptionBuilder:
                 web_url = images[img_index]["web_url"]
                 raw_url = images[img_index]["raw_url"]
                 desc_parts.append(self.format_screenshot(web_url, raw_url))
-                if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                    desc_parts.append("\n")
+                self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
             desc_parts.append("[/center]")
             return "".join(desc_parts)
 
@@ -1513,8 +1494,7 @@ class DescriptionBuilder:
                 raw_url = images[img_index]["raw_url"]
                 img_url = images[img_index].get("img_url", raw_url)
                 desc_parts.append(self.format_screenshot(web_url, raw_url, img_url))
-                if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                    desc_parts.append("\n")
+                self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
             desc_parts.append("[/center]")
             if each["type"] == "BDMV":
                 bdinfo_keys = [key for key in each if key.startswith("bdinfo")]
@@ -1553,11 +1533,12 @@ class DescriptionBuilder:
                             desc_parts.append(f"[spoiler={edition}][code]{summary}[/code][/spoiler]\n\n")
                             logger.debug("[yellow]Using original uploaded images for first disc")
                             desc_parts.append("[center]")
-                            for img in meta[new_images_key]:
+                            for img_index, img in enumerate(meta[new_images_key]):
                                 web_url = img["web_url"]
                                 raw_url = img["raw_url"]
                                 img_url = img.get("img_url", raw_url)
                                 desc_parts.append(self.format_screenshot(web_url, raw_url, img_url, thumb_size))
+                                self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
                             desc_parts.append("[/center]\n\n")
                         else:
                             desc_parts.append("[center]\n\n")
@@ -1592,11 +1573,12 @@ class DescriptionBuilder:
                                     )
 
                                 desc_parts.append("[center]")
-                                for img in uploaded_images:
+                                for img_index, img in enumerate(uploaded_images):
                                     web_url = img["web_url"]
                                     raw_url = img["raw_url"]
                                     img_url = img.get("img_url", raw_url) or ""
                                     desc_parts.append(self.format_screenshot(web_url, raw_url, img_url, thumb_size))
+                                    self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
                                 desc_parts.append("[/center]\n\n")
 
                             meta_filename = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json"
@@ -1638,8 +1620,7 @@ class DescriptionBuilder:
                         raw_url = images[img_index]["raw_url"]
                         img_url = images[img_index].get("img_url", raw_url)
                         desc_parts.append(self.format_screenshot(web_url, raw_url, img_url, thumb_size))
-                        if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                            desc_parts.append("\n")
+                        self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
                     desc_parts.append("[/center]\n\n")
                 else:
                     if multi_screens != 0:
@@ -1677,11 +1658,12 @@ class DescriptionBuilder:
                             desc_parts.append("[/center]\n\n")
                             # Use existing URLs from meta to write to descfile
                             desc_parts.append("[center]")
-                            for img in meta[new_images_key]:
+                            for img_index, img in enumerate(meta[new_images_key]):
                                 web_url = img["web_url"]
                                 raw_url = img["raw_url"]
                                 img_url = img.get("img_url", raw_url)
                                 desc_parts.append(self.format_screenshot(web_url, raw_url, img_url, thumb_size))
+                                self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
                             desc_parts.append("[/center]\n\n")
                         else:
                             # Increment retry_count for tracking but use unique disc keys for each disc
@@ -1731,11 +1713,12 @@ class DescriptionBuilder:
 
                                 # Write new URLs to descfile
                                 desc_parts.append("[center]")
-                                for img in uploaded_images:
+                                for img_index, img in enumerate(uploaded_images):
                                     web_url = img["web_url"]
                                     raw_url = img["raw_url"]
                                     img_url = img.get("img_url", raw_url) or ""
                                     desc_parts.append(self.format_screenshot(web_url, raw_url, img_url, thumb_size))
+                                    self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
                                 desc_parts.append("[/center]\n\n")
 
                             # Save the updated meta to `meta.json` after upload
@@ -1784,8 +1767,7 @@ class DescriptionBuilder:
                 raw_url = images[img_index]["raw_url"]
                 img_url = images[img_index].get("img_url", raw_url)
                 desc_parts.append(self.format_screenshot(web_url, raw_url, img_url))
-                if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                    desc_parts.append("\n")
+                self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row)
             desc_parts.append("[/center]")
 
         # Handle multiple files case
@@ -1930,20 +1912,20 @@ class DescriptionBuilder:
                             image_str = self.format_screenshot(web_url, raw_url, img_url, thumb_size)
                             desc_parts.append(image_str)
                             char_count += len(image_str)
-                            if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                                desc_parts.append("\n")
+                            char_count += len(self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row))
                         desc_parts.append("[/center]\n\n")
                         char_count += len("[/center]\n\n")
                 elif multi_screens != 0 and new_images_key in meta and meta[new_images_key]:
                     desc_parts.append("[center]")
                     char_count += len("[center]")
-                    for img in meta[new_images_key]:
+                    for img_index, img in enumerate(meta[new_images_key]):
                         web_url = img["web_url"]
                         raw_url = img["raw_url"]
                         img_url = img.get("img_url", raw_url)
                         image_str = self.format_screenshot(web_url, raw_url, img_url, thumb_size)
                         desc_parts.append(image_str)
                         char_count += len(image_str)
+                        char_count += len(self._append_screenshot_row_separator(desc_parts, img_index, screens_per_row))
                     desc_parts.append("[/center]\n\n")
                     char_count += len("[/center]\n\n")
 
@@ -1960,6 +1942,9 @@ class DescriptionBuilder:
 
     async def get_screens_per_row(self) -> int:
         try:
+            if self.tracker == "TORRENTLEECH":
+                return 2
+
             # If screens_per_row is set, use that to determine how many screenshots should be on each row. Otherwise, use 2 as default
             screens_per_row = self._get_int_config("screens_per_row", 2)
             if self.tracker == "HAWKEUNO":
@@ -1970,6 +1955,14 @@ class DescriptionBuilder:
         except Exception:
             screens_per_row = 2
         return screens_per_row
+
+    def _append_screenshot_row_separator(self, parts: list[str], image_index: int, screens_per_row: int) -> str:
+        if not screens_per_row or (image_index + 1) % screens_per_row != 0:
+            return ""
+
+        separator = "<br><br>" if self.tracker == "TORRENTLEECH" else "\n"
+        parts.append(separator)
+        return separator
 
     async def menu_section(self, meta: Meta) -> str:
         menu_image_section = ""
@@ -1990,8 +1983,7 @@ class DescriptionBuilder:
                         if not web_url or not raw_url:
                             continue
                         menu_parts.append(self.format_screenshot(web_url, raw_url, img_url))
-                        if screens_per_row and (img_index + 1) % screens_per_row == 0:
-                            menu_parts.append("\n")
+                        self._append_screenshot_row_separator(menu_parts, img_index, screens_per_row)
                     menu_parts.append("[/center]\n\n")
                     menu_image_section = "".join(menu_parts)
         except Exception as e:
@@ -2005,13 +1997,25 @@ class DescriptionBuilder:
         if not thumb_size:
             thumb_size = self._get_int_config("thumbnail_size", 350)
 
-        nexusphp_trackers = {"LAJIDUI", "LONGPT", "PTCAFE", "PTFANS", "PTGTK", "RAILGUNPT", "NEXUSPHP"}
+        nexusphp_trackers = {
+            "1PTBA",
+            "LAJIDUI",
+            "LEMONHD",
+            "LONGPT",
+            "PTCAFE",
+            "PTFANS",
+            "PTGTK",
+            "PTZONE",
+            "RAILGUNPT",
+            "XINGYUNGEPT",
+            "NEXUSPHP",
+        }
         if self.tracker in nexusphp_trackers:
             return f"[img]{raw_url}[/img]"
         if self.tracker == "HDTORRENTS":
             return f"<a href='{raw_url}'><img src='{img_url}' height=137></a> "
         if self.tracker == "TORRENTLEECH":
-            return f'<a href="{web_url}"><img src="{img_url}" style="max-width: {thumb_size}px;"></a>  '
+            return f'<a href="{web_url}"><img src="{img_url}" style="max-width: 350px;"></a>  '
         if self.tracker == "FUNFILE":
             return f'<a href="{web_url}" target="_blank"><img src="{img_url}" width="{thumb_size}"></a> '
         if self.tracker == "GREATPOSTERWALL":
