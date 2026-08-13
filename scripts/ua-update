@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_dir="${UA_REPO_DIR:-/home/artemis/Upload-Assistant-wastaken}"
+compose_file="${UA_COMPOSE_FILE:-/opt/yams/docker-compose.yaml}"
+env_file="${UA_COMPOSE_ENV:-/opt/yams/.env}"
+whatbox_host="${UA_WHATBOX_HOST:-cactus.whatbox.ca}"
+whatbox_user="${UA_WHATBOX_USER:-artemisprime}"
+whatbox_repo="${UA_WHATBOX_REPO:-Upload-Assistant-wastaken}"
+
+update_local() {
+    echo "Updating local homelab..."
+    cd "$repo_dir"
+    git switch main
+    git pull --ff-only origin main
+    docker compose --env-file "$env_file" -f "$compose_file" pull upload-assistant
+    docker compose --env-file "$env_file" -f "$compose_file" up -d --force-recreate upload-assistant
+    docker compose --env-file "$env_file" -f "$compose_file" ps upload-assistant
+}
+
+update_whatbox() {
+    : "${UA_WHATBOX_PASSWORD:?Set UA_WHATBOX_PASSWORD in ~/.config/upload-assistant/whatbox.env}"
+    echo "Updating Whatbox..."
+    export SSHPASS="$UA_WHATBOX_PASSWORD"
+    sshpass -e ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password \
+        -o StrictHostKeyChecking=yes "$whatbox_user@$whatbox_host" \
+        "cd ~/$whatbox_repo && podman pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest && podman tag ghcr.io/darkvader-cell/upload-assistant-wastaken:latest localhost/upload-assistant-wastaken:local && podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken && podman ps --filter name=upload-assistant-wastaken --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'"
+}
+
+case "${1:-}" in
+    local)
+        update_local
+        ;;
+    whatbox)
+        update_whatbox
+        ;;
+    "")
+        update_local
+        update_whatbox
+        ;;
+    *)
+        echo "Usage: ua update [local|whatbox]" >&2
+        exit 2
+        ;;
+esac
