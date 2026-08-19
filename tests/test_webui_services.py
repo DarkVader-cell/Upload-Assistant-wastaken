@@ -51,6 +51,6 @@ def test_detached_snapshot_redacts_commands_and_sets_capabilities():
 
 
 def test_detached_argument_validation_keeps_unattended_compatibility():
-    validated, rendered = validate_detached_args('--trackers "OE, MTV"', True, lambda args: list(args))
-    assert validated == ["--trackers", "OE, MTV", "-ua"]
-    assert rendered == "--trackers OE, MTV -ua"
+    validated, rendered = validate_detached_args('--trackers "OE, AITHER"', True, lambda args: list(args))
+    assert validated == ["--trackers", "OE, AITHER", "-ua"]
+    assert rendered == "--trackers OE, AITHER -ua"

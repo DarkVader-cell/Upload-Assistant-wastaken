@@ -75,7 +75,7 @@ def test_detached_qui_restore_marks_inflight_jobs_retryable(tmp_path, monkeypatc
 
 
 def test_detached_operation_arguments_are_validated_and_unattended():
-    validated, display = webui_server._validated_detached_args('--trackers "OE, MTV"')
+    validated, display = webui_server._validated_detached_args('--trackers "OE, AITHER"')
     assert validated[-1] == "-ua"
     assert display.endswith("-ua")
 

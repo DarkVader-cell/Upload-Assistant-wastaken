@@ -359,9 +359,11 @@ const trackerNameMap = {
   ZENITH: "Zenith",
   "1PTBA": "1PTBA",
 };
+let trackerDisplayNames = {};
 
 const getTrackerDisplayName = (acronym) => {
-  return trackerNameMap[acronym.toUpperCase()] || acronym;
+  const key = String(acronym || "").toUpperCase();
+  return trackerDisplayNames[key] || trackerNameMap[key] || acronym;
 };
 
 const getImageHostForApiKey = (key) => {
@@ -1467,6 +1469,12 @@ function ItemList({
     }
   });
 
+  // Drop optimistic tracker selections after the server returns the saved
+  // configuration so the tabs always reflect the persisted value.
+  useEffect(() => {
+    setPendingDefaultAdds(new Set());
+  }, [defaultTrackersItem ? defaultTrackersItem.value : ""]);
+
   const normalizeTrackers = (value) =>
     String(value || "")
       .split(",")
@@ -1480,19 +1488,22 @@ function ItemList({
   let availableRemaining = [];
   let configuredArray = [];
   let availableArray = [];
+  const trackerItems = (regularItems || []).filter(
+    (item) => item && item.children && item.key !== "default_trackers",
+  );
   if (isTrackerConfig && defaultTrackersItem) {
     availableFromExample = getAvailableTrackers(defaultTrackersItem).map((t) =>
       String(t).toUpperCase(),
     );
     selectedFromDefault = new Set(normalizeTrackers(defaultTrackersItem.value));
     configuredFromSubsections = new Set(
-      (subsections || [])
+      trackerItems
         .filter(
-          (s) =>
-            Array.isArray(s.children) &&
-            s.children.some((c) => c.source === "config"),
+          (item) =>
+            String(item.source).toLowerCase() === "config" ||
+            item.children.some((child) => child.source === "config"),
         )
-        .map((s) => String(s.key).toUpperCase()),
+        .map((item) => String(item.key).toUpperCase()),
     );
     configuredSet = new Set([
       ...selectedFromDefault,
@@ -1600,8 +1611,8 @@ function ItemList({
                       </div>
                     )}
                     {configuredArray.map((tr) => {
-                      const subsection = subsections.find(
-                        (s) => String(s.key).toUpperCase() === tr,
+                      const subsection = trackerItems.find(
+                        (item) => String(item.key).toUpperCase() === tr,
                       );
                       if (subsection) {
                         const groupKey = [...pathParts, subsection.key].join(
@@ -1858,8 +1869,8 @@ function ItemList({
                   )}
                   <div className="space-y-2">
                     {availableArray.map((t) => {
-                      const subsection = subsections.find(
-                        (s) => String(s.key).toUpperCase() === t,
+                      const subsection = trackerItems.find(
+                        (item) => String(item.key).toUpperCase() === t,
                       );
                       const isInDefault =
                         selectedFromDefault && selectedFromDefault.has(t);
@@ -3409,10 +3420,30 @@ function ConfigApp() {
         text: isRetry ? "Retrying..." : "Loading config options...",
         type: "info",
       });
-      const response = await apiFetch(`${API_BASE}/config_options`);
+      // Config is edited in this page, so never allow an intermediary/browser
+      // cache to replay the previous tracker/default values after saving.
+      const response = await apiFetch(
+        `${API_BASE}/config_options?ts=${Date.now()}`,
+      );
       const data = await response.json();
       if (!data.success) {
         throw new Error(data.error || "Failed to load config options");
+      }
+      try {
+        const trackerResponse = await apiFetch(
+          `${API_BASE}/trackers?ts=${Date.now()}`,
+        );
+        const trackerData = await trackerResponse.json();
+        if (trackerData.success && Array.isArray(trackerData.trackers)) {
+          trackerDisplayNames = Object.fromEntries(
+            trackerData.trackers.map((tracker) => [
+              String(tracker.name).toUpperCase(),
+              tracker.display_name || tracker.name,
+            ]),
+          );
+        }
+      } catch (error) {
+        console.warn("Failed to load tracker display names:", error);
       }
       const newSections = data.sections || [];
       setSections(newSections);

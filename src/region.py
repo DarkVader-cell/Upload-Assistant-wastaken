@@ -2220,7 +2220,6 @@ async def get_service(
         "Movies Anywhere": "MA",
         "MSNBC": "MNBC",
         "MTOD": "MTOD",
-        "MTV": "MTV",
         "MUBI": "MUBI",
         "NATG": "NATG",
         "National Audiovisual Institute": "INA",
