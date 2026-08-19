@@ -164,18 +164,7 @@ Note: if a manual TMDb or IMDb id is present in the incoming `meta` before parsi
 These accept either an id or a full URL; when a URL is provided, the parser attempts to extract the id.
 These will parse the torrent descriptions from supported sites, and grab metadata ids to assist with accuracy.
 
-- `-ptp`, `--ptp ID_OR_URL`: PASSTHEPOPCORN torrent id/permalink. (Extracts `torrentid` from query string.)
-- `-blu`, `--blu ID_OR_URL`: BLUTOPIA torrent id/link. (Extracts last path segment.)
-- `-aither`, `--aither ID_OR_URL`: Aither torrent id/link. (Extracts last path segment.)
-- `-lst`, `--lst ID_OR_URL`: LST torrent id/link. (Extracts last path segment.)
-- `-oe`, `--oe ID_OR_URL`: ONLYENCODES torrent id/link. (Extracts last path segment.)
-- `-tik`, `--tik ID_OR_URL`: CINEMATIK torrent id/link. (No URL parsing here; passes through.)
-- `-hdb`, `--hdb ID_OR_URL`: HDBITS torrent id/link. (Extracts `id` from query string.)
-- `-btn`, `--btn ID_OR_URL`: BTN torrent id/link. (Extracts `id` from query string.)
-- `-bhd`, `--bhd ID_OR_URL`: BEYONDHD torrent id/link.
-  - Tries to extract trailing numeric id from URLs like `/download/... .12345`.
-- `-huno`, `--huno ID_OR_URL`: HAWKEUNO torrent id/link. (Extracts last path segment.)
-- `-ulcx`, `--ulcx ID_OR_URL`: ULCX torrent id/link. (Extracts last path segment.)
+- `--tracker-id TRACKER=ID_OR_URL`: Generic tracker torrent ID; repeat for multiple trackers. Also accepts a tracker torrent URL directly, for example `--tracker-id https://aither.cc/torrents/1234`.
 
 Thise will use the specified hash to get tracker ids from qBitTorrent or rTorrent.
 
@@ -196,6 +185,12 @@ Thise will use the specified hash to get tracker ids from qBitTorrent or rTorren
 - `-dr`, `--draft`: Send to drafts (BEYONDHD, LST).
 - `-mq`, `--modq`: Send to modQ. NOTE: only for suppported UNIT3D type sites.
 - `-fl`, `--freeleech N`: Freeleech percentage (1–100). Default `0`. NOTE: accepts any numeric value, although UNIT3D defaults to only allowing filtering of specific percentages.
+- `-fl-until`, `--freeleech-until N`: Number of days the torrent should offer freeleech (supported UNIT3D trackers, internal/staff only).
+- `-feat`, `--featured`: Mark upload as Featured (supported UNIT3D tracker, internal/staff only).
+- `-dup`, `--double-upload`: Mark upload as Double Upload (supported UNIT3D trackers, internal/staff only).
+- `-dupuntil`, `--double-upload-until N`: Number of days the torrent should offer double upload (supported UNIT3D trackers, internal/staff only).
+- `-ref`, `--refundable`: Mark upload as Refundable (supported UNIT3D trackers, internal/staff only).
+- `-stk`, `--sticky`: Mark upload as Sticky / pinned (supported UNIT3D trackers, internal/staff only).
 
 ## Anonymity / seeding / streaming flags
 

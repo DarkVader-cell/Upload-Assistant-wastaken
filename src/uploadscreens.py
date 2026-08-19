@@ -334,14 +334,18 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
                 logger.info(f"[red]Request failed with error: {e}")
                 return {"status": "failed", "reason": str(e)}
 
-        elif img_host in ("zipline", "midnightscene"):
+        elif img_host in ("zipline", "midnightscene", "bioma"):
             if img_host == "midnightscene":
                 url = "https://img.midnightscene.cc/api/upload"
-                api_key = config["DEFAULT"].get("midnightscene_api_key")
+                api_key = config.get("DEFAULT", {}).get("midnightscene_api_key")
                 host_name = "MidnightScene"
+            elif img_host == "bioma":
+                url = "https://img.thebioma.space/api/upload"
+                api_key = config.get("TRACKERS", {}).get("CAPYBARABR", {}).get("bioma_api_key")
+                host_name = "BiOMA"
             else:
-                url = config["DEFAULT"].get("zipline_url")
-                api_key = config["DEFAULT"].get("zipline_api_key")
+                url = config.get("DEFAULT", {}).get("zipline_url")
+                api_key = config.get("DEFAULT", {}).get("zipline_api_key")
                 host_name = "Zipline"
 
             if not url or not api_key:
@@ -711,7 +715,11 @@ async def _upload_screens(
     else:
         registered_screens = manifest_files(meta.base_dir, meta.uuid, "main")
         if registered_screens:
-            image_glob = [str(path.relative_to(Path.cwd())) for path in registered_screens]
+            # Manifest entries are absolute paths and can live outside the
+            # process working directory on seedboxes.  Keep them absolute:
+            # every image-host adapter accepts a path, and this avoids a
+            # process-global ``cwd`` race between concurrent uploads.
+            image_glob = [str(path) for path in registered_screens]
         else:
             image_patterns = ["*.png", ".[!.]*.png"]
             image_glob = []

@@ -26,12 +26,14 @@ import cli_ui  # pyright: ignore[reportMissingImports]
 import requests
 from torf import Torrent as _Torrent  # pyright: ignore[reportMissingImports,reportUnknownVariableType]
 
+from bin.get_ffmpeg import FfmpegBinaryManager
 from bin.get_mkbrr import MkbrrBinaryManager
 from src.add_comparison import ComparisonManager
 from src.app_paths import CODE_DIR, STATE_DIR
 from src.args import Args, read_paths_from_stdin
 from src.artwork import is_public_http_url, is_valid_cover_image
 from src.audio_spectrogram import process_audio_spectrograms
+from src.binaries import configured_binary
 from src.book_prep import detect_newspaper, is_valid_book_language, resolve_book_language
 from src.cleanup import cleanup_manager
 from src.clients import Clients
@@ -238,6 +240,7 @@ if _is_webui_arg and not Path(_config_path).exists():
 
 from src.book_prep import sanitize_book_author, sanitize_book_language
 from src.meta import Meta
+from src.post_upload_hooks import run_post_upload_hooks
 from src.prep import Prep
 
 # Enable ANSI colors on Windows
@@ -272,7 +275,7 @@ def _print_config_error(error_type: str, message: str, lineno: int | None = None
         logger.info(f"{_RED}  {message}{_RESET}", extra={"markup": False})
     if suggestion:
         logger.info(f"{_GREEN}  Suggestion: {suggestion}{_RESET}", extra={"markup": False})
-    logger.info(f"\n{_RED}Reference: https://github.com/Audionut/Upload-Assistant/blob/master/data/example_config.py{_RESET}", extra={"markup": False})
+    logger.info(f"\n{_RED}Reference: https://github.com/wastaken7/Upload-Assistant/blob/master/data/example_config.py{_RESET}", extra={"markup": False})
 
 
 config: dict[str, Any]
@@ -347,7 +350,7 @@ if Path(_config_path).exists():
 else:
     logger.info(f"{_RED}Configuration file 'config.py' not found.{_RESET}", extra={"markup": False})
     logger.info(f"{_RED}Please ensure the file is located at: {_YELLOW}{_config_path}{_RESET}", extra={"markup": False})
-    logger.info(f"{_RED}Follow the setup instructions: https://github.com/Audionut/Upload-Assistant{_RESET}", extra={"markup": False})
+    logger.info(f"{_RED}Follow the setup instructions: https://github.com/wastaken7/Upload-Assistant{_RESET}", extra={"markup": False})
     sys.exit(1)
 
 
@@ -366,7 +369,6 @@ async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
         "audiobook_duration_formatted",
         "audiobook_duration",
         "author",
-        "blu",
         "book_asin",
         "book_author",
         "book_isbn",
@@ -381,16 +383,20 @@ async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
         "desc",
         "description_file",
         "description_link",
+        "double_upload_until",
+        "doubleup",
         "draft",
         "dual_audio",
         "dupe",
+        "exclusive",
+        "featured",
         "freeleech",
+        "freeleech_until",
         "game_region",
         "game_subcategory",
         "game_system",
         "game_version",
         "hardcoded_subs",
-        "hdb",
         "igdb_manual",
         "imdb",
         "imghost",
@@ -420,13 +426,14 @@ async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
         "openlibrary",
         "personalrelease",
         "platform",
-        "ptp",
         "qbit_cat",
         "qbit_tag",
+        "refundable",
         "region",
         "screens",
         "skip_imghost_upload",
         "steam_manual",
+        "sticky",
         "title",
         "tmdb_manual",
         "torrent_creation",
@@ -440,15 +447,23 @@ async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
     sanitized_saved_meta: dict[str, Any] = {}
     for key, value in saved_meta.items():
         clean_key = key.strip().strip("'").strip('"')
-        if clean_key in overwrite_list:
-            if clean_key in meta and getattr(meta, clean_key, None) is not None:
-                sanitized_saved_meta[clean_key] = meta[clean_key]
-                logger.debug(f"Overriding {clean_key} with meta value: {meta[clean_key]}")
+        if clean_key == "tracker_ids":
+            current_tracker_ids = meta.tracker_ids
+            sanitized_saved_meta[clean_key] = current_tracker_ids if current_tracker_ids else value
+        elif clean_key in overwrite_list:
+            meta_val = getattr(meta, clean_key, None)
+            if meta_val not in (None, False, 0, "", [], {}):
+                sanitized_saved_meta[clean_key] = meta_val
+                logger.debug(f"Overriding {clean_key} with meta value: {meta_val}")
             else:
                 sanitized_saved_meta[clean_key] = value
         else:
             sanitized_saved_meta[clean_key] = value
+    tracker_ids = sanitized_saved_meta.pop("tracker_ids", None)
     meta.update(sanitized_saved_meta)
+    if isinstance(tracker_ids, dict):
+        meta.set_tracker_ids(tracker_ids)
+        sanitized_saved_meta["tracker_ids"] = dict(meta.tracker_ids)
     sanitize_book_language(meta)
     sanitize_book_author(meta)
     return sanitized_saved_meta
@@ -558,7 +573,7 @@ async def _prompt_book_meta(meta: Meta) -> None:
         logger.info(
             f"[yellow]BOOK upload: the following required fields are missing: "
             f"{', '.join(book_missing)}. "
-            f"Re-run with -btitle / -author / -year / -blang / --book-cover to supply them, "
+            f"Re-run with -btitle / -author / -year / -blang / --poster to supply them, "
             f"or trackers that require them will be skipped.[/yellow]"
         )
         return
@@ -1105,6 +1120,14 @@ def book_screens(meta: Meta, min_successful_uploads: int) -> tuple[int, int]:
     capped_min = min(min_successful_uploads, actual_screens)
     return actual_screens, capped_min
 
+
+def xxx_min_successful_uploads(meta: Meta, min_successful_uploads: int) -> int:
+    """Cap XXX image uploads to their one-contact-sheet-per-video contract."""
+    try:
+        contact_sheet_count = int(meta.screens or 0)
+    except (TypeError, ValueError):
+        contact_sheet_count = 0
+    return min(min_successful_uploads, max(1, contact_sheet_count))
 
 async def _gather_initial_prep(meta: Meta) -> tuple[Meta, Prep] | None:
     """Resolve initial settings and gather media metadata for one release."""
@@ -1685,7 +1708,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                 # not possible, keep processing the compatible trackers and skip only
                 # those for which the user has no acceptable configured host.
                 allowed_hosts: list[str] | None = None
-                if relevant_trackers:
+                if relevant_trackers and config.get("DEFAULT", {}).get("smart_image_host_selection", True) and not meta.imghost_from_cli:
                     try:
                         tracker_instances = {tracker_name: tracker_class_map[tracker_name](config=config) for tracker_name in relevant_trackers}
 
@@ -1804,6 +1827,8 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                     min_successful_uploads = int(default_cfg.get("min_successful_image_uploads", 3))
                     if meta.category == "BOOK":
                         meta.screens, min_successful_uploads = book_screens(meta, min_successful_uploads)
+                    elif meta.category == "XXX":
+                        min_successful_uploads = xxx_min_successful_uploads(meta, min_successful_uploads)
 
                     host_order: list[str] = []
                     for host_index in range(1, 10):
@@ -2212,6 +2237,41 @@ def get_remote_version(url: str) -> tuple[str | None, str | None]:
         return None, None
 
 
+def _update_notification_cache_path() -> Path:
+    return STATE_DIR / "update_notification.json"
+
+
+def _read_update_notification_cache(cache_hours: float) -> tuple[str, str] | None:
+    """Return a still-valid remote version response from the runtime cache."""
+    try:
+        cached = json.loads(_update_notification_cache_path().read_text(encoding="utf-8"))
+        checked_at = cached["checked_at"]
+        remote_version = cached["remote_version"]
+        remote_content = cached["remote_content"]
+        if not isinstance(checked_at, (int, float)) or not isinstance(remote_version, str) or not isinstance(remote_content, str):
+            return None
+        if time.time() - checked_at >= cache_hours * 3600:
+            return None
+        return remote_version, remote_content
+    except FileNotFoundError, OSError, TypeError, ValueError, KeyError, json.JSONDecodeError:
+        return None
+
+
+def _write_update_notification_cache(remote_version: str, remote_content: str) -> None:
+    """Persist a successful remote version response for later runs."""
+    try:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        cache_path = _update_notification_cache_path()
+        temporary_path = cache_path.with_suffix(".tmp")
+        temporary_path.write_text(
+            json.dumps({"checked_at": time.time(), "remote_version": remote_version, "remote_content": remote_content}),
+            encoding="utf-8",
+        )
+        temporary_path.replace(cache_path)
+    except OSError as exc:
+        logger.debug(f"Could not cache update notification: {exc}")
+
+
 def extract_changelog(content: str, to_version: str) -> str | None:
     """Extracts the changelog entries between the specified versions."""
     try:
@@ -2255,6 +2315,12 @@ async def update_notification(base_dir: str, execution_context: ExecutionContext
 
     notice = config["DEFAULT"].get("update_notification", True)
     verbose = config["DEFAULT"].get("verbose_notification", False)
+    cache_hours = config["DEFAULT"].get("update_notification_cache_hours", 4)
+    try:
+        cache_hours = max(0.0, float(cache_hours))
+    except TypeError, ValueError:
+        logger.warning("[yellow]Invalid update_notification_cache_hours; using 4 hours.[/yellow]")
+        cache_hours = 4.0
 
     local_version = get_local_version(version_file)
     if not local_version:
@@ -2263,22 +2329,27 @@ async def update_notification(base_dir: str, execution_context: ExecutionContext
     if not notice:
         return local_version
 
-    if execution_context is None:
-        remote_version, remote_content = await asyncio.to_thread(get_remote_version, remote_version_url)
+    cached_response = _read_update_notification_cache(cache_hours) if cache_hours else None
+    if cached_response:
+        remote_version, remote_content = cached_response
     else:
-        try:
-            http_client = await execution_context.http.client("update-notification", request_timeout=30.0)
-            response = await http_client.get(remote_version_url)
-            if response.status_code == 200:
-                remote_content = response.text
-                match = re.search(r'__version__\s*=\s*"([^"]+)"', remote_content)
-                remote_version = match.group(1) if match else None
-            else:
-                logger.warning(f"[yellow]Could not fetch remote version file (HTTP {response.status_code}); continuing with local version[/yellow]")
+        if execution_context is None:
+            remote_version, remote_content = await asyncio.to_thread(get_remote_version, remote_version_url)
+        else:
+            try:
+                http_client = await execution_context.http.client("update-notification", request_timeout=30.0)
+                response = await http_client.get(remote_version_url)
+                if response.status_code == 200:
+                    remote_content = response.text
+                    match = re.search(r'__version__\s*=\s*"([^"]+)"', remote_content)
+                    remote_version = match.group(1) if match else None
+                else:
+                    remote_version, remote_content = None, None
+            except Exception as error:
+                logger.info(f"[red]An error occurred while fetching the remote version file: {error}")
                 remote_version, remote_content = None, None
-        except Exception as error:
-            logger.info(f"[red]An error occurred while fetching the remote version file: {error}")
-            remote_version, remote_content = None, None
+        if remote_version and remote_content:
+            _write_update_notification_cache(remote_version, remote_content)
     if not remote_version:
         return local_version
 
@@ -2500,7 +2571,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
             for error in config_errors:
                 logger.info(f"[red]  ✗ {error}[/red]")
             logger.info("[red]\nPlease fix the above errors in your config.py[/red]")
-            logger.info("[yellow]Reference: https://github.com/Audionut/Upload-Assistant/blob/master/data/example_config.py[/yellow]")
+            logger.info("[yellow]Reference: https://github.com/wastaken7/Upload-Assistant/blob/development/data/example_config.py[/yellow]")
             raise SystemExit(1)
 
         if config_warnings:
@@ -2525,6 +2596,8 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
         from bin.get_mediainfo import MediaInfoBinaryManager
 
+        if not configured_binary("ffmpeg_path", config):
+            os.environ["UA_FFMPEG_PATH"] = await FfmpegBinaryManager.ensure_ffmpeg_binary(STATE_DIR)
         await MediaInfoBinaryManager.ensure_mediainfo_binary(base_dir)
 
         path = meta.path
@@ -2993,6 +3066,13 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     trackers = [t for t in cast(list[Any], meta.trackers) if isinstance(t, str)]
                     logger.debug(f"[cyan]Using trackers for request search: {trackers}[/cyan]")
                 await tracker_setup.tracker_request(meta, trackers)
+
+            # Persist and expose the completed item before user-managed hooks run.
+            # Hooks may inspect the final tracker status and files have not yet been cleaned.
+            async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
+                await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+            _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
+            await run_post_upload_hooks(meta, config)
 
             if meta.site_check and "queue" in meta and meta.queue is not None:
                 processed_files_count += 1

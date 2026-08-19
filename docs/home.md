@@ -1,4 +1,5 @@
 [Configuration](configuration.md)
+[Custom Hooks](custom-hooks.md)
 
 [Workflow, performance, and tracker improvements](workflow-improvements.md)
 

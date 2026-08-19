@@ -1,12 +1,18 @@
-# Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import re
 from typing import Any
 
 from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
+from src.rehostimages import _download_image_for_rehost, _local_image_path
+from src.screenshot_manifest import files as manifest_files
+from src.tracker_images import (
+    ImageCollection,
+    set_tracker_image_collection,
+)
 from src.trackers.common import Common
 from src.trackers.UNIT3D import UNIT3D
+from src.uploadscreens import upload_image_task
 
 
 class CapybaraBR(UNIT3D):
@@ -143,24 +149,8 @@ class CapybaraBR(UNIT3D):
         return {
             "description": await DescriptionBuilder(self.tracker, self.config).general_description_generator(
                 meta,
-                audio_spectrogram=True,
-                bluray=True,
-                book=True,
-                custom_header=True,
-                custom_signature=True,
-                description=True,
-                game=True,
-                languages=False,
-                logo=True,
                 mediainfo=False,
-                menu_screenshots=True,
                 nfo=False,
-                screenshots=True,
-                tonemapped_header=True,
-                tv_info=True,
-                ua_signature=True,
-                user_description=True,
-                music=True,
                 signature=signature,
             )
         }
@@ -168,11 +158,12 @@ class CapybaraBR(UNIT3D):
     async def get_name(self, meta: Meta) -> dict[str, str]:
         category = meta.category
         cbr_name = meta.name
+        bioma_tag = "[BiOMA]" if "bioma" in (meta.tag or "").lower() and self.tracker == "CAPYBARABR" else ""
 
         if category == "BOOK":
             book_title = self.common.portuguese_title_capitalization(meta.title)
             year_str = str(meta.year) if meta.year is not None else ""
-            cbr_name = f"{book_title} - {meta.author} [{year_str}] [AUDIOBOOK]" if meta.audiobook else f"{book_title} - {meta.author} [{year_str}]"
+            cbr_name = f"{book_title} - {meta.author} [{year_str}] [AUDIOBOOK] {bioma_tag}" if meta.audiobook else f"{book_title} - {meta.author} [{year_str}]"
             book_language_iso = meta.book_language_iso
             if book_language_iso and book_language_iso != "por":
                 cbr_name += f" [{book_language_iso.upper()}]"
@@ -199,7 +190,7 @@ class CapybaraBR(UNIT3D):
                 dlc = f" {dlc}"
 
             year_str = str(meta.year) if meta.year is not None else ""
-            cbr_name = f"{meta.title} {update} {meta.game_version} {year_str} - {tag} {game_lang}{dlc}"
+            cbr_name = f"{meta.title} {update} {meta.game_version} {year_str} - {tag} {game_lang}{dlc} {bioma_tag}"
 
         elif category in ("MOVIE", "TV"):
             cbr_name = cbr_name.replace("DD+ ", "DDP").replace("DD ", "DD").replace("AAC ", "AAC").replace("FLAC ", "FLAC").replace("Dubbed", "").replace("Dual-Audio", "")
@@ -312,3 +303,82 @@ class CapybaraBR(UNIT3D):
             return await self.common.check_portuguese_video_requirements(meta, self.tracker)
 
         return True
+
+    async def check_image_hosts(self, meta: Meta) -> None:
+        if meta.category == "MUSIC" or meta.skip_imghost_upload:
+            return
+
+        tag = (meta.tag or "").lstrip("-").strip()
+        if tag.lower() != "bioma":
+            return
+
+        api_key = self.tracker_config.get("bioma_api_key")
+        if not api_key:
+            logger.warning(f"[yellow]{self.tracker}: BiOMA image host API key not configured, falling back to default image host.[/yellow]")
+            return
+
+        await self.rehost_bioma_images(meta)
+
+    async def _rehost_collection(self, meta: Meta, collection_name: ImageCollection, items: list[dict[str, Any]]) -> list[dict[str, Any]] | None:
+        if not items:
+            return None
+
+        manifest = manifest_files(meta.base_dir, meta.uuid, "main") if collection_name == "screenshots" and meta.base_dir and meta.uuid else []
+        rehosted_items: list[dict[str, Any]] = []
+
+        for index, item in enumerate(items):
+            if not isinstance(item, dict):
+                continue
+            raw_url = item.get("raw_url", "")
+
+            local_path = await _local_image_path(meta, collection_name, item)
+            if local_path is None and index < len(manifest) and manifest[index].is_file():
+                local_path = manifest[index]
+            if local_path is None and raw_url:
+                local_path = await _download_image_for_rehost(meta, collection_name, raw_url)
+
+            if local_path is None:
+                logger.warning(
+                    f"[yellow]{self.tracker}: cannot locate or download {collection_name} image {index + 1} for BiOMA rehosting; keeping default image host.[/yellow]"
+                )
+                return None
+
+            upload_result = await upload_image_task((str(local_path), "bioma", self.config, meta))
+            if upload_result.get("status") != "success":
+                reason = upload_result.get("reason", "unknown error")
+                logger.warning(f"[yellow]{self.tracker}: failed to rehost {collection_name} image {index + 1} to BiOMA: {reason}. Keeping default image host.[/yellow]")
+                return None
+
+            rehosted_item = dict(item)
+            rehosted_item.update(
+                {
+                    "img_url": upload_result["img_url"],
+                    "raw_url": upload_result["raw_url"],
+                    "web_url": upload_result["web_url"],
+                    "local_file_path": str(local_path),
+                }
+            )
+            rehosted_items.append(rehosted_item)
+
+        return rehosted_items if len(rehosted_items) == len(items) else None
+
+    async def rehost_bioma_images(self, meta: Meta) -> None:
+        """Rehost screenshots and secondary image collections to BiOMA zipline host (https://img.thebioma.space/)."""
+        image_list = meta.image_list
+        if isinstance(image_list, list) and image_list:
+            rehosted = await self._rehost_collection(meta, "screenshots", image_list)
+            if rehosted:
+                set_tracker_image_collection(meta, self.tracker, "screenshots", rehosted)
+                logger.info(f"[green]{self.tracker}: Successfully rehosted {len(rehosted)} screenshots to BiOMA.[/green]")
+
+        secondary_collections: tuple[ImageCollection, ...] = (
+            "menu_images",
+            "spectrograms_images",
+            "dynamic_hdr_plot_images",
+        )
+        for collection_name in secondary_collections:
+            collection = getattr(meta, collection_name, [])
+            if isinstance(collection, list) and collection:
+                rehosted = await self._rehost_collection(meta, collection_name, collection)
+                if rehosted:
+                    set_tracker_image_collection(meta, self.tracker, collection_name, rehosted)

@@ -13,6 +13,7 @@ import aiofiles
 import httpx
 from aiofiles import os as aio_os
 
+from src.artwork import is_public_http_url, is_valid_image_bytes
 from src.console import logger
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
@@ -38,6 +39,69 @@ class ImageHostPolicy:
 
 def _as_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def has_restricted_image_hosts(
+    target_trackers: Iterable[str],
+    tracker_class_map: Mapping[str, Any],
+) -> bool:
+    """Return True if any of the target trackers define image-host restrictions."""
+    for tracker_name in target_trackers:
+        tracker_class = tracker_class_map.get(str(tracker_name).replace(" ", "").upper())
+        policy = getattr(tracker_class, "image_host_policy", None)
+        if isinstance(policy, ImageHostPolicy) and policy.approved_image_hosts:
+            return True
+
+        approved_hosts = getattr(tracker_class, "approved_image_hosts", None)
+        if (
+            callable(getattr(tracker_class, "check_image_hosts", None))
+            and isinstance(approved_hosts, tuple | list | set)
+            and any(isinstance(host, str) for host in approved_hosts)
+        ):
+            return True
+
+    return False
+
+
+def select_common_image_host(
+    default_config: Mapping[str, Any],
+    target_trackers: Iterable[str],
+    tracker_class_map: Mapping[str, Any],
+) -> str | None:
+    """Return the preferred configured host accepted by every restricted target.
+
+    Trackers without a declared policy do not constrain the selection. ``None``
+    means no restricted targets or no common configured host, so callers retain
+    the normal per-tracker rehosting fallback.
+    """
+    approved_sets: list[set[str]] = []
+    for tracker_name in target_trackers:
+        tracker_class = tracker_class_map.get(str(tracker_name).replace(" ", "").upper())
+        policy = getattr(tracker_class, "image_host_policy", None)
+        if isinstance(policy, ImageHostPolicy):
+            approved_sets.append(set(policy.approved_image_hosts))
+            continue
+
+        approved_hosts = getattr(tracker_class, "approved_image_hosts", None)
+        if callable(getattr(tracker_class, "check_image_hosts", None)) and isinstance(approved_hosts, tuple | list | set):
+            approved_sets.append({host for host in approved_hosts if isinstance(host, str)})
+
+    if not approved_sets:
+        return None
+
+    common_hosts = set.intersection(*approved_sets)
+    if not common_hosts:
+        return None
+
+    configured_hosts = sorted(
+        (
+            (int(match.group(1)), host.lower())
+            for key, value in default_config.items()
+            if (match := re.fullmatch(r"img_host_(\d+)", key)) and (host := _as_str(value)) and host.strip()
+        ),
+        key=lambda item: item[0],
+    )
+    return next((host for _, host in configured_hosts if host in common_hosts), None)
 
 
 def _safe_remove(path: str) -> bool:
@@ -132,6 +196,12 @@ class RehostImagesManager:
 
 async def check_tracker_image_hosts(meta: Meta, tracker_class: Any) -> None:
     """Apply a tracker's image-host policy when it defines one."""
+    # MUSIC artwork is hosted before tracker processing.  It has no video
+    # screenshots, so a missing screenshot collection must not trigger the
+    # generic reupload path (which would attempt to capture the audio file).
+    if meta.category == "MUSIC":
+        return
+
     policy = getattr(tracker_class, "image_host_policy", None)
     rehost_manager = getattr(tracker_class, "rehost_images_manager", None)
     if isinstance(policy, ImageHostPolicy) and rehost_manager is not None:
@@ -153,6 +223,8 @@ def _image_host(raw_url: str, url_host_mapping: Mapping[str, str]) -> str:
 
 
 def _collection_directory(meta: Meta, collection_name: str) -> Path | None:
+    if collection_name == "screenshots":
+        return screenshots_dir(meta.base_dir, meta.uuid)
     if collection_name == "menu_images":
         return menu_screenshots_dir(meta.base_dir, meta.uuid)
     if collection_name == "spectrograms_images":
@@ -180,6 +252,11 @@ async def _local_image_path(meta: Meta, collection_name: str, image: Mapping[str
 
 
 async def _download_image_for_rehost(meta: Meta, collection_name: str, raw_url: str) -> Path | None:
+    # Validate the URL up front to prevent SSRF attacks
+    if not is_public_http_url(raw_url):
+        logger.warning(f"[yellow]Cannot download {collection_name} image: {raw_url} is not a public HTTP(S) URL[/yellow]")
+        return None
+
     directory = Path(meta.base_dir) / "tmp" / meta.uuid / "rehosted_images" / collection_name
     directory.mkdir(parents=True, exist_ok=True)
     parsed = urlparse(raw_url)
@@ -188,10 +265,38 @@ async def _download_image_for_rehost(meta: Meta, collection_name: str, raw_url: 
         suffix = ".png"
     filename = await sanitize_filename(Path(parsed.path).stem or "image")
     destination = directory / f"{filename}{suffix}"
+
     try:
-        async with httpx.AsyncClient(follow_redirects=True, timeout=60.0) as client:
-            response = await client.get(raw_url)
-            response.raise_for_status()
+        # Manually follow redirects to validate each hop against SSRF
+        current_url = raw_url
+        async with httpx.AsyncClient(follow_redirects=False, trust_env=False, timeout=60.0) as client:
+            for _ in range(4):
+                if not is_public_http_url(current_url):
+                    logger.warning(f"[yellow]Cannot download {collection_name} image: redirect target {current_url} is not a public HTTP(S) URL[/yellow]")
+                    return None
+
+                response = await client.get(current_url)
+                if response.is_redirect:
+                    location = response.headers.get("Location")
+                    if not location:
+                        logger.warning(f"[yellow]Could not download {collection_name} image for {raw_url}: redirect missing Location header[/yellow]")
+                        return None
+                    # Resolve relative redirects against the current URL
+                    current_url = str(response.url.join(location))
+                    continue
+
+                response.raise_for_status()
+                break
+            else:
+                # Too many redirects
+                logger.warning(f"[yellow]Could not download {collection_name} image for {raw_url}: too many redirects[/yellow]")
+                return None
+
+        # Validate the downloaded content is actually a valid image
+        if not is_valid_image_bytes(response.content):
+            logger.warning(f"[yellow]Could not download {collection_name} image for {raw_url}: not a valid image[/yellow]")
+            return None
+
         await asyncio.to_thread(destination.write_bytes, response.content)
         return destination
     except (httpx.HTTPError, OSError) as error:
@@ -624,6 +729,8 @@ async def _handle_image_upload(
                 )
             elif meta.is_disc == "DVD":
                 await takescreens_manager.dvd_screenshots(meta, disc_num=0, retry_cap=True)
+            elif meta.category == "XXX":
+                await takescreens_manager.xxx_contact_sheets(meta.filelist or [], folder_id, base_dir, meta)
             else:
                 if path:
                     await takescreens_manager.screenshots(

@@ -615,22 +615,9 @@ class BrasilTracker:
         return await builder.general_description_generator(
             meta,
             audio_spectrogram=False,
-            bluray=False,
-            book=True,
-            custom_header=True,
-            custom_signature=False,
-            description=False,
-            game=True,
-            languages=False,
-            logo=True,
-            mediainfo=True,
             menu_screenshots=False,
             nfo=False,
             screenshots=False,
-            tonemapped_header=True,
-            tv_info=True,
-            ua_signature=True,
-            user_description=True,
             signature=f"[align=right][url=https://github.com/wastaken7/Upload-Assistant][size=1]Compartilhado com {meta.ua_name} {meta.current_version} (fork)[/size][/url][/align]",
         )
 

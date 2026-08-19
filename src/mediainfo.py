@@ -7,14 +7,21 @@ from pathlib import Path
 from typing import Any
 
 from bin.get_mediainfo import MediaInfoBinaryManager
+from src.app_paths import STATE_DIR
+from src.binaries import configured_binary
+
+_REPORT_BY_LINE = re.compile(r"(?<![^\r\n])[ \t]*ReportBy[ \t]*:[^\r\n]*(?:\r\n?|\n)?", re.IGNORECASE)
 
 
-def _base_dir() -> Path:
-    return Path(__file__).resolve().parent.parent
+def strip_report_by_line(report: str) -> str:
+    """Remove MediaInfo's optional ReportBy version line from a text report."""
+    return _REPORT_BY_LINE.sub("", report)
 
 
 def _binary() -> str:
-    binary = MediaInfoBinaryManager.find_existing_binary(_base_dir())
+    if configured := configured_binary("mediainfo_path"):
+        return configured
+    binary = MediaInfoBinaryManager.find_existing_binary(STATE_DIR)
     if binary is None:
         raise RuntimeError("MediaInfo CLI is not installed; run Upload Assistant so it can download bin/MI first")
     return binary
@@ -44,7 +51,12 @@ def run_mediainfo(path: str | Path, *, output: str | None = None, full: bool = T
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError("MediaInfo timed out after 15 minutes") from exc
     if result.returncode != 0:
-        raise RuntimeError(result.stderr.strip() or f"MediaInfo failed with exit code {result.returncode}")
+        raise RuntimeError(
+            f"MediaInfo failed with exit code {result.returncode}\n"
+            f"Command: {command!r}\n"
+            f"stdout:\n{result.stdout.strip() or '(empty)'}\n"
+            f"stderr:\n{result.stderr.strip() or '(empty)'}"
+        )
     return result.stdout
 
 

@@ -18,6 +18,7 @@ import langcodes
 import pycountry
 from bs4 import BeautifulSoup
 
+from src.binaries import configured_binary
 from src.cogs.redaction import Redaction
 from src.config_helpers import format_terminal_link
 from src.console import logger, prompt_in_thread
@@ -206,6 +207,8 @@ class MakingOff:
         return cg
 
     def _get_ffmpeg_path(self, meta: Meta) -> str:
+        if configured := configured_binary("ffmpeg_path", self.config):
+            return configured
 
         base_dir = getattr(meta, "base_dir", "") or str(Path(__file__).parent.parent.parent)
 
@@ -493,6 +496,12 @@ class MakingOff:
         return self._html_encode(bbcode)
 
     def _get_lang_name(self, lang_string: str) -> str:
+        if not lang_string:
+            return ""
+        with contextlib.suppress(Exception):
+            lang = langcodes.get(lang_string)
+            if lang and lang.is_valid():
+                return lang.display_name("pt").capitalize()
         with contextlib.suppress(Exception):
             lang = langcodes.find(lang_string)
             if lang and lang.is_valid():
@@ -559,12 +568,27 @@ class MakingOff:
 
     def _localizer_audio_language(self, meta: Meta) -> str:
         """
-        Determine audio language(s) in PT-BR.
+        Determine original audio language of the film in PT-BR.
 
-        Resolution order: meta audio_languages, mediainfo audio tracks,
-        then meta original_language as last resort.
+        Resolution order: meta.original_language, TMDB / IMDb metadata,
+        meta.audio_languages fallback, then "Desconhecido".
         """
-        return "Desconhecido" if not meta.audio_languages else ", ".join(self._get_lang_name(lang.strip()) for lang in meta.audio_languages)
+        orig_lang = meta.original_language
+        if not orig_lang and meta.imdb_info:
+            raw_imdb_lang = meta.imdb_info.get("original_language") or meta.imdb_info.get("original language")
+            if isinstance(raw_imdb_lang, str):
+                orig_lang = raw_imdb_lang
+
+        if orig_lang:
+            name = self._get_lang_name(str(orig_lang).strip())
+            if name:
+                return name
+
+        audio_languages = meta.audio_languages
+        if audio_languages:
+            return ", ".join(self._get_lang_name(lang.strip()) for lang in audio_languages if self._get_lang_name(lang.strip()))
+
+        return "Desconhecido"
 
     def _localizer_video_quality(self, meta: Meta) -> str:
         """Convert release type to a localised video quality label matching MakingOff options."""
@@ -1379,7 +1403,8 @@ class MakingOff:
         for k, (fid, name) in forum_options.items():
             logger.info(f"{self.tracker}:   {k}) {name} (ID: {fid})")
 
-        choice = (await prompt_in_thread(cli_ui.ask_string, "Escolha: ")).strip()
+        raw_choice = await prompt_in_thread(cli_ui.ask_string, "Escolha: ")
+        choice = (raw_choice or "").strip()
         if choice in forum_options:
             return forum_options[choice][0]
 
@@ -1567,7 +1592,8 @@ class MakingOff:
         logger.info(f"{self.tracker}: [yellow]Any subtitles?[/yellow]")
         for k, v in options.items():
             logger.info(f"{self.tracker}:   {k}) {v}")
-        selection = (await prompt_in_thread(cli_ui.ask_string, "Choose: ")).strip()
+        raw_selection = await prompt_in_thread(cli_ui.ask_string, "Choose: ")
+        selection = (raw_selection or "").strip()
         return options.get(selection, "Sem Legenda")
 
     async def generate_description(self, meta: Meta) -> str:
@@ -1688,11 +1714,11 @@ class MakingOff:
         Returns:
             bool: True if the release meets all requirements.
         """
-        if str(getattr(meta, "category", "")).upper() != "MOVIE":
+        if meta.category.upper() != "MOVIE":
             logger.warning(f"{self.tracker}: [bold red]Only films may be uploaded to this forum.[/bold red]")
             return False
 
-        if bool(getattr(meta, "adult_media", False) or getattr(meta, "tmdb_adult_media", False)):
+        if meta.adult_media or meta.tmdb_adult_media:
             logger.warning(f"{self.tracker}: [bold red]Adult releases are not allowed on this forum.[/bold red]")
             return False
 
@@ -1704,7 +1730,7 @@ class MakingOff:
             logger.warning(f"{self.tracker}: [bold red]Only MKV/AVI containers are allowed on this forum.[/bold red]")
             return False
 
-        video = f"{getattr(meta, 'video_codec', '')} {getattr(meta, 'video_encode', '')}".upper()
+        video = f"{meta.video_codec} {meta.video_encode}".upper()
         if any(codec in video for codec in ("HEVC", "H.265", "H265", "X265")):
             logger.warning(f"{self.tracker}: [bold red]HEVC/H.265 video is not allowed on this forum.[/bold red]")
             return False
@@ -1740,7 +1766,7 @@ class MakingOff:
             logger.warning(f"{self.tracker}: [bold red]Torrent contains prohibited archive/executable file: {bad_file}.[/bold red]")
             return False
 
-        if not self._has_portuguese_subtitle(meta):
+        if not self._has_portuguese_subtitle(meta) and str(meta.original_language).lower() != "pt":
             logger.warning(f"{self.tracker}: [bold red]A Portuguese subtitle is required for this forum.[/bold red]")
             return False
 

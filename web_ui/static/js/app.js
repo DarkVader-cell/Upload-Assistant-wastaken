@@ -273,6 +273,16 @@ const argumentCategories = [
     subtitle: "Getting these correct is 90% of a successful upload!",
     args: [
       {
+        label: "--poster",
+        placeholder: "URL_OR_PATH",
+        description: "Artwork URL or local poster path for any category",
+      },
+      {
+        label: "--banner",
+        placeholder: "URL_OR_PATH",
+        description: "Artwork URL or local banner path for any category",
+      },
+      {
         label: "--category",
         placeholder: "MOVIE",
         description: "Override detected category",
@@ -366,11 +376,6 @@ const argumentCategories = [
         label: "--music-genre",
         placeholder: "GENRE1,GENRE2",
         description: "Comma-separated genre override",
-      },
-      {
-        label: "--music-cover",
-        placeholder: "URL_OR_PATH",
-        description: "Artwork URL or local cover path",
       },
       {
         label: "--music-discogs-id",
@@ -573,11 +578,6 @@ const argumentCategories = [
         description: "Override detected book title",
       },
       {
-        label: "--book-cover",
-        placeholder: "PATH_OR_URL",
-        description: "Required BOOK cover image path or public image URL",
-      },
-      {
         label: "--book-overview",
         placeholder: "SYNOPSIS",
         description:
@@ -761,6 +761,20 @@ const argumentCategories = [
         placeholder: "1",
         description: "Set exclusive flag where supported",
       },
+      { label: "--featured", description: "Mark upload as Featured (UNIT3D)" },
+      { label: "--double-upload", description: "Mark upload as Double Upload (UNIT3D)" },
+      {
+        label: "--double-upload-until",
+        placeholder: "N",
+        description: "Double upload duration in days (UNIT3D)",
+      },
+      {
+        label: "--freeleech-until",
+        placeholder: "N",
+        description: "Freeleech duration in days (UNIT3D)",
+      },
+      { label: "--refundable", description: "Mark upload as Refundable (UNIT3D)" },
+      { label: "--sticky", description: "Mark upload as Sticky / pinned (UNIT3D)" },
     ],
   },
   {

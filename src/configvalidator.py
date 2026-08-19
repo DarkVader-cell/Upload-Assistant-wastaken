@@ -5,13 +5,17 @@ Validates the user's config.py against expected structure and types.
 """
 
 import math
+from pathlib import Path
 from typing import Any, cast
+
+from src.app_paths import STATE_DIR
 
 # Required top-level sections
 REQUIRED_SECTIONS = ["DEFAULT", "TRACKERS"]
 
 # Optional top-level sections
 OPTIONAL_SECTIONS = ["IMAGES", "TORRENT_CLIENTS", "USENET"]
+HOOKS_DIR = STATE_DIR / "custom_hooks"
 
 # Required keys in DEFAULT section (critical for operation)
 REQUIRED_DEFAULT_KEYS: dict[str, type] = {
@@ -22,6 +26,7 @@ REQUIRED_DEFAULT_KEYS: dict[str, type] = {
 DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "update_notification": (bool,),
     "verbose_notification": (bool,),
+    "update_notification_cache_hours": (str, int, float),
     "tmdb_api": (str,),
     "tvdb_api": (str,),
     "tvdb_token": (str,),
@@ -29,6 +34,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "img_host_1": (str,),
     "img_host_2": (str,),
     "img_host_3": (str,),
+    "smart_image_host_selection": (bool,),
     "image_upload_concurrency": (str, int),
     "image_upload_delay": (str, float, int),
     "imgbb_api": (str,),
@@ -41,6 +47,11 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "logo_size": (str, int),
     "episode_overview": (bool,),
     "screens": (str, int),
+    "xxx_contact_sheet_rows": (str, int),
+    "xxx_contact_sheet_columns": (str, int),
+    "xxx_contact_sheet_max_videos": (str, int),
+    "xxx_contact_sheet_animated_webp": (bool,),
+    "xxx_contact_sheet_animation_seconds": (str, int, float),
     "cutoff_screens": (str, int),
     "max_menu_screens": (str, int),
     "thumbnail_size": (str, int),
@@ -52,6 +63,14 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "ffmpeg_is_good": (bool,),
     "ffmpeg_warmup": (bool,),
     "ffmpeg_compression": (str, int),
+    "ffmpeg_path": (str,),
+    "ffprobe_path": (str,),
+    "mediainfo_path": (str,),
+    "dvd_mediainfo_path": (str,),
+    "bdinfo_path": (str,),
+    "mkbrr_path": (str,),
+    "dovi_tool_path": (str,),
+    "hdr10plus_tool_path": (str,),
     "process_limit": (str, int),
     "threads": (str, int),
     "ffmpeg_limit": (bool,),
@@ -83,6 +102,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "use_largest_playlist": (bool,),
     "tracker_description_mode": (str,),
     "tracker_search_concurrency": (str, int),
+    "tracker_comment_only": (bool,),
     "use_sonarr": (bool,),
     "use_radarr": (bool,),
     "mkbrr": (bool,),
@@ -99,6 +119,9 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "bluray_score": (float, int),
     "bluray_single_score": (float, int),
     "keep_meta": (bool,),
+    "post_upload_hooks": (list, tuple),
+    "post_upload_inprocess_hooks": (list, tuple),
+    "post_upload_hook_timeout": (str, int, float),
     "show_upload_duration": (bool,),
     "print_tracker_messages": (bool,),
     "print_tracker_links": (bool,),
@@ -250,6 +273,19 @@ def _as_dict(value: Any) -> dict[str, Any]:
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
 
 
+def _inactive_hook_files(default: dict[str, Any]) -> list[str]:
+    """Return hook scripts present in state but absent from both hook settings."""
+    configured: set[str] = set()
+    for key in ("post_upload_hooks", "post_upload_inprocess_hooks"):
+        names = default.get(key, [])
+        if isinstance(names, (list, tuple)):
+            configured.update(Path(name.strip()).as_posix() for name in names if isinstance(name, str) and name.strip())
+    try:
+        return sorted(path.relative_to(HOOKS_DIR).as_posix() for path in HOOKS_DIR.rglob("*.py") if path.relative_to(HOOKS_DIR).as_posix() not in configured)
+    except OSError:
+        return []
+
+
 def validate_config(config: Any, active_trackers: list[str] | None = None, active_imghost: str | None = None) -> tuple[bool, list[str], list[ConfigValidationWarning]]:
     """
     Validate the config dictionary structure and types.
@@ -292,6 +328,15 @@ def validate_config(config: Any, active_trackers: list[str] | None = None, activ
     default_errors, default_warnings = _validate_default_section(_as_dict(config_dict.get("DEFAULT")))
     errors.extend(default_errors)
     warnings.extend(default_warnings)
+    inactive_hooks = _inactive_hook_files(_as_dict(config_dict.get("DEFAULT")))
+    if inactive_hooks:
+        warnings.append(
+            ConfigValidationWarning(
+                f"Hook scripts are present but not enabled in post_upload_hooks or post_upload_inprocess_hooks: {', '.join(inactive_hooks)}",
+                key="post_upload_hooks",
+                section="DEFAULT",
+            )
+        )
 
     # Validate TRACKERS section
     # Determine which trackers are active
@@ -328,7 +373,7 @@ def validate_config(config: Any, active_trackers: list[str] | None = None, activ
                 is_usenet_tracker_active = True
                 break
     except ImportError:
-        if any(ut in trackers_upper for ut in ("CURUPIRA", "SUIO", "DRUNKENSLUG")):
+        if any(ut in trackers_upper for ut in ("CURUPIRA", "SUIO", "DRUNKENSLUG", "NZBGEEK")):
             is_usenet_tracker_active = True
 
     if "USENET" in config_dict:
@@ -531,6 +576,10 @@ def _validate_default_section(default: dict[str, Any]) -> tuple[list[str], list[
     # Validate numeric string values can be parsed
     numeric_keys = [
         "screens",
+        "xxx_contact_sheet_rows",
+        "xxx_contact_sheet_columns",
+        "xxx_contact_sheet_max_videos",
+        "xxx_contact_sheet_animation_seconds",
         "cutoff_screens",
         "max_menu_screens",
         "thumbnail_size",
@@ -551,9 +600,10 @@ def _validate_default_section(default: dict[str, Any]) -> tuple[list[str], list[
             value = default[key]
             if isinstance(value, str):
                 try:
-                    int(value)
+                    (float if key == "xxx_contact_sheet_animation_seconds" else int)(value)
                 except ValueError:
-                    warnings.append(ConfigValidationWarning(f"Cannot parse '{value}' as integer", key=key, section="DEFAULT"))
+                    expected = "number" if key == "xxx_contact_sheet_animation_seconds" else "integer"
+                    warnings.append(ConfigValidationWarning(f"Cannot parse '{value}' as {expected}", key=key, section="DEFAULT"))
 
     image_upload_concurrency = default.get("image_upload_concurrency")
     if image_upload_concurrency is not None:
@@ -643,7 +693,24 @@ def _validate_trackers_section(trackers: dict[str, Any], active_trackers: list[s
                 errors.append(f"[TRACKERS][{tracker_name}] announce_url contains placeholder (e.g., <PASSKEY>) - replace with actual value")
 
         # Check boolean fields are actually booleans (must be real bool, not string)
-        bool_fields = ["anon", "useAPI", "use_for_search", "modq", "draft", "draft_default", "img_rehost", "allow_ext_subtitles", "resolve_language"]
+        bool_fields = [
+            "anon",
+            "useAPI",
+            "use_for_search",
+            "modq",
+            "draft",
+            "draft_default",
+            "img_rehost",
+            "allow_ext_subtitles",
+            "resolve_language",
+            "featured",
+            "doubleup",
+            "double_upload",
+            "double_up",
+            "refundable",
+            "sticky",
+            "exclusive",
+        ]
         for field in bool_fields:
             if field in tracker_config_dict:
                 value = tracker_config_dict[field]
@@ -651,6 +718,24 @@ def _validate_trackers_section(trackers: dict[str, Any], active_trackers: list[s
                     warnings.append(
                         ConfigValidationWarning(f"'{field}' must be a boolean type (True/False), got {type(value).__name__}: {value!r}", key=tracker_name, section="TRACKERS")
                     )
+
+        # Check integer fields
+        int_fields = [
+            "freeleech_until",
+            "double_upload_until",
+        ]
+        for field in int_fields:
+            if field in tracker_config_dict:
+                value = tracker_config_dict[field]
+                if isinstance(value, bool) or not isinstance(value, int):
+                    try:
+                        int_val = int(str(value))
+                        if int_val < 0:
+                            warnings.append(ConfigValidationWarning(f"'{field}' must be a non-negative integer, got {value!r}", key=tracker_name, section="TRACKERS"))
+                    except ValueError, TypeError:
+                        warnings.append(ConfigValidationWarning(f"'{field}' must be an integer, got {type(value).__name__}: {value!r}", key=tracker_name, section="TRACKERS"))
+                elif isinstance(value, int) and value < 0:
+                    warnings.append(ConfigValidationWarning(f"'{field}' must be a non-negative integer, got {value!r}", key=tracker_name, section="TRACKERS"))
 
     return errors, warnings
 

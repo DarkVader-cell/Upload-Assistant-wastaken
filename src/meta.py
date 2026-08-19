@@ -4,6 +4,17 @@
 from dataclasses import MISSING, dataclass, field, fields
 from typing import Any
 
+_TRACKER_ID_ALIASES = {
+    "ANT": "ANTHELION",
+    "BHD": "BEYONDHD",
+    "BLU": "BLUTOPIA",
+    "BTN": "BTN",
+    "HDB": "HDBITS",
+    "HUNO": "HAWKEUNO",
+    "OE": "ONLYENCODES",
+    "PTP": "PASSTHEPOPCORN",
+}
+
 
 @dataclass(init=False)
 class Meta:
@@ -14,18 +25,18 @@ class Meta:
 
     adult_media: bool = False
     aither_trumpable: list[Any] | None = field(default_factory=list)
-    aither: str | None = None
     aka: str = ""
     anime: bool = False
     anon: bool = False
     ant_user_tags: bool | None = None
-    ant: int | None = None
     archive_password: str | None = None
     args_line_queue: bool | None = None
     artist: str = ""
     artwork_banner_path: str | None = None
     artwork_path: str = ""
     artwork_url: str = ""
+    explicit_banner: str = ""
+    explicit_poster: str = ""
     asian: bool = False
     asin: str = ""
     ask_dupe: bool = False
@@ -51,10 +62,8 @@ class Meta:
     basename_no_ext: str = ""
     bdinfo: dict[str, Any] = field(default_factory=dict)
     bhd_nfo: bool | None = None
-    bhd: str | int | None = None
     bit_depth: str = ""
     bloated: bool = False
-    blu: str | int | None = None
     bluray_audio_skip: bool = False
     bluray_cover_urls: dict[str, Any] = field(default_factory=dict)
     bluray_score: int = 100
@@ -70,8 +79,7 @@ class Meta:
     book_series: str = ""
     book_title: str | None = None
     book_translator: str | None = None
-    btn: str | int | None = None
-    cast: list[str] | None = None
+    cast: list[str] = field(default_factory=list)
     category_id: str | None = None
     category: str = ""
     channels: str = ""
@@ -114,6 +122,8 @@ class Meta:
     douban_manual: int | str | None = None
     douban_rating: float | str | None = None
     douban_votes: int | str | None = None
+    doubleup: bool = False
+    double_upload_until: int = 0
     downloaded_bluray_cover_paths: dict[str, str] = field(default_factory=dict)
     draft: bool | None = None
     dual_audio: bool = False
@@ -139,6 +149,7 @@ class Meta:
     ext_torrenthash: str | None = None
     extra_openlibrary_ids: int | None = None
     extras: bool | None = None
+    featured: bool = False
     ffdebug: bool = False
     file_count_match: int | bool = False
     filelist: list[Any] = field(default_factory=list)
@@ -157,6 +168,7 @@ class Meta:
     frame_rate: float | None = None
     framestor: bool | None = None
     freeleech: int = 0
+    freeleech_until: int = 0
     game_region: str = ""
     game_subcategory: str = ""
     game_system: str = ""
@@ -174,13 +186,11 @@ class Meta:
     hash_used: str | None = None
     hdb_description: str | None = None
     hdb_name: str | None = None
-    hdb: str | int | None = None
     HDDVD_PLAYLIST: dict[str, Any] | None = None
     hdr: str = ""
     HDR: str = ""
     hfr: bool | None = None
     hosted_artwork: list[dict[str, Any]] | None = None
-    huno: str | int | None = None
     igdb_first_release_date: str = ""
     igdb_id: int = 0
     igdb_manual: str | None = None
@@ -196,6 +206,7 @@ class Meta:
     imdb_tt: str = ""
     imdb: str | None = ""
     imghost: str = ""
+    imghost_from_cli: bool = False
     infohash: str = ""
     initial_dupes: dict[str, Any] = field(default_factory=dict)
     is_disc: str = ""
@@ -217,7 +228,6 @@ class Meta:
     linking_failed: bool = False
     localized_overviews: dict[str, Any] = field(default_factory=dict)
     logo: str = ""
-    lst: str | int | None = None
     magazine: bool = False
     mal_id: int = 0
     mal_manual: str | int | None = None
@@ -227,6 +237,7 @@ class Meta:
     manual_commentary: bool = False
     manual_data: str | None = None
     manual_date: str | None = None
+    manual_cast: list[str] = field(default_factory=list)
     manual_dvds: str | None = None
     manual_edition: str | list[str] | None = None
     manual_episode_title: str = ""
@@ -235,6 +246,7 @@ class Meta:
     manual_language: str | dict[str, Any] | None = None
     manual_audio_languages: list[str] | str | None = None
     manual_multi: bool = False
+    manual_name: str | None = None
     manual_platform: str | None = None
     manual_season: str | int | None = None
     manual_source: str | None = None
@@ -256,7 +268,6 @@ class Meta:
     music_album: str = ""
     music_artist: str = ""
     music_catalogue_number: str = ""
-    music_cover: str = ""
     music_discogs_enabled: bool = True
     music_discogs_id: str = ""
     music_discogs_master_id: str = ""
@@ -294,7 +305,6 @@ class Meta:
     not_anime: bool = False
     nzb_path: str = ""
     ocr: bool | None = None
-    oe: str | int | None = None
     only_id: bool | None = None
     openlibrary_book_id: int | None = None
     openlibrary_id: int | None = None
@@ -310,7 +320,6 @@ class Meta:
     original_tmdb: int = 0
     original_tvdb: int = 0
     original_tvmaze: int = 0
-    orpheus: str | int | None = None
     overview_meta: str = ""
     overview: str = ""
     part: str = ""
@@ -328,7 +337,6 @@ class Meta:
     production_countries: list[Any] = field(default_factory=list)
     ptgen: dict[str, Any] = field(default_factory=dict)
     ptp_groupid: str | None = None
-    ptp: str | int | None = None
     publisher: str = ""
     qbit_bandwidth_control: bool = False
     qbit_bandwidth_threshold: int = 0
@@ -343,6 +351,7 @@ class Meta:
     regex_title: str = ""
     regex_year: str = ""
     region: str = ""
+    refundable: bool = False
     rehash: bool = False
     rehosted_artwork_url: str | None = None
     release_date: str = ""
@@ -369,6 +378,7 @@ class Meta:
     description_fingerprint: str = ""
     description_provenance: dict[str, Any] = field(default_factory=dict)
     tracker_description_raw: dict[str, str] = field(default_factory=dict)
+    tracker_ids: dict[str, str] = field(default_factory=dict)
     tracker_description_mode: str = ""
     tracker_search_term: str = ""
     persist_description: bool = True
@@ -418,6 +428,7 @@ class Meta:
     dynamic_hdr_plot_images: list[Any] = field(default_factory=list)
     steam_manual: str | None = None
     steam_url: str | None = None
+    sticky: bool = False
     stream: bool = False
     studios: list[str] | str | None = None
     subs_reuse_torrent_path: str | None = None
@@ -476,7 +487,6 @@ class Meta:
     ua_name: str = ""
     ua_signature: str = ""
     uhd: str | bool = False
-    ulcx: str | int | None = None
     unattended_audio_skip: bool = False
     unattended_confirm: bool = False
     unattended_subtitle_skip: bool = False
@@ -534,6 +544,7 @@ class Meta:
                 setattr(self, k, v)
         for k, v in kwargs.items():
             setattr(self, k, v)
+        self.set_tracker_ids(self.tracker_ids)
 
     def copy(self) -> Meta:
         """Ensure copy returns a Meta instance with deep copied attributes."""
@@ -549,6 +560,29 @@ class Meta:
 
         copied_dict = {k: copy.deepcopy(self[k], memo) for k in self.to_dict()}
         return Meta(copied_dict)
+
+    def populate_cast(self, limit: int = 5) -> None:
+        """Build the canonical cast list from manual, IMDb, and TMDb sources."""
+        source_lists = [self.manual_cast, self.imdb_info.get("stars", []) if isinstance(self.imdb_info, dict) else [], self.tmdb_cast]
+        names: list[str] = []
+        seen: set[str] = set()
+
+        for source in source_lists:
+            values = source.split(",") if isinstance(source, str) else source if isinstance(source, list) else []
+            for value in values:
+                if not isinstance(value, str):
+                    continue
+                name = " ".join(value.split())
+                key = name.casefold()
+                if not name or key in seen:
+                    continue
+                seen.add(key)
+                names.append(name)
+                if len(names) >= limit:
+                    self.cast = names
+                    return
+
+        self.cast = names
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to a dictionary representing defined fields."""
@@ -580,6 +614,34 @@ class Meta:
         else:
             for k, v in other.items():
                 setattr(self, k, v)
+
+    @staticmethod
+    def canonical_tracker_name(tracker_name: str) -> str:
+        """Return the canonical tracker name for an accepted alias."""
+        normalized_name = tracker_name.upper()
+        return _TRACKER_ID_ALIASES.get(normalized_name, normalized_name)
+
+    def get_tracker_id(self, tracker_name: str) -> str | None:
+        """Return the known torrent ID for a tracker."""
+        key = self.canonical_tracker_name(tracker_name)
+        value = self.tracker_ids.get(key)
+        return str(value) if value is not None else None
+
+    def set_tracker_ids(self, tracker_ids: dict[str, str | int]) -> None:
+        """Persist tracker torrent IDs under their canonical tracker names."""
+        normalized: dict[str, str] = {}
+        for tracker_name, torrent_id in (self.tracker_ids or {}).items():
+            normalized[self.canonical_tracker_name(str(tracker_name))] = str(torrent_id)
+        for tracker_name, torrent_id in (tracker_ids or {}).items():
+            key = self.canonical_tracker_name(str(tracker_name))
+            value = str(torrent_id)
+            normalized[key] = value
+        self.tracker_ids = normalized
+
+    def clear_tracker_id(self, tracker_name: str) -> None:
+        """Forget a tracker torrent ID."""
+        key = self.canonical_tracker_name(tracker_name)
+        self.tracker_ids.pop(key, None)
 
     def get(self, key: str, default: Any = None) -> Any:
         """Get attribute value by name, returning default if not set or None."""

@@ -224,8 +224,9 @@ class ULCX(UNIT3D):
                             logger.info(f"{self.tracker}: [bold red]TrueHD audio tracks must include an AC3 compatibility track.[/bold red]")
                             return False
 
-                # Section 6.12: Default subtitles on English content
-                if not meta.is_disc:
+                # Section 6.12: Default subtitles on English content.
+                # This SHOULD become a MUST for personal releases.
+                if meta.personalrelease and not meta.is_disc:
                     orig_lang = (meta.original_language or meta.language or "").lower()
                     if orig_lang in ("en", "eng", "english"):
                         for s in sub_tracks:
@@ -264,24 +265,8 @@ class ULCX(UNIT3D):
     async def get_description(self, meta: Meta) -> dict[str, str]:
         desc = await DescriptionBuilder(self.tracker, self.config).general_description_generator(
             meta,
-            audio_spectrogram=True,
-            bluray=True,
-            book=True,
-            custom_header=True,
-            custom_signature=True,
-            description=True,
-            game=True,
-            languages=False,
-            logo=True,
             mediainfo=False,
-            menu_screenshots=True,
             nfo=False,
-            screenshots=True,
-            tonemapped_header=True,
-            tv_info=True,
-            ua_signature=True,
-            user_description=True,
-            music=True,
         )
 
         if meta.adult_media:
