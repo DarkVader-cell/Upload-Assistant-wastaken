@@ -41,6 +41,7 @@ def preparation_signature(meta: Mapping[str, Any] | Any) -> str:
             "category",
             "comparison",
             "description_file",
+            "force_upload",
             "imdb_manual",
             "manual_frames",
             "manual_type",

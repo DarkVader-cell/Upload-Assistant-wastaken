@@ -2097,11 +2097,17 @@ async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionCo
         "trackers": meta.trackers,
     }
     restored = await execution_context.artifacts.restore(run_key, workspace)
-    if restored is not None:
+    # A forced upload must run the complete preparation and tracker preflight
+    # path. Cached preparation artifacts intentionally omit volatile upload
+    # state such as ``we_are_uploading`` and therefore cannot be used to enter
+    # the upload stage safely.
+    if restored is not None and not meta.force_upload:
         meta.update(restored)
         meta.update(invocation)
         execution_context.metrics.increment("artifacts.preparation.hits")
         return True
+    if meta.force_upload and restored is not None:
+        execution_context.metrics.increment("artifacts.preparation.force_upload_bypasses")
     execution_context.metrics.increment("artifacts.preparation.misses")
 
     succeeded = False
