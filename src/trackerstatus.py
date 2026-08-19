@@ -120,7 +120,7 @@ class TrackerStatusManager:
                     result = await tracker_setup.check_banned_group(tracker_class.tracker, tracker_class.banned_groups, local_meta)
                     local_tracker_status["banned"] = bool(result)
 
-                if local_meta["tracker_status"][tracker_name].get("skip_upload"):
+                if local_meta["tracker_status"][tracker_name].get("skip_upload") and not meta.force_upload:
                     local_tracker_status["skipped"] = True
                     local_tracker_status["skip_reason"] = "tracker status marked upload as skipped"
                 elif "skipped" not in local_meta and not local_tracker_status["skipped"]:
@@ -165,7 +165,7 @@ class TrackerStatusManager:
                         local_tracker_status["skip_reason"] = "tracker claim/request check rejected the release"
 
                     if tracker_name not in {"PASSTHEPOPCORN"} and not local_tracker_status["skipped"]:
-                        if hasattr(tracker_class, "get_additional_checks"):
+                        if hasattr(tracker_class, "get_additional_checks") and not meta.force_upload:
                             import inspect
 
                             if inspect.iscoroutinefunction(tracker_class.get_additional_checks):
@@ -215,7 +215,7 @@ class TrackerStatusManager:
                             dupes = []
                     elif tracker_name == "PASSTHEPOPCORN":
                         ptp: Any = PassThePopcorn(config=self.config)
-                        if hasattr(ptp, "get_additional_checks"):
+                        if hasattr(ptp, "get_additional_checks") and not meta.force_upload:
                             import inspect
 
                             if inspect.iscoroutinefunction(ptp.get_additional_checks):

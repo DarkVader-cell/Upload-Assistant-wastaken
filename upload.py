@@ -1370,7 +1370,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
         ]:
             if tracker in trackers:
                 status_dict = meta.tracker_status.setdefault(tracker, {})
-                status_dict["skip_upload"] = meta.unattended_audio_skip or meta.unattended_subtitle_skip
+                status_dict["skip_upload"] = (meta.unattended_audio_skip or meta.unattended_subtitle_skip) and not meta.force_upload
 
         await asyncio.sleep(0.2)
         async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
@@ -3195,7 +3195,7 @@ async def process_cross_seeds(meta: Meta) -> None:
 
                 # Search for existing torrents
                 if tracker != "PASSTHEPOPCORN":
-                    if hasattr(tracker_class, "get_additional_checks"):
+                    if hasattr(tracker_class, "get_additional_checks") and not meta.force_upload:
                         import inspect
 
                         if inspect.iscoroutinefunction(tracker_class.get_additional_checks):
@@ -3208,7 +3208,7 @@ async def process_cross_seeds(meta: Meta) -> None:
                     dupes = await tracker_class.search_existing(meta)
                 else:
                     ptp = PassThePopcorn(config=config)
-                    if hasattr(ptp, "get_additional_checks"):
+                    if hasattr(ptp, "get_additional_checks") and not meta.force_upload:
                         import inspect
 
                         if inspect.iscoroutinefunction(ptp.get_additional_checks):

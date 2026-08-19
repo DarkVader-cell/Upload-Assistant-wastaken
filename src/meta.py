@@ -159,6 +159,7 @@ class Meta:
     flux: bool = False
     folder_id: int | None = None
     force_recheck: bool = False
+    force_upload: bool = False
     foreign: bool = False
     format: str = ""
     found_preferred_piece_size: str | None = None

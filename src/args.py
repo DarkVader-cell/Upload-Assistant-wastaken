@@ -635,6 +635,13 @@ class Args:
             help="(qBitTorrent only with auto torrent searching) Force recheck torrent in client before uploading",
             dest="force_recheck",
         )
+        parser.add_argument(
+            "--force-upload",
+            action="store_true",
+            required=False,
+            help="Force tracker uploads past tracker-specific media eligibility checks (does not bypass authentication, duplicates, or tracker bans)",
+            dest="force_upload",
+        )
         parser.add_argument("-dr", "--draft", action="store_true", required=False, help="Send to drafts (BEYONDHD, LST)")
         parser.add_argument("-mq", "--modq", action="store_true", required=False, help="Send to modQ")
         parser.add_argument("-feat", "--featured", action="store_true", required=False, help="Featured torrent")

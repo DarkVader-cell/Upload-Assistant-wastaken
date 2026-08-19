@@ -706,6 +706,11 @@ const argumentCategories = [
       },
       { label: "--skip-dupe-check", description: "Skip dupe check" },
       {
+        label: "--force-upload",
+        description:
+          "Force past tracker-specific media checks (does not bypass authentication, dupes, bans, or tracker claims)",
+      },
+      {
         label: "--skip-dupe-asking",
         description: "Accept any reported dupes without prompting about it",
       },

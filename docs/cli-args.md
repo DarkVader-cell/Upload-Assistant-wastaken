@@ -213,6 +213,7 @@ Thise will use the specified hash to get tracker ids from qBitTorrent or rTorren
 - `-rt`, `--randomized N`: Create N extra torrents with random infohash (default `0`).
 - `--infohash HASH`: V1 info hash to use as the base.
 - `-frc`, `--force-recheck`: (qBittorrent only with auto torrent searching) Force recheck torrent before uploading. NOTE: will find the best seeded torrent file from a supported site, for the related content, and force a recheck before uploading.
+- `--force-upload`: Force tracker uploads past tracker-specific media eligibility checks. This does not bypass authentication, duplicate checks, banned-group checks, tracker claims, or tracker upload/API errors. Use only when you accept responsibility for the tracker rules.
 
 ## Torrent client integration
 
