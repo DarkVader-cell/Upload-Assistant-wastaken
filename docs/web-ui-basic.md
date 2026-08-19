@@ -53,6 +53,12 @@ Notes:
 - The right panel (resizable) shows all of the available arguments that can be used. Click an argument to add that argument to the `additional arguments` list.
 - Under **Language**, use `--audio-language` to override an incorrect or missing MediaInfo audio-language tag. Enter one language (for example, `Tamil`) or multiple comma-separated/space-separated languages. The override is used for tracker checks and title generation, and the upload description automatically records both the override and the original MediaInfo language when it is available. The raw MediaInfo block remains unchanged.
 
+### Configuration editor
+
+- Open **Config** to edit the persisted `data/config.py` settings.
+- In the `TRACKERS` section, **Default trackers** controls the regular upload target list, while **Configured trackers** shows tracker sections already present in `config.py`. **Available trackers** lists tracker sections from the bundled example config that can be added.
+- Save operations reload the configuration from disk. Tracker names and display labels come from the active tracker registry, so newly added or updated tracker settings are reflected after saving.
+
 ### Running an upload (interactive)
 
 - Select a file or folder from the left panel, add optional CLI arguments in the Arguments field, then click "Execute Upload". The UI calls `/api/execute` and streams output back using Server-Sent Events (SSE). The UI renders Rich HTML fragments from the uploader.
