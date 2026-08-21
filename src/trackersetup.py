@@ -64,7 +64,6 @@ from src.trackers.totheglory import ToTheGlory
 from src.trackers.tvchaosuk import TVChaosUK
 from src.trackers.UNIT3D.aither import Aither
 from src.trackers.UNIT3D.asiancinema import AsianCinema
-from src.trackers.UNIT3D.aura4k import Aura4K
 from src.trackers.UNIT3D.bitporn import BitPorn
 from src.trackers.UNIT3D.blutopia import Blutopia
 from src.trackers.UNIT3D.capybarabr import CapybaraBR
@@ -1367,7 +1366,6 @@ class TrackerSetup:
 
 
 tracker_class_map: dict[str, Any] = {
-    "AURA4K": Aura4K,
     "ASIANCINEMA": AsianCinema,
     "AITHER": Aither,
     "ANTHELION": Anthelion,

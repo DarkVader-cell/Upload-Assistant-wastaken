@@ -21,6 +21,9 @@ from urllib.parse import urlparse
 import langcodes
 
 from src.book_extractors import (
+    extract_audiobook_series_from_title as _extract_audiobook_series_from_title,
+)
+from src.book_extractors import (
     extract_cbr_cbz_metadata as _extract_cbr_cbz_metadata,
 )
 from src.book_extractors import (
@@ -43,6 +46,7 @@ from src.book_extractors import (
 )
 from src.console import logger
 from src.exportmi import export_info
+from src.genre_map import map_audiobook_keywords
 from src.meta import Meta
 
 # ---------------------------------------------------------------------------
@@ -335,10 +339,11 @@ async def gather_book_prep(
                 # 1. Title/Album
                 album = _unescape_meta_val(general_track.get("Album") or general_track.get("album"))
                 track_name = _unescape_meta_val(general_track.get("Track_name") or general_track.get("track_name"))
+                title_tag = _unescape_meta_val(general_track.get("Title") or general_track.get("title"))
 
                 # Detect if the audiobook is Unabridged or Abridged from file metadata
                 detected_edition = None
-                for val in (album, track_name):
+                for val in (title_tag, track_name, album):
                     if val:
                         match = re.search(r"\b(unabridged|abridged)\b", val, re.IGNORECASE)
                         if match:
@@ -348,10 +353,7 @@ async def gather_book_prep(
                     meta.edition = detected_edition
 
                 if not meta.title:
-                    if album:
-                        meta.title = album
-                    elif track_name:
-                        meta.title = track_name
+                    meta.title = title_tag or track_name or album or ""
 
                 # Clean the edition from the title if it's not a CLI override
                 if not cli_overrides["title"] and meta.title:
@@ -407,6 +409,15 @@ async def gather_book_prep(
                         if part_val and not meta.book_series_index:
                             meta.book_series_index = _normalize_series_index(part_val)
 
+                if not cli_overrides["title"] and meta.title:
+                    parsed_title, parsed_series, parsed_index = _extract_audiobook_series_from_title(meta.title)
+                    if parsed_series:
+                        meta.title = parsed_title
+                        if not meta.book_series:
+                            meta.book_series = parsed_series
+                        if parsed_index and not meta.book_series_index:
+                            meta.book_series_index = parsed_index
+
                 # 6. Overview/Comment
                 comment = _unescape_meta_val(general_track.get("Comment") or general_track.get("comment"))
                 description = _unescape_meta_val(general_track.get("Description") or general_track.get("description"))
@@ -427,8 +438,7 @@ async def gather_book_prep(
                 # 8. Genre -> Keywords
                 genre = _unescape_meta_val(general_track.get("Genre") or general_track.get("genre"))
                 if genre:
-                    words = re.split(r"[;,]", genre)
-                    cleaned_words = [w.strip().lower() for w in words if w.strip()]
+                    cleaned_words = map_audiobook_keywords(genre)
                     if cleaned_words:
                         existing_keywords = meta.keywords
                         existing_list: list[str] = []
@@ -669,6 +679,9 @@ async def gather_book_prep(
         avg_bitrate = await get_audiobook_bitrate(filelist)
         if avg_bitrate is not None:
             meta.audiobook_bitrate = avg_bitrate
+
+        if meta.keywords:
+            meta.keywords = map_audiobook_keywords(meta.keywords)
 
     detect_newspaper(meta)
     sanitize_book_language(meta)

@@ -151,6 +151,85 @@ def test_upload_screens_preserves_partial_successes_across_fallback(tmp_path: Pa
     assert calls == [("image-1.png", "imgbox"), ("image-2.png", "imgbox"), ("image-2.png", "ptscreens")]
 
 
+def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    async def fake_upload(args: object) -> dict[str, str]:
+        assert isinstance(args, list)
+        host = str(args[1])
+        calls.append(host)
+        if host == "imgbox":
+            return {"status": "failed", "reason": "temporary host failure"}
+        return {
+            "status": "success",
+            "img_url": "https://img.example/image.png",
+            "raw_url": "https://img.example/image.png",
+            "web_url": "https://img.example/image.png",
+        }
+
+    async def exercise() -> tuple[list[dict[str, str]], int]:
+        image_path = tmp_path / "image-1.png"
+        image_path.write_bytes(b"image")
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "imgbox"})
+        config = {
+            "DEFAULT": {
+                "img_host_1": "imgbox",
+                "img_host_2": "ptscreens",
+                "img_host_3": "imgbb",
+                "image_upload_concurrency": 1,
+                "image_upload_delay": 0,
+            },
+            "TRACKERS": {},
+        }
+        with (
+            patch("src.uploadscreens.screenshots_dir", return_value=tmp_path),
+            patch("src.uploadscreens.os.chdir"),
+            patch("src.uploadscreens.Path.cwd", return_value=tmp_path),
+            patch("src.uploadscreens.upload_image_task", new=fake_upload),
+        ):
+            return await _upload_screens(config, meta, 1, 1, 0, 1, [], {}, max_retries=0)
+
+    image_list, uploaded_count = asyncio.run(exercise())
+    assert uploaded_count == 1
+    assert len(image_list) == 1
+    assert calls == ["imgbox", "ptscreens"]
+
+
+def test_upload_screens_resolves_fallback_from_selected_host_slot(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    async def fake_upload(args: object) -> dict[str, str]:
+        assert isinstance(args, list)
+        host = str(args[1])
+        calls.append(host)
+        return {"status": "failed", "reason": "temporary host failure"}
+
+    async def exercise() -> None:
+        image_path = tmp_path / "image-1.png"
+        image_path.write_bytes(b"image")
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "ptscreens"})
+        config = {
+            "DEFAULT": {
+                "img_host_1": "imgbox",
+                "img_host_2": "ptscreens",
+                "img_host_3": "imgbb",
+                "image_upload_concurrency": 1,
+                "image_upload_delay": 0,
+            },
+            "TRACKERS": {},
+        }
+        with (
+            patch("src.uploadscreens.screenshots_dir", return_value=tmp_path),
+            patch("src.uploadscreens.os.chdir"),
+            patch("src.uploadscreens.Path.cwd", return_value=tmp_path),
+            patch("src.uploadscreens.upload_image_task", new=fake_upload),
+        ):
+            await _upload_screens(config, meta, 1, 1, 0, 1, [], {}, max_retries=0)
+
+    asyncio.run(exercise())
+    assert calls == ["ptscreens", "imgbb"]
+
+
 def test_upload_screens_handles_infinite_concurrency(tmp_path: Path) -> None:
     async def fake_upload(_: object) -> dict[str, str]:
         return {

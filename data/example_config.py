@@ -522,7 +522,7 @@ config: dict[str, Any] = {
         # Which trackers do you want to upload to?
         # Note: Description layout settings (like screenshot grids, logos, etc.) can be overridden per-tracker.
         # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/description-builder.md
-        # Available tracker: 1PTBA, AURA4K, ASIANCINEMA, AITHER, ANTHELION, ALPHARATIO, AMIGOSSHARE, AVISTAZ, BEYONDHD, BITHDTV, BITPORN, BJSHARE, BLUTOPIA, BRASILTRACKER, CAPYBARABR, CURUPIRA, SUIO, CINEMAZ, DIGITALCORE, DRUNKENSLUG, DARKPEERS, DESITORRENTS, EMUWAREZ, FUNFILE, FILELIST,
+        # Available tracker: 1PTBA, ASIANCINEMA, AITHER, ANTHELION, ALPHARATIO, AMIGOSSHARE, AVISTAZ, BEYONDHD, BITHDTV, BITPORN, BJSHARE, BLUTOPIA, BRASILTRACKER, CAPYBARABR, CURUPIRA, SUIO, CINEMAZ, DIGITALCORE, DRUNKENSLUG, DARKPEERS, DESITORRENTS, EMUWAREZ, FUNFILE, FILELIST,
         # GREATPOSTERWALL, HDBITS, HDSPACE, HDTORRENTS, HOMIEHELPDESK, HAWKEUNO, INFINITYHD, IMMORTALSEED, ITATORRENTS, LAJIDUI, LEMONHD, LOCADORA, LASTDIGITALUNDERGROUND, LONGPT, LST, LATTEAM, LUMINARR, MIDNIGHTSCENE, MTEAM, NEBULANCE, ONLYENCODES,
         # NORDICQUALITY, NZBGEEK, OLDTOONSWORLD, PRIVATEHD, PORTUGAS, PTCAFE, PTERCLUB, PTFANS, PTGTK, PTZONE, PASSTHEPOPCORN, PEERGARDEN, PTSKIT, POLISHTORRENT, RACING4EVERYONE, RASTASTUGAN, REELFLIX, RAILGUNPT, RETROFLIX, RETROMOVIESCLUB, SAMARITANO, SHAREISLAND, SWARMAZON, SEEDPOOL, SPEEDAPP, SKIPTHECOMMERCIALS, TORRENTHR,
         # CINEMATIK, MAKINGOFF, ORPHEUS, TORRENTLEECH, THELEACHZONE, THEOLDSCHOOL, TOTHEGLORY, TORRENTEROS, TVCHAOSUK, ULCX, UTOPIA, XINGYUNGEPT, YUSCENE, ZENITH
@@ -696,48 +696,6 @@ config: dict[str, Any] = {
             "add_audio_spectrogram": True,
             "inject_delay": 0,
         },
-        "AURA4K": {
-            # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
-            "link_dir_name": "",
-            # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
-            "use_for_search": False,
-            "api_key": "",
-            "anon": True,
-            # Send uploads to AURA4K modq for staff approval
-            "modq": False,
-            # For authorized users only. Do not change this unless you know what you are doing
-            # Upload as featured
-            "featured": False,
-            # For authorized users only. Do not change this unless you know what you are doing
-            # Upload with double upload credit
-            "doubleup": False,
-            # For authorized users only. Do not change this unless you know what you are doing
-            # Upload as sticky/pinned
-            "sticky": False,
-            # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
-        },
         "AVISTAZ": {
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -749,8 +707,15 @@ config: dict[str, Any] = {
             # This does not cover all tracker rules. Set to False to disable.
             "check_for_rules": True,
             # The configurations below override the DEFAULT configuration
+            "thumbnail_size": "",
+            "screens_per_row": "",
             "episode_overview": True,
+            "custom_description_header": "",
+            "audio_spectrogram_header": "",
+            "dynamic_hdr_plot_header": "",
+            "custom_signature": "",
             "add_audio_spectrogram": True,
+            "add_dynamic_hdr_plot": True,
             "inject_delay": 0,
         },
         "BEYONDHD": {
@@ -1039,8 +1004,15 @@ config: dict[str, Any] = {
             # This does not cover all tracker rules. Set to False to disable.
             "check_for_rules": True,
             # The configurations below override the DEFAULT configuration
+            "thumbnail_size": "",
+            "screens_per_row": "",
             "episode_overview": True,
+            "custom_description_header": "",
+            "audio_spectrogram_header": "",
+            "dynamic_hdr_plot_header": "",
+            "custom_signature": "",
             "add_audio_spectrogram": True,
+            "add_dynamic_hdr_plot": True,
             "inject_delay": 0,
         },
         "CURUPIRA": {
@@ -2339,8 +2311,15 @@ config: dict[str, Any] = {
             # This does not cover all tracker rules. Set to False to disable.
             "check_for_rules": True,
             # The configurations below override the DEFAULT configuration
+            "thumbnail_size": "",
+            "screens_per_row": "",
             "episode_overview": True,
+            "custom_description_header": "",
+            "audio_spectrogram_header": "",
+            "dynamic_hdr_plot_header": "",
+            "custom_signature": "",
             "add_audio_spectrogram": True,
+            "add_dynamic_hdr_plot": True,
             "inject_delay": 0,
         },
         "PTCAFE": {

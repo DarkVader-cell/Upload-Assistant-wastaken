@@ -645,8 +645,8 @@ async def _upload_screens(
 
     os.chdir(screenshots_dir(meta.base_dir, meta.uuid))
 
-    initial_img_host = default_config[f"img_host_{img_host_num}"]
-    img_host = meta.imghost
+    initial_img_host = str(default_config.get(f"img_host_{img_host_num}") or "")
+    img_host = str(meta.imghost or "").strip().lower()
 
     image_list = deduplicate_images(meta.image_list)
     meta.image_list = image_list
@@ -676,6 +676,19 @@ async def _upload_screens(
         else:
             logger.info(f"[red]No approved image hosts found in config. Available: {allowed_hosts}[/red]")
             return image_list, len(image_list)
+
+    # ``meta.imghost`` can be selected by tracker-aware host selection while
+    # callers still pass the default slot (usually img_host_1). Resolve the
+    # actual slot before walking the fallback chain so a failed selected host
+    # is not retried as the next host or causes an earlier host to be skipped.
+    configured_host_slots = [
+        (index, str(default_config.get(f"img_host_{index}") or "").strip().lower())
+        for index in range(1, 10)
+    ]
+    current_host_num = next(
+        (index for index, configured_host in configured_host_slots if configured_host == img_host),
+        img_host_num,
+    )
 
     logger.debug(f"[blue]Using image host: {img_host} (configured: {initial_img_host})[/blue]")
     using_custom_img_list = bool(custom_img_list)
@@ -896,7 +909,6 @@ async def _upload_screens(
         return None
 
     try:
-        max_retries = 3
         results: list[tuple[int, dict[str, Any]]] = []
         try:
             upload_results = await asyncio.gather(*[async_upload(task, max_retries) for task in upload_tasks])
@@ -922,7 +934,7 @@ async def _upload_screens(
 
             # Keep walking the configured hosts after a fallback also fails. The
             # previous retry_mode guard stopped the chain at img_host_2.
-            next_host_num = img_host_num + 1
+            next_host_num = current_host_num + 1
             while next_host_num <= 9:
                 next_host_key = f"img_host_{next_host_num}"
                 if next_host_key not in default_config:
@@ -948,6 +960,7 @@ async def _upload_screens(
                     custom_img_list,
                     return_dict,
                     retry_mode=True,
+                    max_retries=max_retries,
                     allowed_hosts=allowed_hosts,
                 )
             logger.info("[red]No more image hosts available. Aborting upload process.")
