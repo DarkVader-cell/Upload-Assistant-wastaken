@@ -1518,7 +1518,7 @@ class QbittorrentClientMixin:
         from src.trackersetup import tracker_class_map
 
         tracker_patterns = {}
-        for name in set(tracker_class_map.keys()) | {"PASSTHEPOPCORN", "BEYONDHD", "BTN", "HDBITS"}:
+        for name in set(tracker_class_map.keys()) | {"PASSTHEPOPCORN", "BEYONDHD", "BROADCASTHENET", "HDBITS"}:
             # Determine URL
             url = ""
             if name in tracker_class_map:
@@ -1537,7 +1537,7 @@ class QbittorrentClientMixin:
                     "BLUTOPIA": "https://blutopia.cc",
                     "ULCX": "https://upload.cx",
                     "HDBITS": "https://hdbits.org",
-                    "BTN": "https://broadcasthe.net",
+                    "BROADCASTHENET": "https://broadcasthe.net",
                     "BEYONDHD": "https://beyond-hd.me",
                     "HAWKEUNO": "https://hawke.uno",
                     "REELFLIX": "https://reelflix.xyz",
@@ -1552,7 +1552,7 @@ class QbittorrentClientMixin:
                 # Determine pattern
                 if name == "PASSTHEPOPCORN":
                     pattern = r"torrentid=(\d+)"
-                elif name in ("HDBITS", "BTN"):
+                elif name in ("HDBITS", "BROADCASTHENET"):
                     pattern = r"id=(\d+)"
                 elif name == "BEYONDHD":
                     pattern = r"details/(\d+)"
@@ -1561,7 +1561,7 @@ class QbittorrentClientMixin:
 
                 tracker_patterns[name.lower()] = {"url": url, "pattern": pattern}
 
-        prioritized = ["aither", "ulcx", "lst", "blu", "oe", "btn", "bhd", "huno", "hdb", "rf", "otw", "yus", "dp", "sp", "ptp"]
+        prioritized = ["aither", "ulcx", "lst", "blu", "oe", "broadcasthenet", "bhd", "huno", "hdb", "rf", "otw", "yus", "dp", "sp", "ptp"]
         all_known = sorted(tracker_patterns.keys())
         tracker_priority = prioritized + [t for t in all_known if t not in prioritized]
         return tracker_patterns, tracker_priority
@@ -2094,7 +2094,6 @@ async def match_tracker_url(tracker_urls: list[str], meta: Meta) -> None:
             urls = getattr(tracker_class, "tracker_urls", None)
             if urls:
                 patterns[name.lower()] = urls
-        patterns.setdefault("btn", ["https://broadcasthe.net"])
         _cached_tracker_url_patterns = patterns
 
     tracker_url_patterns = _cached_tracker_url_patterns
