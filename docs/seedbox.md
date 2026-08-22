@@ -74,8 +74,9 @@ python upload.py "/path/to/content" --trackers yourtracker
 ## Whatbox deployment used by this project
 
 The Whatbox instance uses the `cactus.whatbox.ca` SSH host, rootless Podman,
-and the checkout at `~/Upload-Assistant-wastaken`. The WebUI container is
-`upload-assistant-wastaken` and is defined by `docker-compose.local.yml`.
+and the deployment directory `~/Upload-Assistant-wastaken`. The WebUI container
+is `upload-assistant-wastaken`, is defined by `docker-compose.local.yml`, and
+pulls `ghcr.io/darkvader-cell/upload-assistant-wastaken:latest` directly.
 This is a standalone container: it does not require Gluetun, Radarr, or
 Sonarr. Radarr/Sonarr metadata integrations remain optional application
 features.
@@ -102,10 +103,21 @@ Restart without rebuilding:
 podman restart upload-assistant-wastaken
 ```
 
-After changing Upload Assistant source, rebuild and recreate it with:
+Update to the latest published fork image without building on Whatbox:
 
 ```bash
-podman compose -f docker-compose.local.yml up -d --build upload-assistant-wastaken
+podman compose -f docker-compose.local.yml pull
+podman compose -f docker-compose.local.yml down
+podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken
+curl -fsS http://127.0.0.1:12345/api/health
+```
+
+If Podman reports a stale pod with no infra container, remove only that named
+pod and recreate the service; persistent `docker-data/` mounts are unaffected:
+
+```bash
+podman pod rm -f upload-assistant-wastaken
+podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken
 ```
 
 Do not remove the persistent `docker-data/` directories when recreating the
