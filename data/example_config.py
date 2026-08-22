@@ -81,6 +81,9 @@ config: dict[str, Any] = {
         # Unattended regular queues may prepare independent releases in parallel.
         # Tracker uploads and client mutations remain in the ordered main loop.
         "queue_prepare_concurrency": 1,
+        # Follow live Unit3D pagination during duplicate checks, with a hard
+        # safety cap to avoid a malformed remote cursor looping forever.
+        "unit3d_dupe_max_pages": 100,
         # Extensions are opt-in. Files in extension_paths must expose
         # register(registry) and use the versioned API from src/extensions.py.
         "extensions_enabled": False,

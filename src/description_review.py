@@ -43,6 +43,16 @@ def save_review(temp_dir: Path, content: str, version: int, source_path: str | N
     return payload
 
 
+def save_tracker_description(temp_dir: Path, tracker: str, content: str) -> Path:
+    """Atomically retain the exact tracker-specific description payload."""
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    path = temp_dir / f"[{tracker}]DESCRIPTION.txt"
+    temporary = path.with_suffix(f".tmp.{os.getpid()}")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
+    return path
+
+
 def source_items(meta: dict[str, Any]) -> list[dict[str, str]]:
     """Return inspectable read-only inputs used to build the base description."""
     items: list[dict[str, str]] = []

@@ -242,24 +242,47 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
             url = "https://onlyimage.org/api/1/upload"
             try:
                 async with aiofiles.open(image, "rb") as img_file:
-                    encoded_image = base64.b64encode(await img_file.read()).decode("utf8")
+                    image_bytes = await img_file.read()
 
-                data = {"image": encoded_image}
                 headers = {
                     "X-API-Key": config["DEFAULT"]["onlyimage_api"],
                 }
 
                 async with httpx.AsyncClient() as client:
-                    response = await client.post(url, data=data, headers=headers, timeout=timeout)
+                    # OnlyImage v1.1 accepts a multipart ``source`` upload;
+                    # the former base64/form contract now returns misleading
+                    # success-shaped payloads for some failures.
+                    response = await client.post(
+                        url,
+                        files={"source": (Path(image).name, image_bytes, "application/octet-stream")},
+                        headers=headers,
+                        timeout=timeout,
+                    )
                     response_data = response.json()
 
-                    if response.status_code != 200 or not response_data.get("success"):
+                    success = response_data.get("success", {})
+                    success_code = success.get("code") if isinstance(success, dict) else None
+                    status_code = response_data.get("status_code")
+                    image_data = response_data.get("image", {})
+                    if not isinstance(image_data, dict):
+                        image_data = {}
+                    nested_image = image_data.get("image", {})
+                    if not isinstance(nested_image, dict):
+                        nested_image = {}
+                    medium = image_data.get("medium", {})
+                    if not isinstance(medium, dict):
+                        medium = {}
+                    thumb = image_data.get("thumb", {})
+                    if not isinstance(thumb, dict):
+                        thumb = {}
+                    raw_url = str(image_data.get("url") or nested_image.get("url") or "").strip()
+                    img_url = str(medium.get("url") or thumb.get("url") or raw_url).strip()
+                    web_url = str(image_data.get("url_viewer") or "").strip()
+                    if response.status_code != 200 or status_code != 200 or success_code not in (0, 200) or not raw_url:
+                        error_data = response_data.get("error", {})
+                        error_message = error_data.get("message") if isinstance(error_data, dict) else response_data.get("status_txt", "")
                         logger.info("[yellow]OnlyImage failed, trying next image host")
-                        return {"status": "failed", "reason": "OnlyImage upload failed"}
-
-                    img_url = response_data["data"]["medium"]["url"]
-                    raw_url = response_data["data"]["image"]["url"]
-                    web_url = response_data["data"]["url_viewer"]
+                        return {"status": "failed", "reason": f"OnlyImage upload failed: {error_message or 'invalid v1.1 response'}"}
 
                     logger.debug(f"[green]Image URLs: img_url={img_url}, raw_url={raw_url}, web_url={web_url}")
 
@@ -719,6 +742,17 @@ async def _upload_screens(
         if local_file_path:
             upload_meta.image_sizes[raw_url] = Path(local_file_path).stat().st_size
 
+    def _uploaded_image(upload: dict[str, Any]) -> ImageDict:
+        image: ImageDict = {
+            "img_url": upload["img_url"],
+            "raw_url": upload["raw_url"],
+            "web_url": upload["web_url"],
+        }
+        local_file_path = upload.get("local_file_path")
+        if local_file_path:
+            image["local_file_path"] = str(local_file_path)
+        return image
+
     # Handle image selection
 
     if using_custom_img_list:
@@ -932,6 +966,10 @@ async def _upload_screens(
                 for _index, upload in successfully_uploaded:
                     _record_uploaded_image(image_list, meta, upload, existing_raw_urls)
 
+            partial_custom_images = [_uploaded_image(upload) for _index, upload in successfully_uploaded] if using_custom_img_list else []
+            completed_indexes = {index for index, _upload in successfully_uploaded}
+            failed_custom_images = [image_glob[index] for index, _task in enumerate(upload_tasks) if index not in completed_indexes]
+
             # Keep walking the configured hosts after a fallback also fails. The
             # previous retry_mode guard stopped the chain at img_host_2.
             next_host_num = current_host_num + 1
@@ -950,33 +988,37 @@ async def _upload_screens(
                 logger.info(f"[cyan]Switching to the next image host: {meta.imghost}[/cyan]")
 
                 gc.collect()
-                return await _upload_screens(
+                fallback_images, fallback_count = await _upload_screens(
                     config,
                     meta,
                     screens,
                     next_host_num,
                     i,
                     total_screens,
-                    custom_img_list,
+                    failed_custom_images if using_custom_img_list else custom_img_list,
                     return_dict,
                     retry_mode=True,
                     max_retries=max_retries,
                     allowed_hosts=allowed_hosts,
                 )
+                if using_custom_img_list:
+                    combined_images = partial_custom_images + fallback_images
+                    return combined_images, len(combined_images)
+                return fallback_images, fallback_count
             logger.info("[red]No more image hosts available. Aborting upload process.")
+            if using_custom_img_list and partial_custom_images:
+                logger.warning(f"[yellow]Continuing with {len(partial_custom_images)} successfully uploaded supplemental image(s).[/yellow]")
+                return partial_custom_images, len(partial_custom_images)
             return image_list, len(image_list)
 
         # Process and store successfully uploaded images
         new_images: list[ImageDict] = []
         for _index, upload in successfully_uploaded:
             raw_url = upload["raw_url"]
-            new_image = {"img_url": upload["img_url"], "raw_url": raw_url, "web_url": upload["web_url"]}
+            new_image = _uploaded_image(upload)
             # Custom uploads (disc menus and spectrograms) are not added to
             # ``meta.image_list``.  Keep their local source so a tracker that
             # rejects the initially selected host can re-upload the same asset.
-            local_file_path = upload.get("local_file_path")
-            if local_file_path:
-                new_image["local_file_path"] = str(local_file_path)
             new_images.append(new_image)
             if not using_custom_img_list:
                 if raw_url not in existing_raw_urls:

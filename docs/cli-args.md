@@ -49,6 +49,7 @@ This option is available in the CLI only. In the Web UI, select paths with the b
 - `--plan`, `--dry-run-plan`: Print the execution stages, reusable artifacts/checkpoints, selected trackers, expected external calls, estimated work, and warnings without preparing or uploading anything.
 - `--no-resume`: Ignore saved stage checkpoints for this run. Content-addressed artifacts may still be reused when enabled.
 - `--queue-prepare-concurrency N`: Override `DEFAULT.queue_prepare_concurrency` for unattended regular queues. Independent workspaces prepare concurrently, while tracker uploads and torrent-client mutations remain ordered. Interactive, site-upload, argument-line, and basename-colliding queues stay sequential.
+- `--unit3d-dupe-max-pages N`: Limit live Unit3D duplicate-search pagination for this run; `0` uses `DEFAULT.unit3d_dupe_max_pages`.
 - `-sc`, `--site-check`: Search trackers for suitable uploads and create a log file (no uploading).
 - `-su`, `--site-upload TRACKER`: Process site searches and upload to a single tracker (the tracker identifier is normalized to uppercase).
 - `--unit3d`: Parse a text output file from `UNIT3D-Upload-Checker`.

@@ -136,7 +136,7 @@ Consumers should persist the returned cursor, apply events in order, and fall ba
 - Description: returns the bounded, persistent, non-secret release projection shared by CLI, Web UI, and detached Qui runs
 - Response: `{"success":true,"items":[...],"stats":{"entries":N,"completed":N,"failed":N},"limit":100,"offset":0}`
 
-The database defaults to `data/cache/release_history.sqlite3`, uses indexed SQLite queries, and does not store CLI arguments, API keys, cookies, or tracker credentials.
+The database defaults to `data/cache/release_history.sqlite3`, uses indexed SQLite queries, and does not store CLI arguments, API keys, cookies, or tracker credentials. Successful tracker entries include the submitted tracker title and public details URL when the tracker provides one, so the history view remains useful after a restart.
 
 Allowed status filters are `cancelled`, `completed`, `debug`, `failed`, `interrupted`, `queued`, `running`, and `skipped`. The query is limited to 200 characters; invalid status/pagination values return HTTP 400, while a transient SQLite/storage failure returns HTTP 503. Set `DEFAULT.release_history_enabled` to `False` to return an empty result without deleting the database, or use `release_history_db` and `release_history_max_entries` to relocate and bound it.
 

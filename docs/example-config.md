@@ -75,6 +75,7 @@ Important gotchas:
 - `release_history_db` (str): SQLite history path, relative to the project root unless absolute.
 - `release_history_max_entries` (int): Maximum retained history rows; oldest rows are pruned after each update.
 - `queue_prepare_concurrency` (int): Number of unattended regular queue items to prepare concurrently. Uploads and client mutations remain serialized; `1` preserves sequential preparation.
+- `unit3d_dupe_max_pages` (int): Safety cap for live Unit3D duplicate-search pages per tracker; pending queues remain single-page checks.
 - `extensions_enabled` (bool): Opt in to third-party extensions. Disabled by default.
 - `extension_paths` (list[str]): Local extension directories. Each `.py` file must export `register(registry)` against extension API version 1.
 

@@ -348,6 +348,7 @@ class Meta:
     qbit_tag: str | None = None
     queue: str = ""
     queue_prepare_concurrency: int = 0
+    unit3d_dupe_max_pages: int = 0
     quickie_search: bool = False
     randomized: int = 0
     regex_secondary_title: str = ""

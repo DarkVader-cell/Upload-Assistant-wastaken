@@ -252,6 +252,16 @@ const argumentCategories = [
         placeholder: "N",
         description: "Limit queue successful uploads",
       },
+      {
+        label: "--queue-prepare-concurrency",
+        placeholder: "N",
+        description: "Prepare unattended queue items concurrently; uploads remain ordered",
+      },
+      {
+        label: "--unit3d-dupe-max-pages",
+        placeholder: "N",
+        description: "Safety cap for paginated live Unit3D duplicate checks (0 uses config)",
+      },
       { label: "--site-check", description: "Site check (can it be uploaded)" },
       {
         label: "--site-upload",
@@ -1902,6 +1912,7 @@ function AudionutsUAGUI() {
                 const trackerNames = Array.isArray(item.successful_trackers) && item.successful_trackers.length
                   ? item.successful_trackers
                   : Array.isArray(item.trackers) ? item.trackers : [];
+                const trackerUploads = Array.isArray(item.tracker_uploads) ? item.tracker_uploads : [];
                 return (
                   <div key={item.id} className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-gray-700 bg-gray-900/70" : "border-gray-200 bg-gray-50"}`}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1918,6 +1929,21 @@ function AudionutsUAGUI() {
                         {trackerNames.length > 0 && <div>{trackerNames.join(" · ")}</div>}
                       </div>
                     </div>
+                    {trackerUploads.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                        {trackerUploads.map((upload) => (
+                          upload.url ? (
+                            <a key={`${item.id}-${upload.tracker}`} href={upload.url} target="_blank" rel="noreferrer" className="rounded border border-blue-500/40 px-1.5 py-0.5 text-blue-400 hover:bg-blue-500/10" title={upload.name || upload.url}>
+                              {upload.tracker}{upload.name ? ` · ${upload.name}` : ""}
+                            </a>
+                          ) : (
+                            <span key={`${item.id}-${upload.tracker}`} className="rounded border px-1.5 py-0.5 opacity-75" title={upload.name || upload.tracker}>
+                              {upload.tracker}{upload.name ? ` · ${upload.name}` : ""}
+                            </span>
+                          )
+                        ))}
+                      </div>
+                    )}
                     {item.job_id && (historyStatus === "failed" || historyStatus === "interrupted") && (
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button

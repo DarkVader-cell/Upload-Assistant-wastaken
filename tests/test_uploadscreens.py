@@ -151,6 +151,38 @@ def test_upload_screens_preserves_partial_successes_across_fallback(tmp_path: Pa
     assert calls == [("image-1.png", "imgbox"), ("image-2.png", "imgbox"), ("image-2.png", "ptscreens")]
 
 
+def test_upload_screens_preserves_partial_custom_assets_across_fallback(tmp_path: Path) -> None:
+    calls: list[tuple[str, str]] = []
+
+    async def fake_upload(args: object) -> dict[str, str]:
+        assert isinstance(args, list)
+        filename, host = Path(str(args[0])).name, str(args[1])
+        calls.append((filename, host))
+        if filename == "plot-2.png" and host == "imgbox":
+            return {"status": "failed", "reason": "temporary host failure"}
+        return {
+            "status": "success",
+            "img_url": f"https://img.example/{filename}/{host}",
+            "raw_url": f"https://img.example/{filename}/{host}",
+            "web_url": f"https://img.example/{filename}/{host}",
+        }
+
+    async def exercise() -> tuple[list[dict[str, str]], int]:
+        assets = [tmp_path / "plot-1.png", tmp_path / "plot-2.png"]
+        for asset in assets:
+            asset.write_bytes(b"image")
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "imgbox"})
+        config = {"DEFAULT": {"img_host_1": "imgbox", "img_host_2": "ptscreens", "image_upload_concurrency": 1, "image_upload_delay": 0}, "TRACKERS": {}}
+        with patch("src.uploadscreens.upload_image_task", new=fake_upload):
+            return await _upload_screens(config, meta, 2, 1, 0, 2, [str(asset) for asset in assets], {}, max_retries=0)
+
+    uploaded, count = asyncio.run(exercise())
+
+    assert count == 2
+    assert [str(image["raw_url"]).split("/")[-2] for image in uploaded] == ["plot-1.png", "plot-2.png"]
+    assert calls == [("plot-1.png", "imgbox"), ("plot-2.png", "imgbox"), ("plot-2.png", "ptscreens")]
+
+
 def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp_path: Path) -> None:
     calls: list[str] = []
 

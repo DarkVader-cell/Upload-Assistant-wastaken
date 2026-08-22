@@ -18,6 +18,12 @@ from src.tracker_images import get_tracker_image_collection
 from src.trackers.common import Common
 
 
+def format_bhd_imdb_id(value: object) -> str:
+    """Return BHD's seven-digit IMDb API identifier, or its no-ID sentinel."""
+    digits = re.sub(r"\D", "", str(value or ""))
+    return digits.zfill(7) if digits else "0"
+
+
 class BEYONDHD:
     """
     BHD Private Torrent Tracker
@@ -122,7 +128,7 @@ class BEYONDHD:
             "category_id": cat_id,
             "type": type_id,
             "source": source_id,
-            "imdb_id": meta.imdb,
+            "imdb_id": format_bhd_imdb_id(meta.imdb),
             "tmdb_id": meta.tmdb,
             "description": desc,
             "anon": anon,
@@ -164,15 +170,26 @@ class BEYONDHD:
                 async with httpx.AsyncClient(timeout=60) as client:
                     response = await client.post(url=url, files=files, data=data, headers=headers)
                     response_json = cast(dict[str, Any], response.json())
-                    if int(response_json["status_code"]) == 0:
+                    status_code = int(response_json.get("status_code", 0))
+                    if status_code == 0:
                         logger.info(f"{self.tracker}: [red]{escape(response_json['status_message'])}")
                         if response_json["status_message"].startswith("Invalid imdb_id"):
                             logger.info(f"{self.tracker}: [yellow]RETRYING UPLOAD")
-                            data["imdb_id"] = 1
+                            data["imdb_id"] = "0"
                             response = await client.post(url=url, files=files, data=data, headers=headers)
                             response_json = cast(dict[str, Any], response.json())
+                            status_code = int(response_json.get("status_code", 0))
                         elif response_json["status_message"].startswith("Invalid name value"):
                             logger.info(f"{self.tracker}: [bold yellow]Submitted Name: {escape(bhd_name)}")
+
+                    if status_code == 1:
+                        meta.tracker_status[self.tracker]["pending_publication"] = True
+                        meta.tracker_status[self.tracker]["status_message"] = "Saved as a BeyondHD draft; client injection is deferred until it is published."
+                        return True
+
+                    if status_code != 2:
+                        meta.tracker_status[self.tracker]["status_message"] = response_json.get("status_message", "data error: BeyondHD rejected the upload.")
+                        return False
 
                     if "status_message" in response_json:
                         match = re.search(rf"{re.escape(self.base_url)}/torrent/download/.*\.(\d+)\.", response_json["status_message"])
@@ -182,8 +199,8 @@ class BEYONDHD:
                             details_link = f"{self.base_url}/details/{torrent_id}"
                             meta.tracker_status[self.tracker]["status_message"] = response_json
                         else:
-                            meta.tracker_status[self.tracker]["status_message"] = "No valid details link found in status_message."
-                            return True
+                            meta.tracker_status[self.tracker]["status_message"] = "data error: BeyondHD live upload did not include a torrent ID."
+                            return False
                     else:
                         meta.tracker_status[self.tracker]["status_message"] = "data error: No status_message in response."
                         return False

@@ -40,6 +40,27 @@ def test_release_history_filters_status_without_loading_unrelated_rows(tmp_path)
     assert store.stats() == {"entries": 2, "completed": 1, "failed": 1}
 
 
+def test_release_history_retains_tracker_titles_and_links(tmp_path) -> None:
+    store = ReleaseHistoryStore(tmp_path, {"DEFAULT": {"release_history_db": "history.sqlite3"}})
+    meta = Meta(
+        uuid="release-1",
+        name="Movie.2026",
+        trackers=["AITHER", "BEYONDHD"],
+        tracker_status={
+            "AITHER": {"upload_success": True, "upload_name": "Movie.2026.AITHER", "upload_url": "https://aither.cc/torrents/1"},
+            "BEYONDHD": {"upload_success": True, "upload_name": "Movie.2026.BHD"},
+        },
+    )
+
+    store.record_release(meta)
+    result = store.search()[0]
+
+    assert result["tracker_uploads"] == [
+        {"tracker": "AITHER", "name": "Movie.2026.AITHER", "url": "https://aither.cc/torrents/1"},
+        {"tracker": "BEYONDHD", "name": "Movie.2026.BHD"},
+    ]
+
+
 def test_torrent_client_reference_cleanup_selects_safe_fallback() -> None:
     config = {
         "DEFAULT": {

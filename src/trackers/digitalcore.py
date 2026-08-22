@@ -25,6 +25,7 @@ class DigitalCore:
     display_name = "DigitalCore"
     base_url = "https://digitalcore.club"
     api_base_url = f"{base_url}/api/v1/torrents"
+    dupe_search_url = f"{api_base_url}/dupe-search"
     banned_groups = ("",)
     # PTScreens is allowed by DigitalCore's CSP img-src directive.
     approved_image_hosts = ("imgbox", "imgbb", "bhd", "imgur", "postimg", "sharex", "ptscreens")
@@ -131,45 +132,60 @@ class DigitalCore:
         return None
 
     async def search_existing(self, meta: Meta) -> list[dict[str, Any]]:
-        imdb_id = meta.imdb_info.get("imdbID")
+        imdb_id = meta.imdb_info.get("imdbID") or (f"tt{meta.imdb}" if meta.imdb else "")
         category_id = self.get_category_id(meta)
-
-        search_params = {"search": meta.title}
-        if imdb_id:
-            search_params = {"searchText": imdb_id}
-
-        search_results: list[Any] = []
         dupes: list[dict[str, Any]] = []
-        response = await self.session.get(self.api_base_url, params=search_params, headers=self.session.headers, timeout=15)
-        response.raise_for_status()
+        search_name = str(meta.name or meta.clean_name or meta.title or "").strip()
+        if not imdb_id and not search_name:
+            logger.warning(f"{self.tracker}: missing IMDb ID and release name; duplicate search skipped.")
+            return dupes
 
-        if response.text and response.text != "[]":
-            json_data = response.json()
-            if isinstance(json_data, list):
-                search_results = json_data
-            for each in search_results:
+        params: dict[str, str | int] = {"limit": 100, "index": 0}
+        if imdb_id:
+            params["imdb"] = str(imdb_id)
+        if search_name:
+            params["releaseName"] = search_name
+
+        for _page in range(100):
+            response = await self.session.get(self.dupe_search_url, params=params, headers=self.session.headers, timeout=15)
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict):
+                logger.warning(f"{self.tracker}: malformed duplicate-search response; stopping.")
+                break
+            results = payload.get("results")
+            index, count, total = payload.get("index"), payload.get("count"), payload.get("total")
+            includes_pending = payload.get("includesPending")
+            if not isinstance(results, list) or not all(isinstance(value, int) for value in (index, count, total)) or count != len(results):
+                logger.warning(f"{self.tracker}: incomplete duplicate-search pagination metadata; stopping.")
+                break
+            if includes_pending is not True:
+                logger.warning(f"{self.tracker}: duplicate search did not confirm pending/modqueue coverage.")
+            for each in results:
                 if not isinstance(each, dict):
                     continue
                 each_dict = cast(dict[str, Any], each)
-                if each_dict.get("category") == category_id:
-                    name = each_dict.get("name")
-                    torrent_id = each_dict.get("id")
-                    size = each_dict.get("size")
-                    torrent_link = f"{self.torrent_url}{torrent_id}/" if torrent_id else None
-                    numfiles = each_dict.get("numfiles", "")
-                    dupe_entry: dict[str, Any] = {
+                if category_id is not None and each_dict.get("category") not in (category_id, each_dict.get("categoryName")):
+                    continue
+                torrent_id = each_dict.get("id")
+                dupes.append(
+                    {
                         "id": torrent_id,
                         "download": f"{self.api_base_url}/download/{torrent_id}",
-                        "file_count": numfiles,
-                        "name": name,
-                        "size": size,
-                        "link": torrent_link,
+                        "file_count": each_dict.get("numfiles", ""),
+                        "name": each_dict.get("name", ""),
+                        "size": each_dict.get("size", 0),
+                        "link": f"{self.torrent_url}{torrent_id}/" if torrent_id else None,
+                        "type": each_dict.get("type"),
                     }
-                    dupes.append(dupe_entry)
+                )
+            next_index = index + count
+            if next_index >= total or count == 0:
+                return dupes
+            params["index"] = next_index
 
-            return dupes
-
-        return []
+        logger.warning(f"{self.tracker}: duplicate search reached its 100-page safety limit.")
+        return dupes
 
     async def get_name(self, meta: Meta) -> str:
         """

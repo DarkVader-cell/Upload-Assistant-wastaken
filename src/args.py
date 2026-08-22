@@ -152,6 +152,12 @@ class Args:
             help="Prepare unattended queue items concurrently; uploads remain serialized",
         )
         parser.add_argument(
+            "--unit3d-dupe-max-pages",
+            type=int,
+            default=0,
+            help="Maximum live Unit3D duplicate-search pages per tracker (0 uses config)",
+        )
+        parser.add_argument(
             "-sc",
             "--site-check",
             dest="site_check",

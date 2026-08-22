@@ -5,6 +5,7 @@ import platform
 import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import aiofiles
 import httpx
@@ -119,13 +120,43 @@ class UNIT3D:
 
         urls_to_check = await self.get_search_urls(meta, request_params)
 
+        try:
+            configured_max_pages = int(self.config.get("DEFAULT", {}).get("unit3d_dupe_max_pages", 100))
+        except (TypeError, ValueError):
+            configured_max_pages = 100
+        try:
+            requested_max_pages = int(getattr(meta, "unit3d_dupe_max_pages", 0) or 0)
+        except (TypeError, ValueError):
+            requested_max_pages = 0
+        max_pages = max(1, requested_max_pages or configured_max_pages)
+
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
             for url, params, check_pending in urls_to_check:
-                logger.debug(f"{self.tracker}: Searching URL: {url} with params: {params} (pending={check_pending})")
-                response = await client.get(url=url, headers=headers, params=params)
-                response.raise_for_status()
+                request_url = url
+                request_params: ParamsList | None = params
+                initial_origin = urlsplit(url)
+                seen_urls: set[str] = set()
+                page_count = 0
+                has_next_page = False
+                # Pending queues are a point-in-time moderation view. Keep the
+                # legacy single-page request for them, while live searches walk
+                # the Unit3D pagination cursor until exhausted.
+                page_limit = 1 if check_pending else max_pages
+                while request_url and page_count < page_limit:
+                    canonical_url = request_url if request_params is None else f"{request_url}?{request_params!r}"
+                    if canonical_url in seen_urls:
+                        logger.warning(f"{self.tracker}: Unit3D duplicate search pagination loop detected; stopping.")
+                        break
+                    seen_urls.add(canonical_url)
+                    logger.debug(f"{self.tracker}: Searching URL: {request_url} with params: {request_params} (pending={check_pending})")
+                    response = await client.get(url=request_url, headers=headers, params=request_params)
+                    response.raise_for_status()
+                    page_count += 1
 
-                if response.status_code == 200:
+                    if response.status_code != 200:
+                        logger.info(f"{self.tracker}: [bold red]Failed to search torrents. HTTP Status: {response.status_code}")
+                        break
+
                     data = response.json()
                     for each in data.get("data", []):
                         if check_pending:
@@ -169,8 +200,21 @@ class UNIT3D:
                                 "description": attributes.get("description", ""),
                             }
                         dupes.append(result)
-                else:
-                    logger.info(f"{self.tracker}: [bold red]Failed to search torrents. HTTP Status: {response.status_code}")
+
+                    next_url = data.get("links", {}).get("next") if isinstance(data.get("links"), dict) else None
+                    if check_pending or not isinstance(next_url, str) or not next_url.strip():
+                        break
+                    candidate = urlsplit(urljoin(request_url, next_url))
+                    # Never follow a pagination link to another origin: API
+                    # credentials must remain scoped to the tracker endpoint.
+                    if (candidate.scheme, candidate.hostname, candidate.port) != (initial_origin.scheme, initial_origin.hostname, initial_origin.port):
+                        logger.warning(f"{self.tracker}: Ignoring Unit3D pagination link outside the tracker origin.")
+                        break
+                    request_url = candidate.geturl()
+                    request_params = None
+                    has_next_page = True
+                if has_next_page and page_count == page_limit and not check_pending:
+                    logger.warning(f"{self.tracker}: Unit3D duplicate search reached the {page_limit}-page safety limit.")
 
         return dupes
 

@@ -4,7 +4,7 @@ This guide describes the fork-specific workflow improvements that complement the
 
 ## Persistent release history
 
-CLI uploads, interactive Web UI runs, and detached Qui jobs write a compact release projection to SQLite. The default database is `data/cache/release_history.sqlite3`; it uses WAL mode and indexed status/update-time queries so the Operations UI does not need to load the whole history into memory.
+CLI uploads, interactive Web UI runs, and detached Qui jobs write a compact release projection to SQLite. The default database is `data/cache/release_history.sqlite3`; it uses WAL mode and indexed status/update-time queries so the Operations UI does not need to load the whole history into memory. Each successful tracker can retain the exact submitted title and its public details link, if available.
 
 Configure it under `DEFAULT`:
 

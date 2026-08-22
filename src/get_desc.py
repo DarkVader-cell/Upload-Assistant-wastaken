@@ -20,7 +20,7 @@ from langcodes.tag_parser import LanguageTagError
 from src.bbcode import BBCODE
 from src.cogs.redaction import PathAwareEncoder
 from src.console import logger
-from src.description_review import apply_saved_draft, is_meaningful_description
+from src.description_review import apply_saved_draft, is_meaningful_description, save_tracker_description
 from src.languages import languages_manager
 from src.mediainfo import MediaInfo
 from src.meta import Meta
@@ -1145,7 +1145,7 @@ class DescriptionBuilder:
         screenshots: bool = True,
         tonemapped_header: bool = True,
         tv_info: bool = True,
-        ua_signature: bool = True,
+        ua_signature: bool = True,  # noqa: ARG002 - retained for tracker extension compatibility
         user_description: bool = True,
         music: bool = True,
         dynamic_hdr_plot: bool = True,
@@ -1402,11 +1402,17 @@ class DescriptionBuilder:
         # Formatting
         description_str = self.tracker_specific_formats(self.tracker, description_str)
 
+        # Keep the exact tracker-specific payload available after every run.
+        # This is intentionally not limited to debug mode: the Web UI review
+        # panel and the durable release history need the final rendered text,
+        # rather than only the source description/draft used to create it.
+        temp_dir = Path(meta.base_dir) / "tmp" / str(meta.uuid)
+        desc_path = temp_dir / f"[{self.tracker}]DESCRIPTION.txt"
         if meta.debug:
-            desc_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[{self.tracker}]DESCRIPTION.txt"
-            logger.debug(f"DEBUG: Saving final description to [yellow]{desc_file}[/yellow]")
-            async with aiofiles.open(desc_file, "w", encoding="utf-8") as description_file:
-                await description_file.write(description_str)
+            logger.debug(f"DEBUG: Saving final description to [yellow]{desc_path}[/yellow]")
+        # This is a tiny atomic write, avoiding a partial file while a detached
+        # Web UI job reads the rendered payload.
+        await asyncio.to_thread(save_tracker_description, temp_dir, self.tracker, description_str)
 
         return description_str
 

@@ -1491,6 +1491,20 @@ async def get_romaji(tmdb_name: str, mal: int | None, meta: Meta) -> tuple[str, 
             try:
                 async with httpx.AsyncClient(timeout=30.0) as client:
                     response = await client.post(url, json={"query": query, "variables": variables})
+                if response.status_code == 429:
+                    retry_after = response.headers.get("Retry-After", "")
+                    try:
+                        delay = max(1.0, min(float(retry_after), 60.0))
+                    except (TypeError, ValueError):
+                        delay = min(5.0 * (attempt + 1), 60.0)
+                    if attempt < 2:
+                        logger.info(f"[yellow]AniList rate limited; retrying in {delay:g}s ({attempt + 2}/3)...[/yellow]")
+                        await asyncio.sleep(delay)
+                        continue
+                    logger.error("[red]AniList rate limited after 3 attempts. Continuing without it...")
+                    media = []
+                    break
+                response.raise_for_status()
                 json_data = typing_cast(dict[str, Any], response.json())
 
                 demographics = ["Shounen", "Seinen", "Shoujo", "Josei", "Kodomo", "Mina"]

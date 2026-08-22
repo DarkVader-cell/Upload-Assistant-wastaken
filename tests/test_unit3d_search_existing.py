@@ -19,6 +19,15 @@ class FakeResponse:
         return {"data": []}
 
 
+class PaginatedResponse(FakeResponse):
+    def __init__(self, data: list[dict[str, object]], next_url: str | None = None) -> None:
+        self.data = data
+        self.next_url = next_url
+
+    def json(self) -> dict[str, object]:
+        return {"data": self.data, "links": {"next": self.next_url}}
+
+
 class FakeAsyncClient:
     def __init__(self, requests: list[list[tuple[str, Any]]], **_kwargs: Any) -> None:
         self.requests = requests
@@ -74,3 +83,45 @@ def test_missing_tmdb_keeps_category_filter(monkeypatch: pytest.MonkeyPatch) -> 
     asyncio.run(tracker.search_existing(meta))
 
     assert ("categories[]", "2") in requests[0]  # noqa: S101
+
+
+def test_unit3d_duplicate_search_follows_same_origin_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests: list[tuple[str, object]] = []
+    responses = [
+        PaginatedResponse([{"id": 1, "attributes": {"name": "one", "size": 1, "files": []}}], "https://aither.cc/api/torrents?page=2"),
+        PaginatedResponse([{"id": 2, "attributes": {"name": "two", "size": 2, "files": []}}]),
+    ]
+
+    class PaginatedClient(FakeAsyncClient):
+        async def get(self, *, url: str, headers: dict[str, str], params: object) -> PaginatedResponse:
+            _ = headers
+            requests.append((url, params))
+            return responses.pop(0)
+
+    monkeypatch.setattr("src.trackers.UNIT3D.httpx.AsyncClient", lambda **kwargs: PaginatedClient([], **kwargs))
+    tracker = Aither({"DEFAULT": {"unit3d_dupe_max_pages": 5}, "TRACKERS": {"AITHER": {"api_key": "test-key"}}})
+    meta = Meta(category="MOVIE", tmdb=123, resolution="1080p", type="WEBDL")
+
+    results = asyncio.run(tracker.search_existing(meta))
+
+    assert [result["name"] for result in results] == ["one", "two"]  # noqa: S101
+    assert requests[0][1] is not None  # noqa: S101
+    assert requests[1] == ("https://aither.cc/api/torrents?page=2", None)  # noqa: S101
+
+
+def test_unit3d_duplicate_search_rejects_cross_origin_page(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests: list[tuple[str, object]] = []
+
+    class CrossOriginClient(FakeAsyncClient):
+        async def get(self, *, url: str, headers: dict[str, str], params: object) -> PaginatedResponse:
+            _ = headers
+            requests.append((url, params))
+            return PaginatedResponse([], "https://other.example/api/torrents?page=2")
+
+    monkeypatch.setattr("src.trackers.UNIT3D.httpx.AsyncClient", lambda **kwargs: CrossOriginClient([], **kwargs))
+    tracker = Aither({"TRACKERS": {"AITHER": {"api_key": "test-key"}}})
+    meta = Meta(category="MOVIE", tmdb=123, resolution="1080p", type="WEBDL")
+
+    asyncio.run(tracker.search_existing(meta))
+
+    assert len(requests) == 1  # noqa: S101

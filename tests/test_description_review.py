@@ -4,7 +4,7 @@ import asyncio
 import inspect
 import json
 
-from src.description_review import load_review
+from src.description_review import load_review, save_tracker_description
 from src.get_desc import DescriptionBuilder, gen_desc
 from src.meta import Meta
 from web_ui import server
@@ -164,3 +164,9 @@ def test_description_file_is_not_rendered_twice_when_both_sections_are_enabled(t
         assert result == "release notes"
 
     asyncio.run(run())
+
+
+def test_final_tracker_description_is_saved_outside_debug_mode(tmp_path):
+    path = save_tracker_description(tmp_path / "tmp" / "release", "TEST", "release notes")
+
+    assert path.read_text(encoding="utf-8") == "release notes"

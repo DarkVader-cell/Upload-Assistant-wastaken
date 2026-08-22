@@ -93,11 +93,15 @@ class ReleaseHistoryStore:
                             trackers TEXT NOT NULL DEFAULT '[]',
                             successful_trackers TEXT NOT NULL DEFAULT '[]',
                             failed_trackers TEXT NOT NULL DEFAULT '[]',
+                            tracker_uploads TEXT NOT NULL DEFAULT '[]',
                             external_ids TEXT NOT NULL DEFAULT '{}',
                             job_id TEXT NOT NULL DEFAULT ''
                         )
                         """
                     )
+                    columns = {row[1] for row in connection.execute("PRAGMA table_info(release_history)")}
+                    if "tracker_uploads" not in columns:
+                        connection.execute("ALTER TABLE release_history ADD COLUMN tracker_uploads TEXT NOT NULL DEFAULT '[]'")
                     connection.execute("CREATE INDEX IF NOT EXISTS release_history_updated_idx ON release_history(updated_at DESC)")
                     connection.execute("CREATE INDEX IF NOT EXISTS release_history_status_idx ON release_history(status, updated_at DESC)")
                     connection.commit()
@@ -121,6 +125,27 @@ class ReleaseHistoryStore:
                 elif value.get("upload_success") is False:
                     failed.append(name)
         return trackers, successful, failed
+
+    @staticmethod
+    def _tracker_upload_projection(meta: Mapping[str, Any] | Any) -> list[dict[str, str]]:
+        """Return the non-secret submitted title/link projection for successful uploads."""
+        getter = meta.get if hasattr(meta, "get") else lambda _key, default=None: default
+        statuses = getter("tracker_status", {})
+        if not isinstance(statuses, Mapping):
+            return []
+        uploads: list[dict[str, str]] = []
+        for tracker, value in statuses.items():
+            if not isinstance(value, Mapping) or value.get("upload_success") is not True:
+                continue
+            item = {"tracker": _text(tracker)}
+            submitted_name = _text(value.get("upload_name"))
+            submitted_url = _text(value.get("upload_url"))
+            if submitted_name:
+                item["name"] = submitted_name
+            if submitted_url:
+                item["url"] = submitted_url
+            uploads.append(item)
+        return sorted(uploads, key=lambda item: item["tracker"])
 
     @staticmethod
     def _external_ids(meta: Mapping[str, Any] | Any) -> dict[str, str]:
@@ -151,6 +176,7 @@ class ReleaseHistoryStore:
             "trackers": json.dumps(record.get("trackers") or []),
             "successful_trackers": json.dumps(record.get("successful_trackers") or []),
             "failed_trackers": json.dumps(record.get("failed_trackers") or []),
+            "tracker_uploads": json.dumps(record.get("tracker_uploads") or []),
             "external_ids": json.dumps(record.get("external_ids") or {}),
             "job_id": _text(record.get("job_id")),
         }
@@ -162,11 +188,11 @@ class ReleaseHistoryStore:
                 INSERT INTO release_history (
                     id, version, created_at, updated_at, source, source_path,
                     release_name, category, media_type, resolution, status,
-                    trackers, successful_trackers, failed_trackers, external_ids, job_id
+                    trackers, successful_trackers, failed_trackers, tracker_uploads, external_ids, job_id
                 ) VALUES (
                     :id, :version, :created_at, :updated_at, :source, :source_path,
                     :release_name, :category, :media_type, :resolution, :status,
-                    :trackers, :successful_trackers, :failed_trackers, :external_ids, :job_id
+                    :trackers, :successful_trackers, :failed_trackers, :tracker_uploads, :external_ids, :job_id
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     updated_at=excluded.updated_at,
@@ -180,6 +206,7 @@ class ReleaseHistoryStore:
                     trackers=CASE WHEN excluded.trackers != '[]' THEN excluded.trackers ELSE release_history.trackers END,
                     successful_trackers=CASE WHEN excluded.successful_trackers != '[]' THEN excluded.successful_trackers ELSE release_history.successful_trackers END,
                     failed_trackers=CASE WHEN excluded.failed_trackers != '[]' THEN excluded.failed_trackers ELSE release_history.failed_trackers END,
+                    tracker_uploads=CASE WHEN excluded.tracker_uploads != '[]' THEN excluded.tracker_uploads ELSE release_history.tracker_uploads END,
                     external_ids=CASE WHEN excluded.external_ids != '{}' THEN excluded.external_ids ELSE release_history.external_ids END,
                     job_id=CASE WHEN excluded.job_id != '' THEN excluded.job_id ELSE release_history.job_id END
                 """,
@@ -219,6 +246,7 @@ class ReleaseHistoryStore:
                 "trackers": trackers,
                 "successful_trackers": successful,
                 "failed_trackers": failed,
+                "tracker_uploads": self._tracker_upload_projection(meta),
                 "external_ids": self._external_ids(meta),
                 "job_id": job_id,
             }
@@ -266,7 +294,7 @@ class ReleaseHistoryStore:
         results: list[dict[str, Any]] = []
         for row in rows:
             item = dict(row)
-            for key, fallback in (("trackers", []), ("successful_trackers", []), ("failed_trackers", []), ("external_ids", {})):
+            for key, fallback in (("trackers", []), ("successful_trackers", []), ("failed_trackers", []), ("tracker_uploads", []), ("external_ids", {})):
                 try:
                     item[key] = json.loads(item[key])
                 except (TypeError, ValueError):

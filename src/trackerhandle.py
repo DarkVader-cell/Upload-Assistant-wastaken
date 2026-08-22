@@ -294,7 +294,9 @@ async def process_trackers(
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
                     await record_tracker_result(tracker_class, status)
-                    if not getattr(tracker_class, "is_usenet", False):
+                    if status.get("pending_publication"):
+                        logger.info(f"{tracker_class.tracker}: saved as a tracker draft; skipping torrent-client injection until it is published.")
+                    elif not getattr(tracker_class, "is_usenet", False):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
@@ -335,7 +337,9 @@ async def process_trackers(
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
                     await record_tracker_result(tracker_class, status)
-                    if not getattr(tracker_class, "is_usenet", False):
+                    if status.get("pending_publication"):
+                        logger.info(f"{tracker_class.tracker}: saved as a tracker draft; skipping torrent-client injection until it is published.")
+                    elif not getattr(tracker_class, "is_usenet", False):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
