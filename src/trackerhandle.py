@@ -1,5 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import asyncio
+import re
 import sys
 import time
 import traceback
@@ -20,11 +21,10 @@ from src.get_desc import DescriptionBuilder
 from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
-from src.rehostimages import check_tracker_image_hosts
+from src.rehostimages import check_tracker_image_hosts, has_restricted_image_hosts, select_common_image_host
 from src.runtime.context import current_execution_context
 from src.runtime.scheduler import AdaptiveScheduler
 from src.trackers.adapter import TrackerRegistry
-from src.rehostimages import check_tracker_image_hosts, has_restricted_image_hosts, select_common_image_host
 from src.trackers.passthepopcorn import PassThePopcorn
 from src.trackersetup import TrackerSetup
 
@@ -139,6 +139,10 @@ async def process_trackers(
                 if print_links and link_url:
                     result_parts.append(f"[[green]{format_terminal_link('link', link_url, config['DEFAULT'])}[/green]]")
 
+                submitted_name = str(status.get("upload_name", "")).strip()
+                if submitted_name:
+                    result_parts.insert(0, escape(submitted_name))
+
                 if has_status_message and (print_messages or (print_links and not link_url)):
                     result_parts.append(escape(Redaction.redact_private_info(status_message)))
 
@@ -152,6 +156,27 @@ async def process_trackers(
                 logger.info(message, extra={"highlighter": None})
         except Exception as e:
             logger.error(f"[red]Error printing {tracker} result: {e}[/red]")
+
+    async def record_tracker_result(tracker_class: Any, status: StatusDict) -> None:
+        """Keep the exact submitted name and a browser-friendly release link."""
+        try:
+            name_result = await tracker_class.get_name(meta)
+            if isinstance(name_result, Mapping):
+                submitted_name = name_result.get("name")
+                if submitted_name:
+                    status["upload_name"] = str(submitted_name)
+        except Exception:
+            status.setdefault("upload_name", str(meta.name or meta.title or ""))
+
+        torrent_id = status.get("torrent_id")
+        torrent_url = str(getattr(tracker_class, "torrent_url", "") or "")
+        if torrent_id and torrent_url:
+            status["upload_url"] = f"{torrent_url}{torrent_id}"
+        elif not status.get("upload_url"):
+            message = str(status.get("status_message", ""))
+            match = re.search(r"https?://[^\s<>()]+", message)
+            if match:
+                status["upload_url"] = match.group(0).rstrip(".,)")
 
     async def process_single_tracker(tracker: str) -> None:
         """
@@ -268,6 +293,7 @@ async def process_trackers(
                 status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
+                    await record_tracker_result(tracker_class, status)
                     if not getattr(tracker_class, "is_usenet", False):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
@@ -308,6 +334,7 @@ async def process_trackers(
                 status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
+                    await record_tracker_result(tracker_class, status)
                     if not getattr(tracker_class, "is_usenet", False):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
@@ -369,6 +396,7 @@ async def process_trackers(
                     status = meta.tracker_status.setdefault(ptp.tracker, {})
                     if is_uploaded and "data error" not in str(status.get("status_message", "")):
                         status["upload_success"] = True
+                        await record_tracker_result(ptp, status)
                         await client.add_to_client(meta, "PASSTHEPOPCORN")
                         print_tracker_result(tracker, ptp, status, True)
                     else:

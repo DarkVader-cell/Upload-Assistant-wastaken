@@ -1461,6 +1461,7 @@ function AudionutsUAGUI() {
   const [failedFavicons, setFailedFavicons] = useState(new Set());
   const [isExecuting, setIsExecuting] = useState(false);
   const [isOutputExpanded, setIsOutputExpanded] = useState(false);
+  const [showExecutionPreview, setShowExecutionPreview] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(
     new Set(["/data", "/torrent_storage_dir"]),
   );
@@ -1648,6 +1649,7 @@ function AudionutsUAGUI() {
   const [operationDrafts, setOperationDrafts] = useState({});
   const [operationInput, setOperationInput] = useState({});
   const [operationLog, setOperationLog] = useState({});
+  const [activeLogJobId, setActiveLogJobId] = useState("");
 
   // File Browser search states
   const [fileBrowserSearch, setFileBrowserSearch] = useState("");
@@ -1740,6 +1742,26 @@ function AudionutsUAGUI() {
     };
   }, [activePanel, loadReleaseHistory, operationsOpen]);
 
+  // Keep the selected unattended log live. Previously the log only changed
+  // after repeatedly clicking the button, and every opened log stayed visible.
+  useEffect(() => {
+    if (!activeLogJobId || (!operationsOpen && activePanel !== "operations")) return undefined;
+    const refreshLog = async () => {
+      try {
+        const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(activeLogJobId)}?bytes=30000`, { cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.success) {
+          setOperationLog((previous) => ({ ...previous, [activeLogJobId]: data.log || "" }));
+        }
+      } catch (error) {
+        console.debug("Failed to refresh unattended log:", error);
+      }
+    };
+    refreshLog();
+    const timer = window.setInterval(refreshLog, 1000);
+    return () => window.clearInterval(timer);
+  }, [API_BASE, activeLogJobId, activePanel, operationsOpen]);
+
   useEffect(() => {
     if (activePanel === "operations") setOperationsOpen(true);
   }, [activePanel]);
@@ -1789,10 +1811,11 @@ function AudionutsUAGUI() {
   const performJobAction = async (jobId, action, body = {}) => {
     try {
       if (action === "log") {
+        setActiveLogJobId(jobId);
         const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(jobId)}?bytes=30000`, { cache: "no-store" });
         const data = await response.json().catch(() => null);
         if (!response.ok || !data?.success) throw new Error(data?.error || "Unable to load log");
-        setOperationLog((previous) => ({ ...previous, [jobId]: data.log || "" }));
+        setOperationLog((previous) => ({ [jobId]: data.log || "", ...previous }));
         setOperationsOpen(true);
         setActivePanel("operations");
       } else {
@@ -1963,7 +1986,7 @@ function AudionutsUAGUI() {
                       </div>
                     </div>
                   )}
-                  {operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{renderLogWithLinks(operationLog[job.id])}</pre>}
+                  {activeLogJobId === job.id && operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{renderLogWithLinks(operationLog[job.id])}</pre>}
                 </div>
               );
             })}
@@ -2602,7 +2625,6 @@ function AudionutsUAGUI() {
 
   useEffect(() => {
     if (!isExecuting || !sessionId) {
-      setExecutionPreview(null);
       setProgressItems([]);
       setExecutionScreenshots([]);
       setExecutionDescription(null);
@@ -3643,9 +3665,9 @@ function AudionutsUAGUI() {
             }`}
             style={{ paddingLeft: `${level * 20 + 12}px` }}
             onClick={() => {
-              if (item.type === "folder") {
-                toggleFolder(item.path);
-              }
+              // Selecting a folder must not also expand it. Expansion is
+              // deliberately attached to the folder icon button below.
+              handleTogglePathSelect(item.path);
               setSelectedPath(item.path);
               setSelectedName(item.name);
               if (isMobile && item.type !== "folder") setActivePanel("main");
@@ -3665,8 +3687,15 @@ function AudionutsUAGUI() {
                   : "bg-white border-gray-300"
               }`}
             />
-            <span
-              className={`flex-shrink-0 ${isLoading ? "text-purple-500" : "text-yellow-600"}`}
+            <button
+              type="button"
+              className={`flex-shrink-0 rounded p-0.5 ${isLoading ? "text-purple-500" : "text-yellow-600"} hover:bg-gray-500/20`}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (item.type === "folder") toggleFolder(item.path);
+              }}
+              aria-label={item.type === "folder" ? `${expandedFolders.has(item.path) ? "Collapse" : "Expand"} ${item.name}` : undefined}
+              tabIndex={item.type === "folder" ? 0 : -1}
             >
               {item.type === "folder" ? (
                 isLoading ? (
@@ -3681,7 +3710,7 @@ function AudionutsUAGUI() {
                   <FileIcon />
                 </span>
               )}
-            </span>
+            </button>
             <div className="flex flex-col min-w-0 flex-1">
               <span
                 className={`text-sm font-medium ${isDarkMode ? "text-gray-200" : "text-gray-700"} truncate`}
@@ -3972,6 +4001,9 @@ function AudionutsUAGUI() {
   };
 
   const executeCommand = async () => {
+    setIsOutputExpanded(true);
+    setShowExecutionPreview(true);
+    setExecutionPreview(null);
     if (selectedPaths.length > 1) {
       setIsExecuting(true);
       const rootContainer = richOutputRef.current;
@@ -4037,6 +4069,7 @@ function AudionutsUAGUI() {
     await executeSinglePath(path, newSessionId);
 
     setIsExecuting(false);
+    setIsOutputExpanded(true);
     setSessionId("");
   };
 
@@ -5163,15 +5196,28 @@ function AudionutsUAGUI() {
         <div
           className={`${panelPadding} border-b flex-shrink-0 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gradient-to-l from-amber-50 to-orange-50"}`}
         >
-          <h2
-            className={`${titleSize} font-bold ${isDarkMode ? "text-white" : "text-gray-800"} flex items-center gap-2`}
-          >
-            Now Processing
-          </h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2
+              className={`${titleSize} font-bold ${isDarkMode ? "text-white" : "text-gray-800"} flex items-center gap-2`}
+            >
+              {isExecuting ? "Now Processing" : "Upload Complete"}
+            </h2>
+            {!isExecuting && (
+              <button
+                type="button"
+                onClick={() => setShowExecutionPreview(false)}
+                className={`rounded-md px-2.5 py-1 text-xs font-semibold ${isDarkMode ? "bg-gray-700 text-gray-100 hover:bg-gray-600" : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"}`}
+              >
+                New upload
+              </button>
+            )}
+          </div>
           <p
             className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-600"}`}
           >
-            The sidebar is showing live media metadata while the upload runs.
+            {isExecuting
+              ? "The sidebar is showing live media metadata while the upload runs."
+              : "Submitted tracker titles and links remain available here."}
           </p>
         </div>
 
@@ -5348,6 +5394,28 @@ function AudionutsUAGUI() {
                   {media?.path || selectedPath}
                 </p>
               </div>
+
+              {Array.isArray(media?.tracker_uploads) && media.tracker_uploads.length > 0 && (
+                <div className={`rounded-xl p-3 ${isDarkMode ? "bg-gray-800 border border-gray-700" : "bg-gray-50 border border-gray-200"}`}>
+                  <p className={`text-xs font-semibold uppercase tracking-wide mb-2 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                    Tracker Uploads
+                  </p>
+                  <div className="space-y-2">
+                    {media.tracker_uploads.map((upload) => (
+                      <div key={`${upload.tracker}-${upload.url || upload.name}`} className="min-w-0">
+                        <div className={`text-xs font-semibold ${isDarkMode ? "text-gray-200" : "text-gray-700"}`}>{upload.tracker}</div>
+                        {upload.url ? (
+                          <a href={upload.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-sky-500 underline hover:text-sky-400" title={upload.url}>
+                            {upload.name || upload.url}
+                          </a>
+                        ) : (
+                          <div className={`truncate text-xs ${isDarkMode ? "text-gray-400" : "text-gray-600"}`} title={upload.name}>{upload.name}</div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -6754,7 +6822,7 @@ function AudionutsUAGUI() {
           maxWidth: "800px",
         }}
       >
-        {isExecuting ? (
+        {isExecuting || showExecutionPreview ? (
           isScreenshotReviewOpen ? (
             renderScreenshotsPanel()
           ) : isDescriptionReviewOpen ? (

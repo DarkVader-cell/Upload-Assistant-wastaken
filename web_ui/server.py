@@ -2136,6 +2136,17 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
     if audiobook_bitrate.isdigit():
         audiobook_bitrate = f"{audiobook_bitrate} kbps"
     tv_pack_raw = _stringify_preview_value(meta_data.get("tv_pack")).lower()
+    tracker_uploads: list[dict[str, str]] = []
+    tracker_status = meta_data.get("tracker_status")
+    if isinstance(tracker_status, Mapping):
+        for tracker_name, raw_status in tracker_status.items():
+            if not isinstance(raw_status, Mapping) or raw_status.get("upload_success") is not True:
+                continue
+            upload_name = _stringify_preview_value(raw_status.get("upload_name"))
+            upload_url = _stringify_preview_value(raw_status.get("upload_url"))
+            if upload_name or upload_url:
+                tracker_uploads.append({"tracker": _stringify_preview_value(tracker_name), "name": upload_name, "url": upload_url})
+    tracker_uploads.sort(key=lambda item: item["tracker"].casefold())
 
     return {
         "path": _stringify_preview_value(meta_data.get("path")) or fallback_path,
@@ -2182,6 +2193,7 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
         "music": music,
         "awaiting_input": False,
         "input_type": None,
+        "tracker_uploads": tracker_uploads,
     }
 
 
@@ -2457,6 +2469,7 @@ class ExecutionPreview(TypedDict, total=False):
     music: dict[str, object]
     awaiting_input: bool
     input_type: str | None
+    tracker_uploads: list[dict[str, str]]
     progress: list[ProgressItem]
 
 

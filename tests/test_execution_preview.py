@@ -27,3 +27,32 @@ def test_execution_preview_prefers_current_tv_artwork_url():
     )
 
     assert preview["poster_url"] == "https://images.example/show-poster.jpg"  # noqa: S101
+
+
+def test_execution_preview_includes_successful_tracker_uploads():
+    preview = _extract_execution_preview(
+        {
+            "title": "Example Movie",
+            "tracker_status": {
+                "BLUTOPIA": {
+                    "upload_success": True,
+                    "upload_name": "Example Movie 2026 1080p WEB-DL",
+                    "upload_url": "https://blutopia.cc/torrents/123",
+                },
+                "AITHER": {
+                    "upload_success": False,
+                    "upload_name": "A failed upload",
+                    "upload_url": "https://aither.cc/torrents/456",
+                },
+            },
+        },
+        "/media/Example Movie",
+    )
+
+    assert preview["tracker_uploads"] == [  # noqa: S101
+        {
+            "tracker": "BLUTOPIA",
+            "name": "Example Movie 2026 1080p WEB-DL",
+            "url": "https://blutopia.cc/torrents/123",
+        }
+    ]

@@ -1,20 +1,16 @@
-FROM python:3.14
+FROM python:3.14 AS python-deps
 
-# ── System dependencies ──────────────────────────────────────────────
+# Build-only dependencies are deliberately isolated from the final image.
+# A few Python packages compile native/Rust extensions on architectures where
+# wheels are unavailable.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-    git \
     g++ \
     cargo \
-    ffmpeg \
     rustc \
-    nano \
-    ca-certificates \
-    curl \
-    gosu && \
+    && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    update-ca-certificates
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ── Python environment ──────────────────────────────────────────────
 # Ensure Python output is sent straight to the container logs (no buffering)
@@ -26,12 +22,31 @@ ENV PATH="/venv/bin:$PATH"
 
 RUN pip install --no-cache-dir --upgrade pip==25.3 wheel==0.45.1 requests==2.32.5
 
-# ── Application setup ────────────────────────────────────────────────
-WORKDIR /Upload-Assistant
-
-# Copy the Python requirements file and install Python dependencies
+WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+FROM python:3.14
+
+# ── Runtime dependencies ─────────────────────────────────────────────
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    ffmpeg \
+    git \
+    gosu && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
+    update-ca-certificates
+
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PATH="/venv/bin:$PATH"
+COPY --from=python-deps /venv /venv
+
+# ── Application setup ────────────────────────────────────────────────
+WORKDIR /Upload-Assistant
 
 # Copy the rest of the application
 COPY . .
