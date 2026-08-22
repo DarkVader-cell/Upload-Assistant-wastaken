@@ -1801,9 +1801,14 @@ def _subprocess_prompt_type(buffer: str) -> str | None:
         return None
     if re.search(r"\(\s*y\s*/\s*n\s*\)\s*:?$", lowered):
         return "yes_no"
-    if stripped.endswith(":") or stripped.endswith("?") or " enter " in f" {lowered} " or " select " in f" {lowered} " or lowered.startswith("select "):
+    if stripped.endswith("?") or " enter " in f" {lowered} " or " select " in f" {lowered} " or lowered.startswith("select "):
         return "text"
     return None
+
+
+def _looks_like_subprocess_prompt(buffer: str) -> bool:
+    """Keep the detached-job prompt predicate compatible with older callers."""
+    return _subprocess_prompt_type(buffer) is not None
 
 
 def _webui_subprocess_env() -> dict[str, str]:
