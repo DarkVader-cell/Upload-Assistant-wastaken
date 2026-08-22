@@ -1053,6 +1053,17 @@ class QbittorrentClientMixin:
 
         logger.debug("[bold yellow]Adding and rechecking torrent")
 
+        # qBittorrent's lookup and add APIs require the v1 hash. Torf's
+        # generic ``infohash`` can be empty or resolve to a v2-only value for
+        # some generated tracker torrents, which led to intermittent
+        # "infohash missing" injections (notably HAWKEUNO).
+        infohash = str(getattr(torrent, "infohash_v1", "") or getattr(torrent, "infohash", "")).strip()
+        if not infohash:
+            logger.info(f"[bold red]Cannot add {tracker} torrent to qBittorrent: v1 infohash is missing[/bold red]")
+            if qbt_session:
+                await qbt_session.aclose()
+            return
+
         # Apply remote pathing to `tracker_dir` before assigning `save_path`
         if use_symlink or use_hardlink:
             if tracker_dir is None:
@@ -1097,8 +1108,8 @@ class QbittorrentClientMixin:
                 tag = client["qbit_tag"]
 
         try:
-            if await self._qui_has_duplicate(client, torrent.infohash):
-                logger.info(f"[yellow]Torrent {torrent.infohash} already exists in Qui; skipping duplicate injection[/yellow]")
+            if await self._qui_has_duplicate(client, infohash):
+                logger.info(f"[yellow]Torrent {infohash} already exists in Qui; skipping duplicate injection[/yellow]")
                 if qbt_session:
                     await qbt_session.aclose()
                 return
@@ -1123,7 +1134,7 @@ class QbittorrentClientMixin:
                     f"[cyan]POSTing to {Redaction.redact_private_info(qbt_proxy_url)}/api/v2/torrents/add with data: savepath={save_path}, autoTMM={auto_management}, skip_checking={skip_checking}, paused={paused_on_add}, contentLayout={content_layout}, category={qbt_category}, tags={tag}"
                 )
 
-                await self._add_torrent_via_proxy(qbt_session, qbt_proxy_url, torrent.infohash, data, files)
+                await self._add_torrent_via_proxy(qbt_session, qbt_proxy_url, infohash, data, files)
             else:
                 if qbt_client is None:
                     raise RuntimeError("qbt_client cannot be None")
@@ -1139,7 +1150,7 @@ class QbittorrentClientMixin:
                     "category": qbt_category,
                     "tags": tag,
                 }
-                await self._add_torrent_direct(qbt_client, torrent.infohash, add_kwargs)
+                await self._add_torrent_direct(qbt_client, infohash, add_kwargs)
         except _ProxyResponseError as e:
             logger.info(f"[bold red]Failed to add torrent via proxy: {e}")
             if qbt_session:
@@ -1149,11 +1160,11 @@ class QbittorrentClientMixin:
             torrent_added = False
             with contextlib.suppress(Exception):
                 if proxy_url and qbt_session:
-                    info_resp = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/info", params={"hashes": torrent.infohash})
+                    info_resp = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/info", params={"hashes": infohash})
                     if info_resp.status_code == 200 and info_resp.json():
                         torrent_added = True
                 elif qbt_client:
-                    torrents = await asyncio.to_thread(qbt_client.torrents_info, torrent_hashes=torrent.infohash)
+                    torrents = await asyncio.to_thread(qbt_client.torrents_info, torrent_hashes=infohash)
                     if torrents:
                         torrent_added = True
 
@@ -1176,7 +1187,7 @@ class QbittorrentClientMixin:
                 if proxy_url:
                     if qbt_session is None:
                         raise RuntimeError("qbt_session cannot be None")
-                    response = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/info", params={"hashes": torrent.infohash})
+                    response = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/info", params={"hashes": infohash})
                     if response.status_code == 200:
                         torrents_info = response.json()
                         if len(torrents_info) > 0:
@@ -1188,7 +1199,7 @@ class QbittorrentClientMixin:
                     if qbt_client is None:
                         raise RuntimeError("qbt_client cannot be None")
                     torrents_info = await self.retry_qbt_operation(
-                        lambda: asyncio.to_thread(qbt_client.torrents_info, torrent_hashes=torrent.infohash), "Check torrent addition", max_retries=1, initial_timeout=10.0
+                        lambda: asyncio.to_thread(qbt_client.torrents_info, torrent_hashes=infohash), "Check torrent addition", max_retries=1, initial_timeout=10.0
                     )
                     if len(torrents_info) > 0:
                         break
@@ -1210,10 +1221,10 @@ class QbittorrentClientMixin:
                 if proxy_url:
                     if qbt_session is None:
                         raise RuntimeError("qbt_session cannot be None")
-                    response = await qbt_session.post(f"{qbt_proxy_url}/api/v2/torrents/start", data={"hashes": torrent.infohash})
+                    response = await qbt_session.post(f"{qbt_proxy_url}/api/v2/torrents/start", data={"hashes": infohash})
                     if response.status_code == 404:
                         logger.debug("[cyan]Start endpoint returned 404, trying legacy resume endpoint (pre-v5.0.0)...")
-                        resume_response = await qbt_session.post(f"{qbt_proxy_url}/api/v2/torrents/resume", data={"hashes": torrent.infohash})
+                        resume_response = await qbt_session.post(f"{qbt_proxy_url}/api/v2/torrents/resume", data={"hashes": infohash})
                         if resume_response.status_code != 200:
                             logger.info(f"[yellow]Failed to resume torrent via proxy (resume): {resume_response.status_code}")
                     elif response.status_code != 200:
@@ -1221,7 +1232,7 @@ class QbittorrentClientMixin:
                 else:
                     if qbt_client is None:
                         raise RuntimeError("qbt_client cannot be None")
-                    await self.retry_qbt_operation(lambda: asyncio.to_thread(qbt_client.torrents_resume, torrent.infohash), "Resume torrent")
+                    await self.retry_qbt_operation(lambda: asyncio.to_thread(qbt_client.torrents_resume, infohash), "Resume torrent")
             except TimeoutError:
                 logger.info("[yellow]Failed to resume torrent after retries")
             except Exception as e:
@@ -1233,14 +1244,14 @@ class QbittorrentClientMixin:
                 if proxy_url:
                     if qbt_session is None:
                         raise RuntimeError("qbt_session cannot be None")
-                    response = await qbt_session.post(f"{qbt_proxy_url}/api/v2/torrents/setSuperSeeding", data={"hashes": torrent.infohash, "value": "true"})
+                    response = await qbt_session.post(f"{qbt_proxy_url}/api/v2/torrents/setSuperSeeding", data={"hashes": infohash, "value": "true"})
                     if response.status_code != 200:
                         logger.info(f"{tracker}: Failed to set super-seed via proxy: {response.status_code}")
                 else:
                     if qbt_client is None:
                         raise RuntimeError("qbt_client cannot be None")
                     await self.retry_qbt_operation(
-                        lambda: asyncio.to_thread(qbt_client.torrents_set_super_seeding, torrent_hashes=torrent.infohash), "Set super-seed mode", initial_timeout=10.0
+                        lambda: asyncio.to_thread(qbt_client.torrents_set_super_seeding, torrent_hashes=infohash), "Set super-seed mode", initial_timeout=10.0
                     )
             except TimeoutError:
                 logger.info(f"{tracker}: Super-seed request timed out")
@@ -1252,7 +1263,7 @@ class QbittorrentClientMixin:
                 if proxy_url:
                     if qbt_session is None:
                         raise RuntimeError("qbt_session should not be None")
-                    response = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/info", params={"hashes": torrent.infohash})
+                    response = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/info", params={"hashes": infohash})
                     if response.status_code == 200:
                         info = response.json()
                         if info:
@@ -1265,7 +1276,7 @@ class QbittorrentClientMixin:
                     if qbt_client is None:
                         raise RuntimeError("qbt_client should not be None")
                     info = await self.retry_qbt_operation(
-                        lambda: asyncio.to_thread(qbt_client.torrents_info, torrent_hashes=torrent.infohash), "Get torrent info for debug", initial_timeout=10.0
+                        lambda: asyncio.to_thread(qbt_client.torrents_info, torrent_hashes=infohash), "Get torrent info for debug", initial_timeout=10.0
                     )
                     if info:
                         logger.debug(f"[cyan]Actual qBittorrent save path: {info[0].save_path}")

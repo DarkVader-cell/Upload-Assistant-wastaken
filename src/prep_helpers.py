@@ -28,6 +28,7 @@ from src.imdb import imdb_manager
 from src.languages import languages_manager
 from src.meta import Meta
 from src.manual_metadata import request_missing_metadata, should_request_metadata
+from src.get_name import _title_key
 from src.region import get_distributor, get_region, get_service
 from src.tags import get_tag, tag_override
 from src.tvmaze import tvmaze_manager
@@ -1256,6 +1257,10 @@ async def finalize_metadata(
                 meta.title = meta.title.strip()
 
     if not meta.aka or meta.aka is None:
+        meta.aka = ""
+    elif _title_key(str(meta.title)) == _title_key(str(meta.aka)):
+        # Do not expose a redundant AKA when IMDb/TMDb report the same title
+        # with different punctuation, casing, or an optional year marker.
         meta.aka = ""
 
     # if it was skipped earlier, make sure we have the season/episode data
