@@ -2105,11 +2105,11 @@ async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionCo
         "trackers": meta.trackers,
     }
     restored = await execution_context.artifacts.restore(run_key, workspace)
-    # A forced upload must run the complete preparation and tracker preflight
-    # path. Cached preparation artifacts intentionally omit volatile upload
-    # state such as ``we_are_uploading`` and therefore cannot be used to enter
-    # the upload stage safely.
-    if restored is not None and not meta.force_upload:
+    # Cached preparation artifacts intentionally omit volatile upload state
+    # such as ``we_are_uploading``. A WebUI-generated queue must therefore run
+    # the normal preparation/preflight path for each item; otherwise it can
+    # restore successfully and then be treated as a non-uploading run.
+    if restored is not None and not meta.force_upload and not meta.args_line_queue:
         meta.update(restored)
         meta.update(invocation)
         execution_context.metrics.increment("artifacts.preparation.hits")
