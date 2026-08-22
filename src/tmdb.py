@@ -1949,14 +1949,14 @@ async def get_tmdb_translations(
 
 
 async def set_tmdb_metadata(meta: Meta, filename: str | None = None) -> None:
-    if not meta.edit:
-        # if we have these fields already, we probably got them from a multi id searching
-        # and don't need to fetch them again
-        essential_fields = ["title", "year", "genres", "overview"]
-        tmdb_metadata_populated = all(meta.get(field) is not None for field in essential_fields) and bool(meta.get("title"))
-    else:
-        # if we're in that blasted edit mode, ignore any previous set data and get fresh
-        tmdb_metadata_populated = False
+    # ``meta.year`` can be populated from the release filename before the
+    # metadata search runs. Treating that value as complete metadata caused
+    # shared release names to retain an incorrect filename year (while some
+    # tracker-specific names independently corrected it from IMDb). Always
+    # refresh the canonical TMDB fields here; an explicit --year remains an
+    # intentional override below.
+    manual_year = meta.manual_year if meta.manual_year and meta.manual_year > 0 else None
+    tmdb_metadata_populated = False
 
     if not tmdb_metadata_populated:
         max_attempts = 2
@@ -1986,6 +1986,8 @@ async def set_tmdb_metadata(meta: Meta, filename: str | None = None) -> None:
 
                 if tmdb_metadata and all(tmdb_metadata.get(field) for field in ["title", "year"]):
                     meta.update(tmdb_metadata)
+                    if manual_year is not None:
+                        meta.year = manual_year
                     if meta.retrieved_aka is not None:
                         meta.aka = meta.retrieved_aka
                     break
