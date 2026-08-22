@@ -66,6 +66,8 @@ The current BLU banned-group list is enforced case-insensitively. AOC, CMRG, EVO
 
 The existing DT bans remain in place and the current YTS, RARBG, BonsaiHD, GalaxyRG, `-=!DrSTAR!=-`, AKG, and DUS entries are included. A listed-group WEB-DL is allowed only after an attended confirmation that it contains no advertisement tags or watermarks. Fully unattended runs remain blocked because MediaInfo cannot prove the absence of advertisements.
 
+DT also declares its `/api/v1/torrents/` metadata endpoint, so a supplied DT tracker ID can be resolved through the shared UNIT3D metadata workflow instead of falling back to a filename search.
+
 ### Luminarr (LUME)
 
 For non-disc `ENCODE` uploads:
