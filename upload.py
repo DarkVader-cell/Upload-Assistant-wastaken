@@ -2322,7 +2322,7 @@ def extract_changelog(content: str, to_version: str) -> str | None:
     return None
 
 
-async def update_notification(base_dir: str, execution_context: ExecutionContext | None = None) -> str:
+async def update_notification(execution_context: ExecutionContext | None = None) -> str:
     version_file = CODE_DIR / "src" / "version.py"
     # The upstream project publishes from development; master no longer exists.
     remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/development/src/version.py"
@@ -2629,7 +2629,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
             logger.info(json.dumps({"plans": plans}, indent=2), extra={"markup": False, "highlighter": None})
             return
 
-        meta.current_version = await update_notification(base_dir, execution_context)
+        meta.current_version = await update_notification(execution_context)
 
         is_binary = await get_mkbrr_path(base_dir)
         if not meta.mkbrr:

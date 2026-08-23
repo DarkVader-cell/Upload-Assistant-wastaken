@@ -490,7 +490,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                         logger.info(f"[yellow]Deluge torrent storage directory is not accessible: {storage_path}[/yellow]")
                 else:
                     logger.info("[yellow]Connected to Deluge RPC but the client is not connected[/yellow]")
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 logger.warning("[yellow]Deluge torrent search timed out after 35 seconds; continuing without torrent reuse[/yellow]")
             except Exception as error:
                 logger.info(f"[yellow]Deluge torrent search failed; continuing without torrent reuse: {error}[/yellow]")

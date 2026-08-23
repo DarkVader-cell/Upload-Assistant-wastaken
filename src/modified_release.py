@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 from collections.abc import Iterable, Mapping
+from pathlib import Path
 
 MODIFIED_RELEASE_REASON = "source appears renamed or modified from its original release name; verify the file hash and source provenance"
 ARR_RELEASE_ID_TOKENS = ("{tmdb-", "{imdb-", "{tvdb-")
@@ -11,12 +11,12 @@ MEDIA_EXTENSIONS = {".mkv", ".mp4", ".avi", ".ts", ".m2ts", ".m4v", ".mov", ".wm
 def candidate_release_names(paths: Iterable[str]) -> list[str]:
     names: list[str] = []
     for path in paths:
-        base = os.path.basename(str(path).strip())
+        base = Path(str(path).strip()).name
         if not base:
             continue
-        stem, extension = os.path.splitext(base)
-        if extension.lower() in MEDIA_EXTENSIONS:
-            base = stem
+        base_path = Path(base)
+        if base_path.suffix.lower() in MEDIA_EXTENSIONS:
+            base = base_path.stem
         if base not in names:
             names.append(base)
     return names
@@ -43,7 +43,7 @@ def archived_media_renamed(archived_files: Iterable[Mapping[str, object]], local
     found_media = False
     for archived_file in archived_files:
         archived_name = str(archived_file.get("name") or "").strip().replace("\\", "/").rsplit("/", 1)[-1]
-        if os.path.splitext(archived_name)[1].lower() not in MEDIA_EXTENSIONS:
+        if Path(archived_name).suffix.lower() not in MEDIA_EXTENSIONS:
             continue
         found_media = True
         if archived_name == local_name:

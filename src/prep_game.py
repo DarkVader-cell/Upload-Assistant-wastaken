@@ -19,7 +19,6 @@ from src.igdb import IGDBAPI
 from src.meta import Meta
 from src.metadata_cache import cache_for, is_cache_miss
 from src.runtime.subprocesses import run_shared_subprocess
-from src.temp_paths import artwork_dir
 
 
 def normalize_version(version_str: str) -> str:

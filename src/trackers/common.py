@@ -2574,10 +2574,10 @@ class Common:
             guessed_title = parsed.get("title")
             if isinstance(guessed_title, str) and guessed_title.strip():
                 text = guessed_title
-        except Exception:
+        except Exception as error:
             # Title validation is a safety guard; a parser failure must not
             # prevent the normal tracker flow from continuing.
-            pass
+            logger.debug(f"Could not parse title for UNIT3D metadata validation: {error}")
         text = re.sub(r"\b(?:19|20)\d{2}\b", "", text)
         return re.sub(r"[^a-z0-9]+", "", text.casefold())
 

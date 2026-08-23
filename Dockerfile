@@ -24,9 +24,17 @@ RUN pip install --no-cache-dir --upgrade pip==25.3 wheel==0.45.1 requests==2.32.
 
 WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && rm -rf /venv/lib/python*/site-packages/pip \
+        /venv/lib/python*/site-packages/pip-*.dist-info \
+        /venv/lib/python*/site-packages/setuptools \
+        /venv/lib/python*/site-packages/setuptools-*.dist-info \
+    && find /venv -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
-FROM python:3.14
+# The build stage retains the full image for native dependency compilation;
+# the runtime only needs the interpreter, copied virtualenv, and explicit
+# runtime packages below.
+FROM python:3.14-slim
 
 # ── Runtime dependencies ─────────────────────────────────────────────
 RUN apt-get update && \
@@ -34,7 +42,6 @@ RUN apt-get update && \
     ca-certificates \
     curl \
     ffmpeg \
-    git \
     gosu && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \

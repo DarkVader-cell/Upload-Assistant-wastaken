@@ -1820,6 +1820,13 @@ def _webui_subprocess_env() -> dict[str, str]:
     # consumes ANSI itself, so its child must not inherit that CLI preference.
     env.pop("NO_COLOR", None)
     env["UA_WEBUI_FORCE_COLOR"] = "1"
+    # The detached child may be launched after a caller has changed its working
+    # directory. Keep the application package importable independently of cwd.
+    project_root = str(CODE_DIR.resolve())
+    python_path_entries = [entry for entry in env.get("PYTHONPATH", "").split(os.pathsep) if entry]
+    if project_root not in python_path_entries:
+        python_path_entries.insert(0, project_root)
+    env["PYTHONPATH"] = os.pathsep.join(python_path_entries)
     return env
 
 

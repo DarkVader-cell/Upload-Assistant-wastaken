@@ -250,10 +250,7 @@ async def regenerate_screenshot_group(temp_dir: Path, meta_data: Mapping[str, ob
     items = [item for item in list_review_items(temp_dir, meta_data) if item.group == group]
     if not items:
         raise FileNotFoundError("No screenshots found for this file")
-    regenerated: list[ReviewedScreenshot] = []
-    for item in items:
-        regenerated.append(await replace_screenshot(temp_dir, meta_data, item.id))
-    return regenerated
+    return [await replace_screenshot(temp_dir, meta_data, item.id) for item in items]
 
 
 async def replace_screenshot(temp_dir: Path, meta_data: Mapping[str, object], screenshot_id: str) -> ReviewedScreenshot:

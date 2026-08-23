@@ -8,7 +8,7 @@ import upload
 from src.cogs.redaction import Redaction
 from src.manual_metadata import metadata_request, parse_metadata_submission, should_request_metadata
 from src.modified_release import MODIFIED_RELEASE_REASON, detect_modified_release
-from src.safe_url import UnsafeURL, assert_public_http_url
+from src.safe_url import UnsafeURLError, assert_public_http_url
 from upload import queue_item_has_successful_upload
 from web_ui import server as webui_server
 
@@ -47,7 +47,7 @@ def test_safe_url_rejects_private_network_targets():
     async def check() -> None:
         try:
             await assert_public_http_url("http://127.0.0.1/image.jpg")
-        except UnsafeURL:
+        except UnsafeURLError:
             return
         raise AssertionError("private URL was accepted")
 

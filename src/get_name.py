@@ -180,8 +180,7 @@ class NameManager:
                     name = f"{tv_title_prefix} {tv_season_episode}{three_d} {repack} {edition} {region} {source} {dvd_size} {audio}"
                     potential_missing = ["edition", "distributor"]
                 elif meta.is_disc == "HDDVD":
-                    hddvd_prefix = tv_title_prefix if stc_naming else f"{title} {alt_title} {year}"
-                    name = f"{hddvd_prefix} {edition} {repack} {resolution} {source} {video_codec} {audio}"
+                    name = f"{title} {alt_title} {year} {edition} {repack} {resolution} {source} {video_codec} {audio}"
                     potential_missing = ["edition", "region", "distributor"]
             elif type == "REMUX" and source in ("BluRay", "HDDVD"):  # BluRay Remux
                 name = f"{tv_title_prefix} {tv_season_episode} {episode_title} {part} {three_d} {edition} {hybrid} {repack} {resolution} {uhd} {source} REMUX {hdr} {video_codec} {audio}"  # SOURCE

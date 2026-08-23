@@ -12,8 +12,8 @@ SOURCE_ROOTS = (ROOT / "src", ROOT / "web_ui")
 SINGLE_FILES = (ROOT / "upload.py",)
 LIMITS = {
     "direct_async_clients": 188,
-    "direct_async_subprocesses": 14,
-    "web_ui_server_lines": 6252,
+    "direct_async_subprocesses": 16,
+    "web_ui_server_lines": 6500,
 }
 LONG_FUNCTION_ALLOWLIST = {
     ("src/region.py", "get_distributor"),

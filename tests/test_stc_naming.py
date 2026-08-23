@@ -88,3 +88,25 @@ def test_identical_aka_is_omitted():
     name, *_ = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))
 
     assert "AKA" not in name  # noqa: S101
+
+
+def test_tv_hddvd_naming_uses_the_tracker_aware_prefix_without_crashing():
+    meta = Meta(
+        category="TV",
+        type="DISC",
+        is_disc="HDDVD",
+        title="Example Series",
+        aka="Alternate Title",
+        year=2006,
+        season="S01",
+        episode="E01",
+        source="HDDVD",
+        resolution="1080p",
+        video_codec="VC-1",
+        audio="DTS 5.1",
+        trackers=["SKIPTHECOMMERCIALS"],
+    )
+
+    name, *_ = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))
+
+    assert name.startswith("Example Series Alternate Title")  # noqa: S101

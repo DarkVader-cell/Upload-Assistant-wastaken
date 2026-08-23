@@ -7,10 +7,11 @@ import contextlib
 import os
 import re
 import shutil
-import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
 from typing import Any
+
+from defusedxml import ElementTree
 
 from src.console import logger
 
@@ -36,7 +37,7 @@ def extract_epub_metadata(epub_path: str) -> dict[str, Any]:
             rootfile_path: str | None = None
             try:
                 container_data = z.read("META-INF/container.xml")
-                root = ET.fromstring(container_data)
+                root = ElementTree.fromstring(container_data)
                 for elem in root.iter():
                     if elem.tag.endswith("rootfile"):
                         rootfile_path = elem.attrib.get("full-path")
@@ -58,7 +59,7 @@ def extract_epub_metadata(epub_path: str) -> dict[str, Any]:
 
             # 2. Read and parse the .opf file
             opf_data = z.read(rootfile_path)
-            root = ET.fromstring(opf_data)
+            root = ElementTree.fromstring(opf_data)
 
             title = ""
             author = ""
@@ -193,7 +194,7 @@ def extract_cbr_cbz_metadata(filepath: str) -> dict[str, Any]:
         return metadata
 
     try:
-        root = ET.fromstring(xml_data)
+        root = ElementTree.fromstring(xml_data)
 
         series = ""
         title = ""
@@ -290,11 +291,11 @@ def extract_mobi_metadata(mobi_path: str) -> dict[str, Any]:
                 opf_data = f.read()
 
             try:
-                root = ET.fromstring(opf_data)
+                root = ElementTree.fromstring(opf_data)
             except Exception:
                 try:
                     decoded = opf_data.decode("utf-8", errors="replace")
-                    root = ET.fromstring(decoded.encode("utf-8"))
+                    root = ElementTree.fromstring(decoded.encode("utf-8"))
                 except Exception as e:
                     logger.debug(f"[yellow]Debug: Error parsing MOBI XML data: {e}[/yellow]")
                     root = None
@@ -459,7 +460,7 @@ def date_event_from_str(event_str: str | None) -> str | None:
     return None
 
 
-def get_attr_ignore_ns(elem: ET.Element, attr_name: str) -> str | None:
+def get_attr_ignore_ns(elem: Any, attr_name: str) -> str | None:
     if attr_name in elem.attrib:
         return elem.attrib[attr_name]
     for k, v in elem.attrib.items():
@@ -478,7 +479,7 @@ def get_epubmeta_output(epub_path: str) -> str | None:
             rootfile_path = None
             try:
                 container_data = z.read("META-INF/container.xml")
-                root = ET.fromstring(container_data)
+                root = ElementTree.fromstring(container_data)
                 for elem in root.iter():
                     if elem.tag.split("}")[-1] == "rootfile":
                         rootfile_path = elem.attrib.get("full-path")
@@ -497,7 +498,7 @@ def get_epubmeta_output(epub_path: str) -> str | None:
                 return None
 
             opf_data = z.read(rootfile_path)
-            root = ET.fromstring(opf_data)
+            root = ElementTree.fromstring(opf_data)
 
             # Get package tag attributes
             version = get_attr_ignore_ns(root, "version") or ""

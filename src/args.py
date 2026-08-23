@@ -141,7 +141,7 @@ class Args:
             help="Read one full path per line from standard input (finish an interactive paste with an empty line)",
         )
         parser.add_argument("--queue", nargs=1, required=False, help="(--queue queue_name) Process an entire folder (files/subfolders) in a queue")
-        parser.add_argument("-lq", "--limit-queue", dest="limit_queue", nargs=1, required=False, help="Limit the amount of queue files processed", type=int, default=0)
+        parser.add_argument("-lq", "--limit-queue", dest="limit_queue", nargs=1, required=False, help="Limit the amount of queue files processed", default=0)
         parser.add_argument("--plan", "--dry-run-plan", dest="dry_run_plan", action="store_true", help="Show stages, cache hits, expected calls, and selected trackers without executing")
         parser.add_argument("--no-resume", action="store_true", help="Ignore saved preparation checkpoints for this run")
         parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)

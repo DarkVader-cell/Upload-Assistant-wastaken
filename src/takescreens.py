@@ -12,13 +12,13 @@ import time
 import traceback
 import urllib.parse
 import uuid
-import xml.etree.ElementTree as ET
 import zipfile
 from collections.abc import Awaitable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
 import ffmpeg
+from defusedxml import ElementTree
 
 from data import config as data_config
 from src.artwork import is_public_http_url, is_valid_cover_image, is_valid_image_bytes
@@ -1193,11 +1193,11 @@ async def download_artwork_from_meta(meta: Meta, artwork_path: str, *, force: bo
     artwork_url = meta.artwork_url
     if not artwork_url:
         return False
-    from src.safe_url import UnsafeURL, assert_public_http_url
+    from src.safe_url import UnsafeURLError, assert_public_http_url
 
     try:
         await assert_public_http_url(artwork_url)
-    except UnsafeURL as error:
+    except UnsafeURLError as error:
         logger.warning(f"[yellow]Skipping unsafe poster URL: {error}[/yellow]")
         return False
 
@@ -1260,7 +1260,7 @@ async def extract_epub_cover(epub_path: str, dest_path: str, confirmed_only: boo
             rootfile_path = None
             with contextlib.suppress(Exception):
                 container_data = z.read("META-INF/container.xml")
-                root = ET.fromstring(container_data)
+                root = ElementTree.fromstring(container_data)
                 for elem in root.iter():
                     if elem.tag.endswith("rootfile"):
                         rootfile_path = elem.attrib.get("full-path")
@@ -1277,7 +1277,7 @@ async def extract_epub_cover(epub_path: str, dest_path: str, confirmed_only: boo
                 return False
 
             opf_data = z.read(rootfile_path)
-            root = ET.fromstring(opf_data)
+            root = ElementTree.fromstring(opf_data)
 
             manifest_items = {}
             cover_item_id = None

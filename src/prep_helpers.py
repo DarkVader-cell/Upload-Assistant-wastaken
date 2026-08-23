@@ -23,12 +23,12 @@ from src.console import logger
 from src.edition import get_edition
 from src.exceptions import NoAudioMediaError
 from src.exportmi import export_info, get_conformance_error, mi_resolution, validate_mediainfo
+from src.get_name import _title_key
 from src.get_source import get_source
 from src.imdb import imdb_manager
 from src.languages import languages_manager
-from src.meta import Meta
 from src.manual_metadata import request_missing_metadata, should_request_metadata
-from src.get_name import _title_key
+from src.meta import Meta
 from src.region import get_distributor, get_region, get_service
 from src.tags import get_tag, tag_override
 from src.tvmaze import tvmaze_manager
