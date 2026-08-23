@@ -3417,7 +3417,7 @@ async def main() -> None:
         raise
 
 
-if __name__ == "__main__":
+def run() -> None:
     from src.check_requirements import check_dependencies
 
     check_dependencies()
@@ -3463,3 +3463,15 @@ if __name__ == "__main__":
             logger.info("[green]Shutdown complete[/green]")
 
         sys.exit(exit_code)
+
+
+def run_config_generator() -> None:
+    import runpy
+
+    script_path = Path(__file__).with_name("config-generator.py")
+    sys.argv[0] = str(script_path)
+    runpy.run_path(str(script_path), run_name="__main__")
+
+
+if __name__ == "__main__":
+    run()
