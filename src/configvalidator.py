@@ -87,6 +87,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "queue_prepare_concurrency": (str, int),
     "unit3d_dupe_max_pages": (str, int),
     "skip_auto_torrent": (bool,),
+    "skip_auto_torrent_personalrelease": (bool,),
     "sfx_on_prompt": (bool,),
     "console_show_time": (bool,),
     "console_show_level": (bool,),
