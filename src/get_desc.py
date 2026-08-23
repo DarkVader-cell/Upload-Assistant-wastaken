@@ -1205,7 +1205,7 @@ class DescriptionBuilder:
                     await languages_manager.process_desc_language(meta, self.tracker)
                 if manual_audio_languages:
                     override_text = ", ".join(manual_audio_languages)
-                    desc_parts.append(f"[code]{language_labels['audio_languages']} (manual override): {override_text}[/code]")
+                    desc_parts.append(f"[code]{language_labels['audio_languages']} (manual override): {override_text}[/code]\n")
 
                     # Keep the raw MediaInfo untouched, but make the discrepancy
                     # explicit when its audio language can be read. This prevents
@@ -1220,14 +1220,14 @@ class DescriptionBuilder:
                     )
                     if detected_audio_languages:
                         detected_text = ", ".join(detected_audio_languages)
-                        desc_parts.append(f"[code]MediaInfo audio language/s: {detected_text} (overridden above)[/code]")
+                        desc_parts.append(f"[code]MediaInfo audio language/s: {detected_text} (overridden above)[/code]\n")
                 elif meta.audio_languages and meta.write_audio_languages:
-                    desc_parts.append(f"[code]{language_labels['audio_languages']}: {', '.join(meta.audio_languages)}[/code]")
+                    desc_parts.append(f"[code]{language_labels['audio_languages']}: {', '.join(meta.audio_languages)}[/code]\n")
 
                 if meta.subtitle_languages and meta.write_subtitle_languages:
-                    desc_parts.append(f"[code]{language_labels['subtitle_languages']}: {', '.join(meta.subtitle_languages)}[/code]")
+                    desc_parts.append(f"[code]{language_labels['subtitle_languages']}: {', '.join(meta.subtitle_languages)}[/code]\n")
                 if meta.subtitle_languages and meta.write_hc_languages:
-                    desc_parts.append(f"[code]{language_labels['hardcoded_subtitles']}: {', '.join(meta.subtitle_languages)}[/code]")
+                    desc_parts.append(f"[code]{language_labels['hardcoded_subtitles']}: {', '.join(meta.subtitle_languages)}[/code]\n")
             except Exception as e:
                 logger.warning(f"[yellow]Warning: Error processing language: {e!s}[/yellow]")
 
