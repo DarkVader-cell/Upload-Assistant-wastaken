@@ -32,6 +32,19 @@ from src.trackersetup import TrackerSetup
 type StatusDict = dict[str, Any]
 
 
+def should_inject_uploaded_torrent(tracker_name: str, status: Mapping[str, Any], is_usenet: bool) -> bool:
+    """Return whether a successful upload should be added to the torrent client.
+
+    Most tracker drafts intentionally wait for publication before client injection.
+    BeyondHD is different: its draft response already represents a usable torrent,
+    and the user expects it to seed immediately while the tracker-side draft waits
+    for publication.
+    """
+    if is_usenet:
+        return False
+    return not status.get("pending_publication") or tracker_name.upper() == "BEYONDHD"
+
+
 async def check_mod_q_and_draft(
     tracker_class: Any,
     meta: Meta,
@@ -318,9 +331,11 @@ async def process_trackers(
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
                     await record_tracker_result(tracker_class, status)
-                    if status.get("pending_publication"):
+                    if status.get("pending_publication") and tracker_class.tracker.upper() != "BEYONDHD":
                         logger.info(f"{tracker_class.tracker}: saved as a tracker draft; skipping torrent-client injection until it is published.")
-                    elif not getattr(tracker_class, "is_usenet", False):
+                    elif should_inject_uploaded_torrent(tracker_class.tracker, status, getattr(tracker_class, "is_usenet", False)):
+                        if status.get("pending_publication"):
+                            logger.info(f"{tracker_class.tracker}: saved as a tracker draft; injecting its torrent into the configured client.")
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
@@ -364,9 +379,11 @@ async def process_trackers(
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
                     await record_tracker_result(tracker_class, status)
-                    if status.get("pending_publication"):
+                    if status.get("pending_publication") and tracker_class.tracker.upper() != "BEYONDHD":
                         logger.info(f"{tracker_class.tracker}: saved as a tracker draft; skipping torrent-client injection until it is published.")
-                    elif not getattr(tracker_class, "is_usenet", False):
+                    elif should_inject_uploaded_torrent(tracker_class.tracker, status, getattr(tracker_class, "is_usenet", False)):
+                        if status.get("pending_publication"):
+                            logger.info(f"{tracker_class.tracker}: saved as a tracker draft; injecting its torrent into the configured client.")
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:

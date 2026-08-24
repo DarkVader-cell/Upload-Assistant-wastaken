@@ -184,7 +184,7 @@ class BEYONDHD:
 
                     if status_code == 1:
                         meta.tracker_status[self.tracker]["pending_publication"] = True
-                        meta.tracker_status[self.tracker]["status_message"] = "Saved as a BeyondHD draft; client injection is deferred until it is published."
+                        meta.tracker_status[self.tracker]["status_message"] = "Saved as a BeyondHD draft; its torrent will be injected into the configured client."
                         return True
 
                     if status_code != 2:
