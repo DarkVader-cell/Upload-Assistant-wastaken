@@ -27,8 +27,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
     && rm -rf /venv/lib/python*/site-packages/pip \
         /venv/lib/python*/site-packages/pip-*.dist-info \
-        /venv/lib/python*/site-packages/setuptools \
-        /venv/lib/python*/site-packages/setuptools-*.dist-info \
     && find /venv -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
 # The build stage retains the full image for native dependency compilation;
