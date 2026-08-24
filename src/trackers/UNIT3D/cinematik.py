@@ -212,7 +212,7 @@ class Cinematik(UNIT3D):
                 parsed_url = urlparse(poster_url)
                 if parsed_url.scheme not in ("http", "https"):
                     raise ValueError(f"Invalid URL scheme: {parsed_url.scheme}")
-                urllib.request.urlretrieve(poster_url, poster_path)
+                urllib.request.urlretrieve(poster_url, poster_path)  # noqa: S310 - scheme is restricted to HTTP(S) above
                 logger.info(f"{self.tracker}: [green]Cover downloaded to {escape(str(poster_path))}[/green]")
             except (urllib.error.URLError, OSError, ValueError) as e:
                 logger.error(f"{self.tracker}: [red]Error downloading poster: {escape(str(e))}[/red]")

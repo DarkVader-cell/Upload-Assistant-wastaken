@@ -86,3 +86,4 @@ def test_cookie_discovery_continues_after_one_lookup_failure(tmp_path: Path) -> 
 
     assert lookups == ["BROKEN", "MAKINGOFF", "LATER"]
     assert configured == {"MAKINGOFF"}
+# ruff: noqa: S101
