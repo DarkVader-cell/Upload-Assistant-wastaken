@@ -86,7 +86,7 @@ def create_qui_sync_blueprint(*, auth_check: Any, broker: QuiEventBroker, snapsh
         for job in jobs:
             status = str(job.get("status", "unknown"))
             counts[status] = counts.get(status, 0) + 1
-        active = sum(counts.get(status, 0) for status in ("starting", "running", "waiting_for_input", "waiting_for_metadata"))
+        active = sum(counts.get(status, 0) for status in ("starting", "running", "waiting_for_input", "waiting_for_metadata", "waiting_for_release_metadata"))
         return jsonify({"success": True, "counts": counts, "active": active, "queued": counts.get("queued", 0), "total": len(jobs)})
 
     @blueprint.route("/api/qui/retry", methods=["POST"])

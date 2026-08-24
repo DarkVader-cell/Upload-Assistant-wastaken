@@ -49,10 +49,12 @@ from src.early_tasks import is_usenet_only as _is_usenet_only
 from src.get_desc import gen_desc
 from src.get_name import NameManager
 from src.get_tracker_data import TrackerDataManager
+from src.manual_metadata import request_release_metadata
 from src.modified_release import detect_modified_release
 from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
+from src.release_validation import release_metadata_issues
 from src.runtime.artifacts import preparation_key
 from src.runtime.context import ExecutionContext
 from src.runtime.pipeline import FunctionStage, Pipeline, StageResult, StageStatus
@@ -1102,6 +1104,40 @@ async def _prompt_music_meta(meta: Meta) -> None:
         meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
 
 
+async def _ensure_release_name_metadata(meta: Meta) -> bool:
+    """Stop before tracker checks when mandatory release-name fields are absent.
+
+    Detached Web UI jobs use the same stdin checkpoint as ID correction, which
+    lets an unattended queue wait safely for an operator instead of silently
+    publishing an incomplete title.
+    """
+    issues = release_metadata_issues(meta)
+    if not issues:
+        return True
+
+    fields = ", ".join(issues)
+    if meta.unattended and not os.environ.get("UA_DETACHED_JOB_ID"):
+        logger.error(f"[bold red]Upload blocked: required release metadata is missing ({fields}).[/bold red]")
+        return False
+
+    logger.info(f"[bold yellow]Release metadata required before upload: {fields}.[/bold yellow]")
+    try:
+        changed = request_release_metadata(meta, issues)
+    except (EOFError, RuntimeError, ValueError) as error:
+        logger.error(f"[bold red]Upload blocked: release metadata was not supplied ({error}).[/bold red]")
+        return False
+
+    if changed:
+        meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
+        logger.info(f"[green]Release name rebuilt: {meta.name}[/green]")
+
+    remaining = release_metadata_issues(meta)
+    if remaining:
+        logger.error(f"[bold red]Upload blocked: invalid release metadata remains ({', '.join(remaining)}).[/bold red]")
+        return False
+    return True
+
+
 def book_screens(meta: Meta, min_successful_uploads: int) -> tuple[int, int]:
     """Count non-poster PNG screenshots for a BOOK upload and cap the upload minimum.
 
@@ -1244,6 +1280,10 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
 
     if meta.category == "MUSIC":
         await _prompt_music_meta(meta)
+
+    if not await _ensure_release_name_metadata(meta):
+        meta.we_are_uploading = False
+        return False
 
     meta = await gen_desc(meta, takescreens_manager, uploadscreens_manager)
 

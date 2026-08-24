@@ -1,7 +1,12 @@
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
+from src.meta import Meta
 from src.trackers.UNIT3D.blutopia import Blutopia
+from src.trackers.UNIT3D.ulcx import ULCX
+from src.trackers.UNIT3D.znth import Zenith
 
 
 def make_meta(**overrides):
@@ -50,3 +55,33 @@ def test_blutopia_requires_ac3_for_each_truehd_track():
 def test_blutopia_accepts_truehd_with_standalone_ac3():
     meta = make_meta(mediainfo={"media": {"track": [audio("TrueHD"), audio("AC-3")]}})
     assert asyncio.run(tracker().get_additional_checks(meta)) is True
+
+
+@pytest.mark.parametrize(
+    ("adapter", "tracker_name"),
+    [
+        (tracker(), "BLUTOPIA"),
+        (object.__new__(ULCX), "ULCX"),
+        (Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}), "ZENITH"),
+    ],
+)
+@pytest.mark.parametrize(
+    ("imdb_year", "expected_year"),
+    [(None, "2026"), ("None", "2026"), ("", "2026"), (2025, "2025")],
+)
+def test_unit3d_tracker_name_only_replaces_local_year_with_a_valid_imdb_year(adapter, tracker_name, imdb_year, expected_year):
+    adapter.tracker = tracker_name
+    name = "Pagida Kali 2026 1080p SS WEB-DL DD+ 5.1 H.264-SH3LBY"
+    meta = Meta(
+        category="MOVIE",
+        type="WEBDL",
+        title="Pagida Kali",
+        name=name,
+        year=2026,
+        resolution="1080p",
+        imdb_info={"title": "Pagida Kali", "aka": "Pagida Kali", "year": imdb_year},
+        tracker_status={tracker_name: {}},
+    )
+
+    expected_name = name.replace("2026", expected_year, 1)
+    assert asyncio.run(adapter.get_name(meta))["name"] == expected_name

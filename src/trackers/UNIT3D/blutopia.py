@@ -259,7 +259,7 @@ class Blutopia(UNIT3D):
         if meta.category == "TV" and meta.episode_title != "":
             blu_name = blu_name.replace(f"{meta.episode_title} {meta.resolution}", f"{meta.resolution}", 1)
         imdb_name = meta.imdb_info.get("title", "")
-        imdb_year = str(meta.imdb_info.get("year", ""))
+        imdb_year = self._valid_release_year(meta.imdb_info.get("year"))
         imdb_aka = meta.imdb_info.get("aka", "")
         year = str(meta.year) if meta.year is not None else ""
         aka = meta.aka

@@ -11,6 +11,7 @@ from typing import Any
 from src.console import console
 
 DETACHED_METADATA_REQUEST_PREFIX = "__UA_METADATA_REQUEST__:"
+DETACHED_RELEASE_METADATA_REQUEST_PREFIX = "__UA_RELEASE_METADATA_REQUEST__:"
 
 
 def normalize_imdb_id(value: Any) -> int:
@@ -78,6 +79,91 @@ def parse_detached_metadata_request(line: str) -> dict[str, Any] | None:
     except json.JSONDecodeError:
         return {}
     return payload if isinstance(payload, dict) else {}
+
+
+def release_metadata_request(meta: Mapping[str, Any], issues: Mapping[str, str]) -> dict[str, Any]:
+    """Create the Web UI payload for missing release-name fields."""
+    fields = [field for field in ("year", "resolution") if field in issues]
+    return {
+        "title": str(meta.get("title") or meta.get("filename") or meta.get("uuid") or ""),
+        "category": str(meta.get("category") or "").upper(),
+        "name": str(meta.get("name") or ""),
+        "fields": fields,
+        "values": {field: meta.get(field) or "" for field in fields},
+        "issues": {field: str(issues[field]) for field in fields},
+    }
+
+
+def encode_release_metadata_request(meta: Mapping[str, Any], issues: Mapping[str, str]) -> str:
+    return f"{DETACHED_RELEASE_METADATA_REQUEST_PREFIX}{json.dumps(release_metadata_request(meta, issues), separators=(',', ':'))}"
+
+
+def parse_detached_release_metadata_request(line: str) -> dict[str, Any] | None:
+    if not line.startswith(DETACHED_RELEASE_METADATA_REQUEST_PREFIX):
+        return None
+    try:
+        payload = json.loads(line[len(DETACHED_RELEASE_METADATA_REQUEST_PREFIX) :])
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def parse_release_metadata_submission(payload: Any, requested_fields: Any) -> dict[str, Any]:
+    if not isinstance(payload, Mapping):
+        raise ValueError("Release metadata response must be an object")
+    fields = {str(field) for field in requested_fields if isinstance(field, str)}
+    result: dict[str, Any] = {}
+    if "year" in fields:
+        year = str(payload.get("year") or "").strip()
+        if not re.fullmatch(r"(?:18|19|20)\d{2}", year):
+            raise ValueError("Year must be a four-digit value between 1800 and 2099")
+        result["year"] = int(year)
+    if "resolution" in fields:
+        resolution = str(payload.get("resolution") or "").strip().lower()
+        if not re.fullmatch(r"(?:2160|1440|1080|720|576|540|480|432|360|288)p", resolution):
+            raise ValueError("Resolution must be a value such as 1080p")
+        result["resolution"] = resolution
+    if not result:
+        raise ValueError("No release metadata fields were requested")
+    return result
+
+
+def apply_release_metadata_submission(meta: MutableMapping[str, Any], payload: Any, requested_fields: Any) -> set[str]:
+    parsed = parse_release_metadata_submission(payload, requested_fields)
+    changed: set[str] = set()
+    for key, value in parsed.items():
+        if meta.get(key) != value:
+            meta[key] = value
+            changed.add(key)
+        if key == "year":
+            meta["manual_year"] = value
+            meta["search_year"] = str(value)
+    return changed
+
+
+def request_release_metadata(meta: MutableMapping[str, Any], issues: Mapping[str, str]) -> set[str]:
+    """Ask for release fields, using a machine-readable checkpoint when detached."""
+    detached_job_id = os.environ.get("UA_DETACHED_JOB_ID", "").strip()
+    request_data = release_metadata_request(meta, issues)
+    if detached_job_id:
+        print(encode_release_metadata_request(meta, issues), flush=True)
+        response_line = sys.stdin.readline()
+        if not response_line:
+            raise RuntimeError("Detached release-metadata prompt closed before values were supplied")
+        try:
+            payload = json.loads(response_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError("Invalid release-metadata response received from Web UI") from exc
+        return apply_release_metadata_submission(meta, payload, request_data["fields"])
+
+    import cli_ui
+
+    response: dict[str, str] = {}
+    if "year" in request_data["fields"]:
+        response["year"] = cli_ui.ask_string("Release year (YYYY): ")
+    if "resolution" in request_data["fields"]:
+        response["resolution"] = cli_ui.ask_string("Video resolution (for example 1080p): ")
+    return apply_release_metadata_submission(meta, response, request_data["fields"])
 
 
 def should_request_metadata(meta: Mapping[str, Any], detached: bool = False) -> bool:

@@ -42,12 +42,13 @@ def restore_detached_jobs(path: Path) -> RestoredDetachedJobs | None:
         if status == "queued":
             queue.append(job_id)
             job["message"] = "Recovered after WebUI restart; queued for unattended execution"
-        elif status in {"running", "waiting_for_input", "waiting_for_metadata"}:
+        elif status in {"running", "waiting_for_input", "waiting_for_metadata", "waiting_for_release_metadata"}:
             job["status"] = "interrupted"
             job["message"] = "Interrupted by WebUI restart; retained for safe retry"
             job["recovery_available"] = True
             job["finished_at"] = datetime.now(UTC).isoformat()
             job["metadata_request"] = None
+            job["release_metadata_request"] = None
             job["prompt_request"] = None
         jobs[job_id] = job
     return RestoredDetachedJobs(jobs, queue)
@@ -70,7 +71,7 @@ def snapshot_detached_jobs(
         status = str(job.get("status"))
         snapshot["queue_position"] = queue_positions.get(job_id)
         snapshot["can_edit"] = status in {"queued", "interrupted", "failed"}
-        snapshot["can_cancel"] = status in {"queued", "starting", "running", "waiting_for_input", "waiting_for_metadata"}
+        snapshot["can_cancel"] = status in {"queued", "starting", "running", "waiting_for_input", "waiting_for_metadata", "waiting_for_release_metadata"}
         snapshot["can_retry"] = status in {"failed", "interrupted"}
         snapshots.append(json_safe(snapshot))
     return snapshots

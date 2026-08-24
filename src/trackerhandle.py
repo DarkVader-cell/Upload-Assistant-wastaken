@@ -22,6 +22,7 @@ from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
 from src.rehostimages import check_tracker_image_hosts, has_restricted_image_hosts, select_common_image_host
+from src.release_validation import tracker_release_name_issues
 from src.runtime.context import current_execution_context
 from src.runtime.scheduler import AdaptiveScheduler
 from src.trackers.adapter import TrackerRegistry
@@ -178,6 +179,26 @@ async def process_trackers(
             if match:
                 status["upload_url"] = match.group(0).rstrip(".,)")
 
+    async def validate_tracker_release_name(tracker_class: Any) -> bool:
+        """Ensure tracker-specific title rewrites cannot drop required fields."""
+        tracker_name = str(getattr(tracker_class, "tracker", "UNKNOWN")).upper()
+        status = meta.tracker_status.setdefault(tracker_name, {})
+        try:
+            name_result = await tracker_class.get_name(meta)
+            submitted_name = name_result.get("name") if isinstance(name_result, Mapping) else name_result
+        except Exception as error:
+            status.update({"upload": False, "upload_success": False, "status_message": f"Skipped: unable to validate tracker title ({error})"})
+            logger.info(f"[red]{tracker_name}: skipped because its tracker title could not be validated: {error}[/red]")
+            return False
+
+        issues = tracker_release_name_issues(meta, submitted_name)
+        if not issues:
+            return True
+        reason = "; ".join(issues.values())
+        status.update({"upload": False, "upload_success": False, "upload_name": str(submitted_name or ""), "status_message": f"Skipped: invalid tracker title: {reason}"})
+        logger.info(f"[bold red]{tracker_name}: upload blocked — {reason}[/bold red]")
+        return False
+
     async def process_single_tracker(tracker: str) -> None:
         """
         try:
@@ -268,6 +289,9 @@ async def process_trackers(
                         logger.info(f"{tracker} (draft: {draft})")
                     is_uploaded = False
                     try:
+                        if not await validate_tracker_release_name(tracker_class):
+                            print_tracker_result(tracker, tracker_class, meta.tracker_status.setdefault(tracker_class.tracker, {}), False)
+                            return
                         if not await check_bandwidth_and_dupes(tracker, tracker_class):
                             status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                             status["status_message"] = "Skipped due to new dupe found after bandwidth wait"
@@ -311,6 +335,9 @@ async def process_trackers(
                 try:
                     is_uploaded = False
                     try:
+                        if not await validate_tracker_release_name(tracker_class):
+                            print_tracker_result(tracker, tracker_class, meta.tracker_status.setdefault(tracker_class.tracker, {}), False)
+                            return
                         if not await check_bandwidth_and_dupes(tracker, tracker_class):
                             status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                             status["status_message"] = "Skipped due to new dupe found after bandwidth wait"
@@ -385,6 +412,9 @@ async def process_trackers(
                 try:
                     ptp = PassThePopcorn(config=config)
                     group_id = meta.ptp_groupid
+                    if not await validate_tracker_release_name(ptp):
+                        print_tracker_result(tracker, ptp, meta.tracker_status.setdefault(ptp.tracker, {}), False)
+                        return
                     await check_tracker_image_hosts(meta, ptp)
                     ptp_url, ptp_data = await ptp.fill_upload_form(group_id, meta)
                     is_uploaded = False

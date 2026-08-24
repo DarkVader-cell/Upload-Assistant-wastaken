@@ -287,7 +287,7 @@ class ULCX(UNIT3D):
     async def get_name(self, meta: Meta) -> dict[str, str]:
         ulcx_name = meta.name
         imdb_name = meta.imdb_info.get("title", "")
-        imdb_year = str(meta.imdb_info.get("year", ""))
+        imdb_year = self._valid_release_year(meta.imdb_info.get("year"))
         imdb_aka = meta.imdb_info.get("aka", "")
         year = str(meta.year) if meta.year is not None else ""
         aka = meta.aka

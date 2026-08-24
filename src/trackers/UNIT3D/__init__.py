@@ -221,6 +221,12 @@ class UNIT3D:
     async def get_name(self, meta: Meta) -> dict[str, str]:
         return {"name": meta.name}
 
+    @staticmethod
+    def _valid_release_year(value: Any) -> str:
+        """Return a four-digit metadata year, never a stringified null value."""
+        candidate = str(value).strip() if value is not None else ""
+        return candidate if re.fullmatch(r"\d{4}", candidate) else ""
+
     async def get_description(self, meta: Meta) -> Any:
         return {
             "description": await DescriptionBuilder(self.tracker, self.config).general_description_generator(

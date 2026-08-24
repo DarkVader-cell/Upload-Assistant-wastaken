@@ -34,7 +34,12 @@ import psutil
 
 import web_ui.auth as auth_mod
 from src.webui_progress import ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
-from src.manual_metadata import parse_detached_metadata_request, parse_metadata_submission
+from src.manual_metadata import (
+    parse_detached_metadata_request,
+    parse_detached_release_metadata_request,
+    parse_metadata_submission,
+    parse_release_metadata_submission,
+)
 from src.runtime.history import ReleaseHistoryStore
 from web_ui.browse_index import BrowseIndex
 from web_ui.services.config_remove_api import ConfigSourceOperations, create_config_remove_blueprint
@@ -1536,6 +1541,7 @@ def _retry_detached_job(job_id: str) -> bool:
                 "return_code": None,
                 "error": None,
                 "metadata_request": None,
+                "release_metadata_request": None,
                 "prompt_request": None,
                 "recovery_available": False,
             }
@@ -1559,6 +1565,17 @@ def _waiting_metadata_request(job_id: str) -> dict[str, Any] | None:
         if not job or job.get("status") != "waiting_for_metadata":
             return None
         request_data = job.get("metadata_request")
+        return dict(request_data) if isinstance(request_data, Mapping) else None
+
+
+def _waiting_release_metadata_request(job_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if not job or job.get("status") != "waiting_for_release_metadata":
+            return None
+        request_data = job.get("release_metadata_request")
         return dict(request_data) if isinstance(request_data, Mapping) else None
 
 
@@ -1598,6 +1615,7 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
         log_path=str(log_path),
         message="Running upload",
         metadata_request=None,
+        release_metadata_request=None,
         prompt_request=None,
     )
 
@@ -1630,13 +1648,25 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
                     clean_line = strip_ansi(line)
                     if progress := progress_from_log_line(clean_line):
                         _set_detached_job(job_id, progress=progress)
+                    release_metadata_request = parse_detached_release_metadata_request(clean_line.rstrip("\r\n"))
                     metadata_request = parse_detached_metadata_request(clean_line.rstrip("\r\n"))
-                    if metadata_request is not None:
+                    if release_metadata_request is not None:
+                        _set_detached_job(
+                            job_id,
+                            status="waiting_for_release_metadata",
+                            message="Waiting for release-name metadata in Operations",
+                            release_metadata_request=release_metadata_request,
+                            metadata_request=None,
+                            prompt_request=None,
+                        )
+                        log_file.write("Waiting for release-name metadata from Web UI\n")
+                    elif metadata_request is not None:
                         _set_detached_job(
                             job_id,
                             status="waiting_for_metadata",
                             message="Waiting for IMDb/TMDb IDs in Operations",
                             metadata_request=metadata_request,
+                            release_metadata_request=None,
                             prompt_request=None,
                         )
                         log_file.write("Waiting for metadata IDs from Web UI\n")
@@ -1650,6 +1680,7 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
                                 message="Waiting for input in Operations",
                                 prompt_request={"text": clean_line.rstrip(), "input_type": prompt_type},
                                 metadata_request=None,
+                                release_metadata_request=None,
                             )
                     log_file.flush()
 
@@ -1666,6 +1697,7 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
                 return_code=return_code,
                 message=f"Exited with code {return_code}",
                 metadata_request=None,
+                release_metadata_request=None,
                 prompt_request=None,
             )
     except Exception as error:
@@ -1680,6 +1712,7 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
                 error=str(error),
                 message="Detached upload failed",
                 metadata_request=None,
+                release_metadata_request=None,
                 prompt_request=None,
             )
         with contextlib.suppress(Exception), log_path.open("a", encoding="utf-8", errors="replace") as log_file:
@@ -4306,6 +4339,7 @@ def qui_submit():
                 "recovery_available": False,
                 "process_active": False,
                 "metadata_request": None,
+                "release_metadata_request": None,
                 "prompt_request": None,
             }
             with detached_jobs_lock:
@@ -4444,7 +4478,7 @@ def qui_cancel(job_id: str):
             job.update({"status": "cancelled", "message": "Cancelled before execution", "finished_at": datetime.now(UTC).isoformat(), "recovery_available": False})
             _persist_detached_jobs_locked()
             snapshot = dict(job)
-        elif status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata"}:
+        elif status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata", "waiting_for_release_metadata"}:
             return jsonify({"success": False, "error": "Job is not active"}), 409
 
     if status == "queued":
@@ -4459,7 +4493,7 @@ def qui_cancel(job_id: str):
     if isinstance(process, subprocess.Popen) and process.poll() is None:
         with contextlib.suppress(Exception):
             process.kill()
-    _set_detached_job(job_id, status="cancelled", message="Cancelled by user", finished_at=datetime.now(UTC).isoformat(), recovery_available=False, prompt_request=None, metadata_request=None)
+    _set_detached_job(job_id, status="cancelled", message="Cancelled by user", finished_at=datetime.now(UTC).isoformat(), recovery_available=False, prompt_request=None, metadata_request=None, release_metadata_request=None)
     return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
 
 
@@ -4489,7 +4523,7 @@ def qui_input(job_id: str):
         process.stdin.flush()
     except (BrokenPipeError, OSError) as error:
         return jsonify({"success": False, "error": f"Unable to send input: {error}"}), 409
-    _set_detached_job(job_id, status="running", message="Input received; upload resumed", prompt_request=None, metadata_request=None)
+    _set_detached_job(job_id, status="running", message="Input received; upload resumed", prompt_request=None, metadata_request=None, release_metadata_request=None)
     return jsonify({"success": True, "job_id": job_id})
 
 
@@ -4526,8 +4560,37 @@ def qui_metadata(job_id: str):
         process.stdin.flush()
     except (BrokenPipeError, OSError) as error:
         return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
-    _set_detached_job(job_id, status="running", message="Metadata received; resuming upload", metadata_request=None)
+    _set_detached_job(job_id, status="running", message="Metadata received; resuming upload", metadata_request=None, release_metadata_request=None)
     return jsonify({"success": True, "job_id": job_id, "metadata": payload})
+
+
+@app.route("/api/qui/release_metadata/<job_id>", methods=["POST"])
+def qui_release_metadata(job_id: str):
+    """Submit release-name fields and resume an unattended upload checkpoint."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    request_data = _waiting_release_metadata_request(job_id)
+    if request_data is None:
+        return jsonify({"success": False, "error": "Job is not waiting for release metadata"}), 409
+    raw_payload = _as_dict(request.get_json(silent=True)) or {}
+    try:
+        payload = parse_release_metadata_submission(raw_payload, request_data.get("fields", []))
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+    with active_processes_lock:
+        process_info = active_processes.get(job_id)
+        process = process_info.get("process") if process_info else None
+    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
+        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    try:
+        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        process.stdin.flush()
+    except (BrokenPipeError, OSError) as error:
+        return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
+    _set_detached_job(job_id, status="running", message="Release metadata received; rebuilding title", release_metadata_request=None, metadata_request=None, prompt_request=None)
+    return jsonify({"success": True, "job_id": job_id, "release_metadata": payload})
 
 
 @app.route("/api/config_update", methods=["POST"])

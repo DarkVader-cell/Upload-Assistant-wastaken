@@ -6,8 +6,15 @@ import pytest
 
 import upload
 from src.cogs.redaction import Redaction
-from src.manual_metadata import metadata_request, parse_metadata_submission, should_request_metadata
+from src.manual_metadata import (
+    apply_release_metadata_submission,
+    metadata_request,
+    parse_metadata_submission,
+    parse_release_metadata_submission,
+    should_request_metadata,
+)
 from src.modified_release import MODIFIED_RELEASE_REASON, detect_modified_release
+from src.release_validation import release_metadata_issues, tracker_release_name_issues
 from src.safe_url import UnsafeURLError, assert_public_http_url
 from upload import queue_item_has_successful_upload
 from web_ui import server as webui_server
@@ -27,6 +34,22 @@ def test_metadata_submission_normalizes_tmdb_and_imdb_ids():
         "imdb_id": 456,
         "category": "TV",
     }
+
+
+def test_release_metadata_requires_video_year_and_resolution_and_applies_webui_values():
+    meta = {"category": "MOVIE", "type": "WEBDL", "year": None, "resolution": "OTHER"}
+    assert set(release_metadata_issues(meta)) == {"year", "resolution"}
+    parsed = parse_release_metadata_submission({"year": "2026", "resolution": "1080p"}, ["year", "resolution"])
+    assert parsed == {"year": 2026, "resolution": "1080p"}
+    assert apply_release_metadata_submission(meta, parsed, ["year", "resolution"]) == {"year", "resolution"}
+    assert meta["manual_year"] == 2026
+    assert release_metadata_issues(meta) == {}
+
+
+def test_tracker_title_guard_blocks_missing_year_or_resolution_after_tracker_rewrite():
+    meta = {"category": "MOVIE", "type": "WEBDL", "year": 2026, "resolution": "1080p"}
+    assert set(tracker_release_name_issues(meta, "Pagida Kali None SS WEB-DL DD+ 5.1 H.264-SH3LBY")) == {"year", "resolution"}
+    assert tracker_release_name_issues(meta, "Pagida Kali 2026 1080p SS WEB-DL DD+ 5.1 H.264-SH3LBY") == {}
 
 
 def test_modified_release_detection_allows_discs_and_personal_releases():
@@ -101,6 +124,22 @@ def test_detached_job_snapshot_exposes_safe_control_capabilities():
     with webui_server.detached_jobs_lock:
         webui_server.detached_jobs.clear()
         webui_server.detached_job_queue.clear()
+
+
+def test_detached_job_snapshot_keeps_release_metadata_wait_cancelable():
+    snapshot = webui_server.snapshot_detached_jobs(
+        {
+            "wait-1": {
+                "id": "wait-1",
+                "status": "waiting_for_release_metadata",
+                "command": ["python", "upload.py", "/media/item"],
+            }
+        },
+        [],
+        limit=10,
+        json_safe=lambda value: value,
+    )
+    assert snapshot[0]["can_cancel"] is True
 
 
 def test_failed_unattended_queue_item_remains_retryable():

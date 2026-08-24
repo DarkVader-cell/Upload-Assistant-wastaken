@@ -1658,8 +1658,10 @@ function AudionutsUAGUI() {
   const [releaseHistoryStatus, setReleaseHistoryStatus] = useState("");
   const [operationDrafts, setOperationDrafts] = useState({});
   const [operationInput, setOperationInput] = useState({});
+  const [operationMetadata, setOperationMetadata] = useState({});
   const [operationLog, setOperationLog] = useState({});
   const [activeLogJobId, setActiveLogJobId] = useState("");
+  const quiCursorRef = useRef(0);
 
   // File Browser search states
   const [fileBrowserSearch, setFileBrowserSearch] = useState("");
@@ -1731,8 +1733,26 @@ function AudionutsUAGUI() {
   useEffect(() => {
     if (!operationsOpen && activePanel !== "operations") return undefined;
     loadDetachedJobs();
-    const timer = window.setInterval(loadDetachedJobs, 2500);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    let retryTimer = null;
+    const sync = async () => {
+      try {
+        const response = await apiFetch(`${API_BASE}/qui/events?cursor=${quiCursorRef.current}&wait=20`, { cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.success) {
+          quiCursorRef.current = Number(data.cursor) || quiCursorRef.current;
+          if (Array.isArray(data.events) && data.events.length) await loadDetachedJobs();
+        }
+      } catch (error) {
+        console.debug("Unattended event sync paused:", error);
+      }
+      if (!stopped) retryTimer = window.setTimeout(sync, 150);
+    };
+    sync();
+    return () => {
+      stopped = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+    };
   }, [activePanel, loadDetachedJobs, operationsOpen]);
 
   useEffect(() => {
@@ -1761,7 +1781,8 @@ function AudionutsUAGUI() {
         const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(activeLogJobId)}?bytes=30000`, { cache: "no-store" });
         const data = await response.json().catch(() => null);
         if (response.ok && data?.success) {
-          setOperationLog((previous) => ({ ...previous, [activeLogJobId]: data.log || "" }));
+          const nextLog = data.log || "";
+          setOperationLog((previous) => previous[activeLogJobId] === nextLog ? previous : ({ ...previous, [activeLogJobId]: nextLog }));
         }
       } catch (error) {
         console.debug("Failed to refresh unattended log:", error);
@@ -1971,7 +1992,9 @@ function AudionutsUAGUI() {
               const status = String(job.status || "unknown");
               const editable = Boolean(job.can_edit);
               const prompt = job.prompt_request || job.metadata_request;
+              const releaseMetadata = job.release_metadata_request;
               const draft = operationDrafts[job.id] ?? job.args ?? "";
+              const releaseDraft = operationMetadata[job.id] || {};
               return (
                 <div key={job.id} className={`rounded-lg border p-3 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -2010,6 +2033,25 @@ function AudionutsUAGUI() {
                         <input value={operationInput[job.id] || ""} onChange={(event) => setOperationInput((previous) => ({ ...previous, [job.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] }); }} className={`flex-1 rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`} placeholder={prompt.input_type === "yes_no" ? "y or n" : "Enter response"} />
                         <button onClick={() => performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] })} className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Send</button>
                       </div>
+                    </div>
+                  )}
+                  {releaseMetadata && status === "waiting_for_release_metadata" && (
+                    <div className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}>
+                      <p className="text-xs font-semibold">Release-name metadata required</p>
+                      <p className="mt-1 text-xs">{releaseMetadata.name || releaseMetadata.title || job.source_path}</p>
+                      {Array.isArray(releaseMetadata.fields) && releaseMetadata.fields.map((field) => (
+                        <label key={field} className="mt-2 block text-xs font-medium">
+                          <span>{field === "year" ? "Release year" : "Resolution"}</span>
+                          <input
+                            value={releaseDraft[field] ?? releaseMetadata.values?.[field] ?? ""}
+                            onChange={(event) => setOperationMetadata((previous) => ({ ...previous, [job.id]: { ...(previous[job.id] || {}), [field]: event.target.value } }))}
+                            placeholder={field === "year" ? "YYYY" : "1080p"}
+                            className={`mt-1 block w-full rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`}
+                          />
+                          {releaseMetadata.issues?.[field] && <span className="mt-1 block font-normal opacity-70">{releaseMetadata.issues[field]}</span>}
+                        </label>
+                      ))}
+                      <button onClick={() => performJobAction(job.id, "release_metadata", { ...(releaseMetadata.values || {}), ...releaseDraft })} className="mt-3 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Rebuild title and continue</button>
                     </div>
                   )}
                   {activeLogJobId === job.id && operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{renderLogWithLinks(operationLog[job.id])}</pre>}
