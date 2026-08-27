@@ -31,8 +31,15 @@ erase_key: str | None = None
 
 
 class CleanupManager:
-    async def cleanup(self) -> None:
-        """Ensure all running tasks, threads, and subprocesses are properly cleaned up before exiting."""
+    async def cleanup(self, *, cancel_unowned_tasks: bool = False) -> None:
+        """Clean legacy resources without disrupting unrelated async work.
+
+        Upload runs now own their HTTP clients and subprocesses through
+        ``ExecutionContext``. Legacy error paths still call this manager, often
+        while the Web UI shares the same event loop. Cancelling every task in
+        that loop would also cancel request handlers and detached-job work, so
+        broad task cancellation is reserved for final process shutdown.
+        """
         # console.print("[yellow]Cleaning up tasks before exiting...[/yellow]")
 
         # Step 1: Shutdown ThreadPoolExecutor **without blocking the event loop**
@@ -83,7 +90,32 @@ class CleanupManager:
         with contextlib.suppress(RuntimeError):
             await asyncio.sleep(0.1)
 
-        # 🔹 Step 5: Cancel all running asyncio tasks **gracefully**
+        # 🔹 Step 5: Only final process shutdown may cancel unrelated tasks.
+        results: list[object] = []
+        if cancel_unowned_tasks:
+            results = await self._cancel_unowned_tasks()
+
+        for result in results:
+            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
+                logger.error(f"[red]Error during cleanup: {result}[/red]")
+
+        # 🔹 Step 6: Kill all remaining threads and orphaned processes
+        self.kill_all_threads()
+
+        if IS_MACOS:
+            # If you add shared memory or semaphore usage, append their (name, kind)
+            # pairs below so unregister can release them.
+            resource_tracker = getattr(multiprocessing, "resource_tracker", None)
+            if resource_tracker and hasattr(resource_tracker, "unregister"):
+                resources_to_release: list[tuple[str, str]] = []
+                for name, kind in resources_to_release:
+                    try:
+                        resource_tracker.unregister(name, kind)
+                    except Exception as exc:
+                        logger.info(f"[red]Error unregistering multiprocessing resource {name} ({kind}): {exc}[/red]")
+
+    async def _cancel_unowned_tasks(self) -> list[object]:
+        """Cancel remaining loop tasks during final application shutdown only."""
         try:
             tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
             # console.print(f"[yellow]Cancelling {len(tasks)} remaining tasks...[/yellow]")
@@ -107,27 +139,7 @@ class CleanupManager:
         except RuntimeError:
             # Event loop is no longer running, skip task cleanup
             results = []
-
-        for result in results:
-            if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
-                logger.error(f"[red]Error during cleanup: {result}[/red]")
-
-        # 🔹 Step 6: Kill all remaining threads and orphaned processes
-        self.kill_all_threads()
-
-        if IS_MACOS:
-            # If you add shared memory or semaphore usage, append their (name, kind)
-            # pairs below so unregister can release them.
-            resource_tracker = getattr(multiprocessing, "resource_tracker", None)
-            if resource_tracker and hasattr(resource_tracker, "unregister"):
-                resources_to_release: list[tuple[str, str]] = []
-                for name, kind in resources_to_release:
-                    try:
-                        resource_tracker.unregister(name, kind)
-                    except Exception as exc:
-                        logger.info(f"[red]Error unregistering multiprocessing resource {name} ({kind}): {exc}[/red]")
-
-        # console.print("[green]Cleanup completed. Exiting safely.[/green]")
+        return results
 
     def kill_all_threads(self) -> None:
         """Forcefully kill any lingering threads and subprocesses before exit."""

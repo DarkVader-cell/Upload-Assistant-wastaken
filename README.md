@@ -23,6 +23,7 @@
   - [8. Modern Web UI & Real-Time Engine](#8-modern-web-ui--real-time-engine)
   - [9. Resumable and Observable Runtime](#9-resumable-and-observable-runtime)
 - [Workflow, Performance, and Tracker Improvements](docs/workflow-improvements.md)
+- [Reliability, Performance, and Recovery](docs/reliability.md)
 - [Supported Sites](#supported-sites)
 - [Setup Guide](#setup-guide)
   - [Step 1: Install Required Tools](#step-1-install-required-tools)

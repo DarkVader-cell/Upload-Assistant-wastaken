@@ -3,6 +3,8 @@
 
 [Workflow, performance, and tracker improvements](workflow-improvements.md)
 
+[Reliability, performance, and recovery](reliability.md)
+
 [Web UI guide](web-ui-basic.md) · [Web UI API](web-ui-api.md)
 
 [Docker](docker.md)

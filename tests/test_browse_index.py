@@ -1,5 +1,6 @@
 # ruff: noqa: S101
 
+import threading
 from pathlib import Path
 
 from web_ui.browse_index import BrowseIndex
@@ -36,3 +37,19 @@ def test_browse_index_refreshes_stale_entries(tmp_path):
     index._refresh([str(root)])
     results, _ = index.search([str(root)], "new", "video", 100)
     assert [item["name"] for item in results] == ["new.mkv"]
+
+
+def test_browse_index_close_stops_the_active_watcher(tmp_path, monkeypatch):
+    index = BrowseIndex(tmp_path / "browse.sqlite3")
+    started = threading.Event()
+
+    def watch(_roots):
+        started.set()
+        index._watch_stop.wait()
+
+    monkeypatch.setattr(index, "_watcher_available", lambda: True)
+    monkeypatch.setattr(index, "_watch_filesystem", watch)
+    index._start_watcher([str(tmp_path)])
+    assert started.wait(timeout=1)
+    index.close()
+    assert index._watch_thread is None

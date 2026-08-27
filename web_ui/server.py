@@ -1,5 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 # ruff: noqa: I001
+import atexit
 import ast
 import asyncio
 import base64
@@ -758,6 +759,7 @@ try:
 except (TypeError, ValueError):
     _browse_index_ttl = 900
 _browse_index = BrowseIndex(Path(__file__).resolve().parent.parent / "tmp" / "browse_index.sqlite3", refresh_seconds=_browse_index_ttl)
+atexit.register(_browse_index.close)
 
 # Runtime flags and stored totp
 saved_totp_secret: str | None = None

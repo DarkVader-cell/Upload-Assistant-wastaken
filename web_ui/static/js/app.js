@@ -1691,6 +1691,7 @@ function AudionutsUAGUI() {
     useState(false);
   const fileBrowserSearchTimer = useRef(null);
   const fileBrowserSearchQuery = useRef("");
+  const fileBrowserSearchController = useRef(null);
 
   // Folder loading states
   const [loadingFolders, setLoadingFolders] = useState(new Set());
@@ -3251,6 +3252,7 @@ function AudionutsUAGUI() {
       if (fileBrowserSearchTimer.current) {
         clearTimeout(fileBrowserSearchTimer.current);
       }
+      fileBrowserSearchController.current?.abort();
     };
   }, []);
 
@@ -3688,6 +3690,7 @@ function AudionutsUAGUI() {
     if (fileBrowserSearchTimer.current) {
       clearTimeout(fileBrowserSearchTimer.current);
     }
+    fileBrowserSearchController.current?.abort();
     if (!searchQuery) {
       setFileBrowserSearchResults(null);
       setFileBrowserSearchLoading(false);
@@ -3695,9 +3698,12 @@ function AudionutsUAGUI() {
     }
     setFileBrowserSearchLoading(true);
     fileBrowserSearchTimer.current = setTimeout(async () => {
+      const controller = new AbortController();
+      fileBrowserSearchController.current = controller;
       try {
         const response = await apiFetch(
           `${API_BASE}/browse_search?q=${encodeURIComponent(searchQuery)}`,
+          { signal: controller.signal },
         );
         if (!response.ok) {
           throw new Error(`Search request failed (${response.status})`);
@@ -3715,6 +3721,7 @@ function AudionutsUAGUI() {
           });
         }
       } catch (error) {
+        if (error?.name === "AbortError") return;
         console.error("File browser search failed:", error);
         if (fileBrowserSearchQuery.current === searchQuery) {
           setFileBrowserSearchResults({
@@ -3724,6 +3731,9 @@ function AudionutsUAGUI() {
           });
         }
       } finally {
+        if (fileBrowserSearchController.current === controller) {
+          fileBrowserSearchController.current = null;
+        }
         if (fileBrowserSearchQuery.current === searchQuery) {
           setFileBrowserSearchLoading(false);
         }

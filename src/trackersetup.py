@@ -18,6 +18,7 @@ from src.cleanup import cleanup_manager
 from src.console import logger
 from src.extensions import load_extensions
 from src.meta import Meta
+from src.trackers.adapter import TrackerRegistry
 from src.trackers.common import Common
 
 

@@ -3489,7 +3489,7 @@ def run() -> None:
                 # Run cleanup with timeout to prevent hanging on shutdown
                 async def _cleanup_with_timeout() -> None:
                     try:
-                        await asyncio.wait_for(cleanup_manager.cleanup(), timeout=10.0)
+                        await asyncio.wait_for(cleanup_manager.cleanup(cancel_unowned_tasks=True), timeout=10.0)
                     except TimeoutError, asyncio.CancelledError:
                         logger.info("[yellow]Cleanup timed out or was cancelled, forcing exit...[/yellow]")
 

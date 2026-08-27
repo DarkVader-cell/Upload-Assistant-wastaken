@@ -314,10 +314,25 @@ class BrowseIndex:
         if self._watch_thread is not None and self._watch_thread.is_alive() and self._watch_roots == normalized:
             return
         self._watch_stop.set()
+        previous = self._watch_thread
+        if previous is not None and previous.is_alive() and previous is not threading.current_thread():
+            # A root change is rare. Waiting briefly here prevents a hot reload
+            # from leaving two inotify readers and SQLite writers alive.
+            previous.join(timeout=1.5)
         self._watch_roots = normalized
         self._watch_stop = threading.Event()
         self._watch_thread = threading.Thread(target=self._watch_filesystem, args=(normalized,), name="ua-browse-watcher", daemon=True)
         self._watch_thread.start()
+
+    def close(self) -> None:
+        """Stop the optional watcher during server shutdown or hot reload."""
+        self._watch_stop.set()
+        watcher = self._watch_thread
+        if watcher is not None and watcher.is_alive() and watcher is not threading.current_thread():
+            watcher.join(timeout=1.5)
+        if watcher is None or not watcher.is_alive():
+            self._watch_thread = None
+        self._watch_roots = ()
 
     def search(self, roots: list[str], query: str, file_filter: str, max_results: int) -> tuple[list[dict[str, Any]], bool]:
         """Return indexed candidates and whether an index refresh is running."""

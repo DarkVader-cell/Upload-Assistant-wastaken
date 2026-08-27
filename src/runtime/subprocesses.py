@@ -43,6 +43,11 @@ class SubprocessManager:
         if not command:
             raise ValueError("subprocess command cannot be empty")
         async with self._semaphore:
+            # ``close`` can run while this call waits for a permit. Check again
+            # after acquiring it so a closing execution context never starts a
+            # new child process after it has terminated its owned children.
+            if self._closed:
+                raise RuntimeError("subprocess manager is closed")
             process = await asyncio.create_subprocess_exec(
                 *command,
                 cwd=str(cwd) if cwd is not None else None,

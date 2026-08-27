@@ -60,6 +60,8 @@ class HttpClientPool:
             verify,
         )
         async with self._lock:
+            if self._closed:
+                raise RuntimeError("HTTP client pool is closed")
             client = self._clients.get(key)
             if client is None:
                 async def request_started(request: httpx.Request) -> None:
@@ -98,10 +100,13 @@ class HttpClientPool:
         if self._closed:
             raise RuntimeError("HTTP client pool is closed")
         async with self._lock:
+            if self._closed:
+                raise RuntimeError("HTTP client pool is closed")
             task = self._inflight.get(key)
             if task is None:
                 task = asyncio.create_task(operation())
                 self._inflight[key] = task
+                task.add_done_callback(lambda completed, operation_key=key: self._discard_completed(operation_key, completed))
                 self.metrics.increment("http.operations.started")
             else:
                 self.metrics.increment("http.operations.coalesced")
@@ -112,6 +117,17 @@ class HttpClientPool:
                 async with self._lock:
                     if self._inflight.get(key) is task:
                         self._inflight.pop(key, None)
+
+    def _discard_completed(self, key: str, task: asyncio.Task[Any]) -> None:
+        """Release completed work even when every caller was cancelled.
+
+        ``coalesce`` shields its shared task from caller cancellation. Without
+        this callback, a cancelled caller is the only code path that may remove
+        a completed task from ``_inflight``, retaining provider results and
+        exceptions for the lifetime of a long-running Web UI execution.
+        """
+        if self._inflight.get(key) is task:
+            self._inflight.pop(key, None)
 
     async def close(self) -> None:
         """Cancel owned in-flight work and close every pooled connection."""

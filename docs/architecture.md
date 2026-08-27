@@ -14,4 +14,4 @@ Fork-only behavior should live in new service or extension modules. Upstream-own
 
 Direct `httpx.AsyncClient` and `asyncio.create_subprocess_exec` use are migration debt. New code uses the shared runtime helpers, and the architecture guard prevents these counts or the Web UI monolith from growing.
 
-See [Workflow, Performance, and Tracker Improvements](workflow-improvements.md) for the user-facing contracts built on these boundaries, including persistence, safe configuration mutation, tracker rules, and Docker behavior.
+See [Reliability, Performance, and Recovery](reliability.md) for the concise operational lifecycle and validation guide, and [Workflow, Performance, and Tracker Improvements](workflow-improvements.md) for the detailed user-facing contracts built on these boundaries.
