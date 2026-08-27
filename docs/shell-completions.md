@@ -71,7 +71,7 @@ activate-global-python-argcomplete --user
 This updates `~/.bash_completion` and the user-level Zsh configuration. It has zero overhead at startup and will automatically trigger completions for `ua`.
 
 ### Option B: Immediate `eval` (All Shells)
-You can directly evaluate the hook in your shell configuration file (e.g., `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`). 
+You can directly evaluate the hook in your shell configuration file (e.g., `~/.bashrc`, `~/.zshrc`, or `~/.config/fish/config.fish`).
 *Note: This will add ~100-200ms of lag when opening a new terminal, as it must execute Python to generate the hook during shell startup.*
 
 **Bash:**
