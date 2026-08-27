@@ -39,6 +39,26 @@ def test_browse_index_refreshes_stale_entries(tmp_path):
     assert [item["name"] for item in results] == ["new.mkv"]
 
 
+def test_browse_index_batches_large_subtrees_and_respects_result_limit(tmp_path, monkeypatch):
+    root = tmp_path / "media"
+    root.mkdir()
+    for number in range(2005):
+        (root / f"Episode.{number:04d}.mkv").touch()
+
+    index = BrowseIndex(tmp_path / "browse.sqlite3", refresh_seconds=900)
+    index._initialize()
+    index._sync_subtree(str(root.resolve()), root)
+
+    with index._connect() as connection:
+        count = connection.execute("SELECT COUNT(*) FROM browse_entries").fetchone()[0]
+    assert count == 2005
+
+    monkeypatch.setattr(index, "_watcher_available", lambda: False)
+    results, indexing = index.search([str(root)], "Episode", "video", 5)
+    assert not indexing
+    assert len(results) == 5
+
+
 def test_browse_index_close_stops_the_active_watcher(tmp_path, monkeypatch):
     index = BrowseIndex(tmp_path / "browse.sqlite3")
     started = threading.Event()

@@ -194,6 +194,16 @@ class BrowseIndex:
             return
         with self._connect() as connection:
             batch: list[tuple[str, str, str, str, str]] = []
+
+            def flush_batch() -> None:
+                if not batch:
+                    return
+                connection.executemany(
+                    "INSERT OR REPLACE INTO browse_entries(root, path, name, name_lower, entry_type) VALUES (?, ?, ?, ?, ?)",
+                    batch,
+                )
+                batch.clear()
+
             try:
                 for dirpath, dirnames, filenames in os.walk(directory):
                     dirnames[:] = [name for name in dirnames if not name.startswith(".")]
@@ -205,10 +215,12 @@ class BrowseIndex:
                             continue
                         path = Path(dirpath) / filename
                         batch.append((root, str(path), filename, filename.casefold(), "file"))
-                connection.executemany(
-                    "INSERT OR REPLACE INTO browse_entries(root, path, name, name_lower, entry_type) VALUES (?, ?, ?, ?, ?)",
-                    batch,
-                )
+                    # A newly moved media directory can contain tens of
+                    # thousands of entries. Keep the SQLite transaction, but
+                    # bound Python memory while populating it.
+                    if len(batch) >= 2000:
+                        flush_batch()
+                flush_batch()
                 connection.execute("INSERT OR REPLACE INTO browse_roots(root, scanned_at) VALUES (?, ?)", (root, time.time()))
             except (PermissionError, OSError):
                 return
@@ -368,26 +380,27 @@ class BrowseIndex:
             f"SELECT path, name, entry_type FROM browse_entries "
             f"WHERE root IN ({root_placeholders}) AND {clauses} ORDER BY entry_type, name_lower"
         )
-        with self._connect() as connection:
-            rows = connection.execute(sql, params).fetchall()
-
         items: list[dict[str, Any]] = []
-        for row in rows:
-            name_tokens = [token for token in _SEARCH_SEP_RE.split(str(row["name"]).casefold()) if token]
-            position = 0
-            matches = True
-            for token in tokens:
-                try:
-                    position = name_tokens.index(token, position) + 1
-                except ValueError:
-                    matches = False
+        with self._connect() as connection:
+            # Do not materialize every partial match before applying the
+            # ordered-token check. Large libraries commonly share short
+            # release-name tokens, while the caller only needs max_results.
+            for row in connection.execute(sql, params):
+                name_tokens = [token for token in _SEARCH_SEP_RE.split(str(row["name"]).casefold()) if token]
+                position = 0
+                matches = True
+                for token in tokens:
+                    try:
+                        position = name_tokens.index(token, position) + 1
+                    except ValueError:
+                        matches = False
+                        break
+                if not matches:
+                    continue
+                if file_filter == "desc" and row["entry_type"] == "file" and Path(str(row["name"]).casefold()).suffix not in {".txt", ".nfo", ".md"}:
+                    continue
+                items.append({"name": row["name"], "path": row["path"], "type": row["entry_type"]})
+                if len(items) >= max_results:
                     break
-            if not matches:
-                continue
-            if file_filter == "desc" and row["entry_type"] == "file" and Path(str(row["name"]).casefold()).suffix not in {".txt", ".nfo", ".md"}:
-                continue
-            items.append({"name": row["name"], "path": row["path"], "type": row["entry_type"]})
-            if len(items) >= max_results:
-                break
 
         return items, bool(self._refresh_thread and self._refresh_thread.is_alive())

@@ -186,8 +186,10 @@ const getStoredCollapsedSections = () => {
 
 // Local CSRF cache used by fallback `apiFetch` when `uaApiFetch` isn't present.
 let localCsrf = null;
+let localCsrfRequest = null;
 const loadLocalCsrf = async (force = false) => {
   if (localCsrf && !force) return;
+  if (localCsrfRequest) return localCsrfRequest;
 
   let apiBase = "";
   if (typeof window !== "undefined" && window.location) {
@@ -196,16 +198,24 @@ const loadLocalCsrf = async (force = false) => {
     apiBase = "/api";
   }
 
-  try {
-    const r = await fetch(`${apiBase}/csrf_token`, {
-      credentials: "same-origin",
-    });
-    if (!r.ok) return;
-    const d = await r.json();
-    localCsrf = d && d.csrf_token ? String(d.csrf_token) : null;
-  } catch (e) {
-    // ignore
-  }
+  // Several panels fetch their initial data together. Coalesce fallback CSRF
+  // requests so that an uncached page load does not hit the token endpoint
+  // once for every panel.
+  localCsrfRequest = (async () => {
+    try {
+      const r = await fetch(`${apiBase}/csrf_token`, {
+        credentials: "same-origin",
+      });
+      if (!r.ok) return;
+      const d = await r.json();
+      localCsrf = d && d.csrf_token ? String(d.csrf_token) : null;
+    } catch (_error) {
+      // Keep the fallback usable when the token endpoint is temporarily down.
+    } finally {
+      localCsrfRequest = null;
+    }
+  })();
+  return localCsrfRequest;
 };
 
 // Prefer shared `uaApiFetch` when available (provides CSRF handling and retry-on-auth-fail),
@@ -1682,6 +1692,7 @@ function AudionutsUAGUI() {
   const [operationLog, setOperationLog] = useState({});
   const [activeLogJobId, setActiveLogJobId] = useState("");
   const quiCursorRef = useRef(0);
+  const quiEventsAbortControllerRef = useRef(null);
 
   // File Browser search states
   const [fileBrowserSearch, setFileBrowserSearch] = useState("");
@@ -1757,15 +1768,26 @@ function AudionutsUAGUI() {
     let stopped = false;
     let retryTimer = null;
     const sync = async () => {
+      const controller = new AbortController();
+      quiEventsAbortControllerRef.current = controller;
       try {
-        const response = await apiFetch(`${API_BASE}/qui/events?cursor=${quiCursorRef.current}&wait=20`, { cache: "no-store" });
+        const response = await apiFetch(`${API_BASE}/qui/events?cursor=${quiCursorRef.current}&wait=20`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const data = await response.json().catch(() => null);
         if (response.ok && data?.success) {
           quiCursorRef.current = Number(data.cursor) || quiCursorRef.current;
           if (Array.isArray(data.events) && data.events.length) await loadDetachedJobs();
         }
       } catch (error) {
-        console.debug("Unattended event sync paused:", error);
+        if (!controller.signal.aborted) {
+          console.debug("Unattended event sync paused:", error);
+        }
+      } finally {
+        if (quiEventsAbortControllerRef.current === controller) {
+          quiEventsAbortControllerRef.current = null;
+        }
       }
       if (!stopped) retryTimer = window.setTimeout(sync, 150);
     };
@@ -1773,6 +1795,10 @@ function AudionutsUAGUI() {
     return () => {
       stopped = true;
       if (retryTimer) window.clearTimeout(retryTimer);
+      if (quiEventsAbortControllerRef.current) {
+        quiEventsAbortControllerRef.current.abort();
+        quiEventsAbortControllerRef.current = null;
+      }
     };
   }, [activePanel, loadDetachedJobs, operationsOpen]);
 
