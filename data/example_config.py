@@ -485,6 +485,8 @@ config: dict[str, Any] = {
         "upload_order": "concurrent",
         # Set to True to wait for qBittorrent upload speed to fall before uploading the next tracker.
         "qbit_bandwidth_control": False,
+        # Also apply bandwidth control before Usenet when upload_order is "usenet".
+        "qbit_bandwidth_control_after_usenet": False,
         # Threshold in KB/s. If the average upload speed is below this value, the next upload can start.
         "qbit_bandwidth_threshold": 0,
         # Number of seconds over which the upload speed is averaged.
@@ -3428,7 +3430,8 @@ config: dict[str, Any] = {
             "torrent_client": "qbit",
             # QUI reverse proxy: https://getqui.com/docs/features/reverse-proxy
             # Create a Client Proxy API Key in QUI (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
-            # Example: "http://localhost:7476/proxy/<your-client-api-key>". Bandwidth Control still requires qbit_url/qbit_port and qbit_api_key or qbit_user/qbit_pass.
+            # Example: "http://localhost:7476/proxy/<your-client-api-key>".
+            # QUI is not used for bandwidth measurements; see docs/upload-order-and-bandwidth-control.md.
             "qui_proxy_url": "",
             # Optional native Qui API integration. These settings are not needed
             # for the qBittorrent-compatible proxy above.
@@ -3491,7 +3494,8 @@ config: dict[str, Any] = {
             "torrent_client": "qbit",
             # QUI reverse proxy: https://getqui.com/docs/features/reverse-proxy
             # Create a Client Proxy API Key in QUI (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
-            # Example: "http://localhost:7476/proxy/<your-client-api-key>". Bandwidth Control still requires qbit_url/qbit_port and qbit_api_key or qbit_user/qbit_pass.
+            # Example: "http://localhost:7476/proxy/<your-client-api-key>".
+            # QUI is not used for bandwidth measurements; see docs/upload-order-and-bandwidth-control.md.
             "qui_proxy_url": "",
             "qui_api_url": "",
             "qui_api_key": "",

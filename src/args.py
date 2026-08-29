@@ -163,11 +163,13 @@ class ShortHelpFormatter(argparse.HelpFormatter):
 Common options:
   -tmdb, --tmdb              Specify the TMDb id to use with movie/ or tv/ prefix
   -imdb, --imdb              Specify the IMDb id to use
+  --no-imdb                  Do not search for or use IMDb metadata
   --cast                     Comma-separated cast override (takes priority over API metadata)
   -tvmaze, --tvmaze          Specify the TVMaze id to use
   -tvdb, --tvdb              Specify the TVDB id to use
   --queue (queue name)       Process an entire folder (including files/subfolders) in a queue
   -mf, --manual_frames       Comma-separated list of frame numbers to use for screenshots
+  --description              Inline custom description block
   -df, --descfile            Path to custom description file
   -boverview, --book-overview  Book/Audiobook overview/synopsis (overrides auto-detected value)
   -serv, --service           Streaming service
@@ -495,7 +497,9 @@ class Args:
         )
         action_res.completer = resolution_completer
         parser.add_argument("-tmdb", "--tmdb", nargs=1, required=False, help="TMDb ID (use movie/ or tv/ prefix)", type=str, dest="tmdb_manual")
-        parser.add_argument("-imdb", "--imdb", nargs=1, required=False, help="IMDb ID", type=str, dest="imdb_manual")
+        imdb_group = parser.add_mutually_exclusive_group()
+        imdb_group.add_argument("-imdb", "--imdb", nargs=1, required=False, help="IMDb ID", type=str, dest="imdb_manual")
+        imdb_group.add_argument("--no-imdb", action="store_true", required=False, help="Do not search for or use IMDb metadata")
         parser.add_argument(
             "--prompt-missing-ids",
             dest="prompt_missing_ids",
@@ -742,6 +746,13 @@ class Args:
             help="Custom description block to insert (link to hastebin/pastebin). This is added as a section inside the final description and does NOT replace the auto-generated description (MediaInfo, screenshots, etc.)",
         )
         parser.add_argument(
+            "--description",
+            dest="description_inline",
+            nargs=1,
+            required=False,
+            help="Inline custom description block to insert. This is added as a section inside the final description and does NOT replace auto-generated sections (MediaInfo, screenshots, etc.)",
+        )
+        parser.add_argument(
             "-df",
             "--descfile",
             dest="description_file",
@@ -900,8 +911,13 @@ class Args:
         parser.add_argument("-client", "--client", nargs=1, required=False, help="Use this torrent client instead of default")
         parser.add_argument("-qbt", "--qbit-tag", dest="qbit_tag", nargs=1, required=False, help="Add to qbit with this tag")
         parser.add_argument("-qbc", "--qbit-cat", dest="qbit_cat", nargs=1, required=False, help="Add to qbit with this category")
+        parser.add_argument("-qbcon", "--qbit-bw-control", action="store_true", required=False, help="Enable all qBittorrent bandwidth checks", dest="qbit_bandwidth_control")
         parser.add_argument(
-            "-qbcon", "--qbit-bw-control", action="store_true", required=False, help="Enable qBittorrent bandwidth control logic before upload", dest="qbit_bandwidth_control"
+            "--qbit-bw-control-after-usenet",
+            action="store_true",
+            required=False,
+            help="Keep bandwidth checks enabled for torrent trackers uploaded after Usenet",
+            dest="qbit_bandwidth_control_after_usenet",
         )
         parser.add_argument("-qbcrl", "--qbit-bw-threshold", nargs=1, required=False, help="qBittorrent bandwidth limit threshold (KB/s)", dest="qbit_bandwidth_threshold")
         parser.add_argument("-qbctime", "--qbit-bw-time", nargs=1, required=False, help="Time to stay under qBittorrent threshold (seconds)", dest="qbit_bandwidth_time")

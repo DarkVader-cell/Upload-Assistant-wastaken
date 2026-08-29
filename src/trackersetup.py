@@ -1516,7 +1516,6 @@ tracker_class_map: Any = LazyTrackerDict(
         "ZENITH": ("src.trackers.UNIT3D.znth", "Zenith"),
     }
 )
-
 tracker_registry = TrackerRegistry(tracker_class_map)
 
 

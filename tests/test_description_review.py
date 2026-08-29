@@ -4,9 +4,10 @@ import asyncio
 import inspect
 import json
 
-from src.description_review import load_review, save_tracker_description
+from src.description_review import load_review
 from src.get_desc import DescriptionBuilder, gen_desc
 from src.meta import Meta
+from src.trackers.UNIT3D import UNIT3D
 from web_ui import server
 
 
@@ -114,27 +115,6 @@ def test_base_description_is_kept_in_meta_without_creating_description_file(tmp_
     asyncio.run(run())
 
 
-def test_nfo_for_single_file_upload_is_read_from_parent_directory(tmp_path):
-    async def run():
-        media_file = tmp_path / "Release.mkv"
-        media_file.write_bytes(b"media")
-        (tmp_path / "Release.nfo").write_text("NFO CONTENT", encoding="utf-8")
-        meta = Meta(
-            {
-                "base_dir": str(tmp_path),
-                "uuid": "release",
-                "path": str(media_file),
-                "nfo": True,
-            }
-        )
-
-        await gen_desc(meta, None, None)
-
-        assert meta.description_nfo_content == "NFO CONTENT"
-
-    asyncio.run(run())
-
-
 def test_description_file_is_not_rendered_twice_when_both_sections_are_enabled(tmp_path):
     async def run():
         description_file = tmp_path / "description.txt"
@@ -166,19 +146,26 @@ def test_description_file_is_not_rendered_twice_when_both_sections_are_enabled(t
     asyncio.run(run())
 
 
-def test_final_tracker_description_is_saved_outside_debug_mode(tmp_path):
-    path = save_tracker_description(tmp_path / "tmp" / "release", "TEST", "release notes")
-
-    assert path.read_text(encoding="utf-8") == "release notes"
-
-
-def test_scene_nfo_is_omitted_when_tracker_does_not_request_nfo(tmp_path):
+def test_unit3d_omits_scene_nfo_from_description_but_keeps_attachment(tmp_path):
     async def run():
-        nfo_block = "[center][spoiler=Scene NFO:][code]NFO CONTENT[/code][/spoiler][/center]"
-        meta = Meta({"base_dir": str(tmp_path), "uuid": "release", "description": f"{nfo_block}\nRelease notes", "auto_nfo": True, "description_nfo_content": "NFO CONTENT"})
-        builder = DescriptionBuilder("TEST", {"DEFAULT": {}, "TRACKERS": {"TEST": {}}})
+        temp_dir = tmp_path / "tmp" / "release"
+        temp_dir.mkdir(parents=True)
+        nfo_content = "scene nfo content"
+        (temp_dir / "release.nfo").write_text(nfo_content, encoding="utf-8")
+        meta = Meta(
+            {
+                "base_dir": str(tmp_path),
+                "uuid": "release",
+                "auto_nfo": True,
+                "nfo": True,
+                "description_nfo_content": nfo_content,
+                "description": f"[center][spoiler=Scene NFO:][code]{nfo_content}[/code][/spoiler][/center]\nRelease notes",
+            }
+        )
+        config = {"DEFAULT": {}, "TRACKERS": {"UNIT3D": {}}}
+        builder = DescriptionBuilder("UNIT3D", config)
 
-        result = await builder.general_description_generator(
+        description = await builder.general_description_generator(
             meta,
             audio_spectrogram=False,
             bluray=False,
@@ -186,6 +173,7 @@ def test_scene_nfo_is_omitted_when_tracker_does_not_request_nfo(tmp_path):
             custom_header=False,
             custom_signature=False,
             game=False,
+            languages=False,
             logo=False,
             mediainfo=False,
             menu_screenshots=False,
@@ -194,8 +182,13 @@ def test_scene_nfo_is_omitted_when_tracker_does_not_request_nfo(tmp_path):
             tonemapped_header=False,
             tv_info=False,
             ua_signature=False,
+            user_description=False,
+            music=False,
+            dynamic_hdr_plot=False,
         )
+        files = await UNIT3D(config, "UNIT3D").get_additional_files(meta)
 
-        assert result == "Release notes"
+        assert description == "Release notes"
+        assert files["nfo"] == ("nfo_file.nfo", nfo_content.encode(), "text/plain")
 
     asyncio.run(run())

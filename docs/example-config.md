@@ -63,35 +63,11 @@ Important gotchas:
 - `tmdb_api` (str, required): TMDb API key. Get it from https://www.themoviedb.org/settings/api
 - `btn_api` (str): BTN API key (used to fetch BTN details).
 
-### Preparation runtime
-
-- `preparation_artifacts_enabled` (bool): Reuse content-addressed metadata, screenshot, description, and torrent artifacts across retries and tracker sets.
-- `preparation_artifacts_dir` (str): Artifact manifest/object directory, relative to the project root unless absolute.
-- `stage_checkpoints_enabled` (bool): Resume unchanged releases after their latest completed preparation stage.
-- `stage_checkpoints_dir` (str): Durable stage state directory.
-- `adaptive_scheduler_enabled` (bool): Order providers and trackers using observed latency, failures, and rate-limit cooldowns.
-- `adaptive_scheduler_concurrency` (int): Maximum concurrent scheduled provider/tracker work.
-- `adaptive_scheduler_state` (str): Non-secret scheduler telemetry file.
-- `release_history_enabled` (bool): Persist a non-secret release summary for CLI, Web UI, and detached Qui runs.
-- `release_history_db` (str): SQLite history path, relative to the project root unless absolute.
-- `release_history_max_entries` (int): Maximum retained history rows; oldest rows are pruned after each update.
-- `queue_prepare_concurrency` (int): Number of unattended regular queue items to prepare concurrently. Uploads and client mutations remain serialized; `1` preserves sequential preparation.
-- `unit3d_dupe_max_pages` (int): Safety cap for live Unit3D duplicate-search pages per tracker; pending queues remain single-page checks.
-- `extensions_enabled` (bool): Opt in to third-party extensions. Disabled by default.
-- `extension_paths` (list[str]): Local extension directories. Each `.py` file must export `register(registry)` against extension API version 1.
-
-CLI workflow controls:
-
-- `--plan` / `--dry-run-plan`: Print stages, cache/checkpoint hits, expected external calls, selected trackers, and estimated work without execution.
-- `--no-resume`: Ignore stage checkpoints for one run.
-- `--queue-prepare-concurrency N`: Override bounded unattended preparation concurrency for one queue run.
-
 ### Image host selection (priority list)
 
 Order matters: `img_host_1` is primary, later hosts are fallbacks.
 
 - `img_host_1`..`img_host_5` (str): Image host names. Valid examples include `imgbb`, `imgbox`, `pixhost`, `lensdump`, `ptscreens`, `onlyimage`, `dalexni`, `zipline`, `midnightscene`, `passtheimage`, `seedpool_cdn`, `utppm`, `lostimg`.
-- **Confirmed OnlyImage tracker compatibility (non-exhaustive):** LUMINARR (`LUME`), ANTHELION (`ANT`), AITHER (`ATH`), BLUTOPIA (`BLU`), ONLYENCODES (`OE`), HAWKEUNO (`HUNO`), LST, DARKPEERS (`DP`), RACING4EVERYONE (`RF`), and YUSCENE (`YUS`). `ANT` was independently reconfirmed; this list is not intended to be exhaustive.
 - `smart_image_host_selection` (bool, default `true`): Before uploads begin, prefer the first configured host accepted by every selected tracker that declares an image-host policy. Set it to `false` to retain the former per-tracker selection behavior. If there is no common host, normal per-tracker fallback and rehosting behavior is retained.
 - `image_upload_concurrency` (int): Maximum number of image uploads running at once. Set to `0` to use the image host default.
 - `image_upload_delay` (float): Minimum delay in seconds between starting image uploads.
@@ -425,10 +401,7 @@ Security note: these settings can allow the app (and the Web UI) to interact wit
 
 Typical keys:
 
-- `qui_proxy_url` (str): Optional. [QUI reverse proxy](https://getqui.com/docs/features/reverse-proxy) URL for qBittorrent. Create a **Client Proxy API Key** in QUI (**Settings → Client Proxy Keys**): name the client (e.g. "Upload Assistant"), choose the qBittorrent instance, then copy the generated proxy URL. Use the **full** URL, e.g. `http://localhost:7476/proxy/<client-api-key>`. The instance is fixed by the key you create. This proxy is not used by **Bandwidth Control**; when that feature is enabled, configure `qbit_url` / `qbit_port` and either `qbit_api_key` or `qbit_user` / `qbit_pass` as well.
-- `qui_api_url` / `qui_api_key` / `qui_instance_id` (str): Optional native Qui API settings. Use these only when you want native Qui health or duplicate checks; the scoped Client Proxy API key remains the safer default for normal qBittorrent-compatible access.
-- `qui_health_check` (bool): Optional. If true, verify the configured Qui instance status and capabilities before injection. A failed check skips that injection.
-- `qui_native_duplicate_check` (bool): Optional. If true, ask Qui whether the infohash already exists before injection. Errors in the check do not block injection.
+- `qui_proxy_url` (str): Optional. [QUI reverse proxy](https://getqui.com/docs/features/reverse-proxy) URL for qBittorrent. Create a **Client Proxy API Key** in QUI (**Settings → Client Proxy Keys**): name the client (e.g. "Upload Assistant"), choose the qBittorrent instance, then copy the generated proxy URL. Use the **full** URL, e.g. `http://localhost:7476/proxy/<client-api-key>`. The instance is fixed by the key you create.
 - `enable_search` (bool): Search client for existing torrents to reuse hashes. NOTE: independant of auto_torrent_searching
 - `qbit_url` / `qbit_port` (str): Web UI host/port.
 - `qbit_user` / `qbit_pass` (str): Credentials.
@@ -444,6 +417,8 @@ Typical keys:
 - `local_path` / `remote_path` (list[str]): Local/remote path mapping (docker/seedbox), matched case-insensitively. Local path is how UA sees the content, remote path is how the client sees the content.
 - `link_dir_name` (str): Optional single directory name for linked content. Path separators, parent traversal, absolute paths, and Windows drive/device names are rejected.
 - `torrent_storage_dir` (str, optional): Only needed if API searching doesn’t work. Falls back to search the client storage directory for existing torrents.
+
+For bandwidth-control connection requirements and workflow settings, see [Upload Order and qBittorrent Bandwidth Control](upload-order-and-bandwidth-control.md).
 
 ### ruTorrent / rTorrent
 

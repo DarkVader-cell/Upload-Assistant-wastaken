@@ -1,5 +1,6 @@
 [Configuration](configuration.md)
 [Custom Hooks](custom-hooks.md)
+[Upload Order and qBittorrent Bandwidth Control](upload-order-and-bandwidth-control.md)
 
 [Workflow, performance, and tracker improvements](workflow-improvements.md)
 

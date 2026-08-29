@@ -38,6 +38,9 @@ class DreadVault(UNIT3D):
     torrent_url = f"{base_url}/torrents/"
     supported_categories = ("TV", "MOVIE")
     tracker_urls = ("https://dreadvault.org",)
+    # site rules allow coexisting releases; only a literal duplicate (same files
+    # and size) is a dupe
+    exact_match_only = True
 
     def __init__(self, config: Config) -> None:
         super().__init__(config, tracker_name="DREADVAULT")
@@ -64,7 +67,10 @@ class DreadVault(UNIT3D):
                 return False
 
         genres = ", ".join([*meta.keywords, *combined_genres])
-        adult_keywords = ["xxx", "erotic", "porn", "adult", "orgy", "hentai", "adult animation", "softcore"]
+        # Only reject terms that are unambiguously adult content. Horror titles
+        # can legitimately carry broader TMDb keywords such as "adult
+        # animation" or "erotic".
+        adult_keywords = ["xxx", "porn", "adult", "hentai", "softcore"]
         if any(re.search(rf"(^|,\s*){re.escape(keyword)}(\s*,|$)", genres, re.IGNORECASE) for keyword in adult_keywords):
             logger.info(f"{self.tracker}: [bold red]Porn/xxx is not allowed at {self.tracker}.[/bold red]")
             return False

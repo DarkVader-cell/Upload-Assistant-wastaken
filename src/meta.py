@@ -109,6 +109,7 @@ class Meta:
     demographic: str = ""
     description_file_content: str = ""
     description_file: str = ""
+    description_inline: str = ""
     description_link_content: str = ""
     description_link: str = ""
     description_nfo_content: str = ""
@@ -300,6 +301,7 @@ class Meta:
     no_dub: bool = False
     no_edition: bool = False
     no_ids: bool = False
+    no_imdb: bool = False
     no_override: bool = False
     no_season: bool = False
     no_seed: bool = False
@@ -347,6 +349,7 @@ class Meta:
     ptp_groupid: str | None = None
     publisher: str = ""
     qbit_bandwidth_control: bool = False
+    qbit_bandwidth_control_after_usenet: bool = False
     qbit_bandwidth_threshold: int = 0
     qbit_bandwidth_time: int = 0
     qbit_cat: str | None = None

@@ -2146,6 +2146,7 @@ async def get_service(
         "Family Jr": "FJR",
         "Fandor": "FANDOR",
         "FILMICCA": "FLMC",
+        "Filmicca": "FLMC",
         "Filmio": "FMIO",
         "FJR": "FJR",
         "FLMC": "FLMC",

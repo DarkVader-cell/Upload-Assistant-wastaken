@@ -15,15 +15,12 @@
 - [Fork Features & Differences from Upstream (Audionut/Upload-Assistant)](#fork-features--differences-from-upstream-audionutupload-assistant)
   - [1. New Media Category Support](#1-new-media-category-support)
   - [2. Audio Stream Spectrogram Generation](#2-audio-stream-spectrogram-generation)
-  - [3. qBittorrent Bandwidth Control](#3-qbittorrent-bandwidth-control)
+  - [3. Upload Order & qBittorrent Bandwidth Control](#3-upload-order--qbittorrent-bandwidth-control)
   - [4. Argument-Embedded Text Queue](#4-argument-embedded-text-queue)
   - [5. Usenet & Indexer Posting](#5-usenet--indexer-posting)
   - [6. Interactive Screenshot Review Workflow](#6-interactive-screenshot-review-workflow)
   - [7. Persistent TTL-Based Metadata Cache](#7-persistent-ttl-based-metadata-cache)
   - [8. Modern Web UI & Real-Time Engine](#8-modern-web-ui--real-time-engine)
-  - [9. Resumable and Observable Runtime](#9-resumable-and-observable-runtime)
-- [Workflow, Performance, and Tracker Improvements](docs/workflow-improvements.md)
-- [Reliability, Performance, and Recovery](docs/reliability.md)
 - [Supported Sites](#supported-sites)
 - [Setup Guide](#setup-guide)
   - [Step 1: Install Required Tools](#step-1-install-required-tools)
@@ -68,11 +65,9 @@ This branch introduces new media categories and automation features not present 
 - **Automated Upload**: Automatically uploads generated spectrograms along with your screenshots for release verification.
 - **Stream Selection**: Supports targeting specific tracks using `-ast` / `--audio-spectrogram-tracks` (e.g., track indexes or `all`).
 
-### 3. qBittorrent Bandwidth Control
+### 3. Upload Order & qBittorrent Bandwidth Control
 
-- **Traffic Control**: Prevents overloading your connection during uploads using `-qbcon` / `--qbit-bw-control`.
-- **Dynamic Wait**: Pauses uploading if your active client upload speed exceeds a threshold (`qbit_bandwidth_threshold` KB/s) and resumes once it stays below the limit for a set time (`qbit_bandwidth_time` seconds).
-- **Safe Rechecking**: Performs a second duplicate check after the bandwidth wait to ensure a duplicate wasn't posted while the client was waiting.
+Sequence Usenet and torrent tracker uploads while limiting contention with qBittorrent. See the dedicated [upload order and bandwidth control guide](docs/upload-order-and-bandwidth-control.md) for configuration and every supported workflow.
 
 ### 4. Argument-Embedded Text Queue
 
@@ -88,7 +83,7 @@ This branch introduces new media categories and automation features not present 
 
 ### 6. Interactive Screenshot Review Workflow
 
-- **Manual Screenshot Review**: Inspect, add, delete, replace/recapture, or delete-and-refill individual frame slots before uploading through the interactive Web UI.
+- **Manual Screenshot Review**: Inspect, add, delete, or replace/recapture individual frames before uploading through the interactive Web UI.
 
 ### 7. Persistent TTL-Based Metadata Cache
 
@@ -99,16 +94,6 @@ This branch introduces new media categories and automation features not present 
 
 - **Full Parity Web UI**: Modern interface providing full feature parity with CLI options (`--webui`).
 - **Real-Time Execution & Presets**: Live log streams, real-time preparation preview, preset saving, and interactive screenshot management.
-
-### 9. Resumable and Observable Runtime
-
-- **Faster retries and queues**: Content-addressed artifacts, atomic stage checkpoints, pooled provider clients, adaptive scheduling, and safe parallel unattended preparation avoid repeated work while keeping uploads ordered.
-- **Plan before execution**: `--plan` / `--dry-run-plan` and `POST /api/plan` show stages, cache hits, expected external calls, trackers, and warnings without mutating files or clients.
-- **Operations visibility**: The Web UI reports runtime health, artifact reuse, resumable stages, provider telemetry, external-tool availability, detached-job progress, and searchable release history that survives restarts. Qui clients can consume cursor-based events, compact summaries, and bulk retry controls.
-- **Safer client configuration**: Removing a configured torrent-client profile repairs the default, injection, and search references so stale profile names cannot break later runs.
-- **Upstream-friendly extensions**: The opt-in versioned extension API adds trackers, metadata providers, pipeline stages, and health checks outside upstream-owned modules.
-
-The complete operational behavior, tracker safeguards, Docker changes, compatibility boundaries, and troubleshooting notes are documented in [Workflow, Performance, and Tracker Improvements](docs/workflow-improvements.md).
 
 ## Supported Sites
 
@@ -342,9 +327,13 @@ In your terminal, run the command for your operating system and follow the on-sc
 
 #### Method C: Manual Configuration
 
-1. Go to the `data/` folder inside the project.
-2. Copy `example_config.py` and rename the copy to `config.py` (leave the original `example_config.py` file as-is).
-3. Open `config.py` in a text editor (like Notepad, VS Code, or TextEdit) and fill in your information.
+1. Create the user-state `data` directory if it does not already exist:
+   - **Windows:** `%LOCALAPPDATA%\Upload-Assistant\data`
+   - **Linux / macOS:** `$XDG_DATA_HOME/Upload-Assistant/data` (normally `~/.local/share/Upload-Assistant/data`)
+   - **Custom location:** `%UA_DATA_DIR%\data` (Windows Command Prompt), `$env:UA_DATA_DIR\data` (PowerShell), or `$UA_DATA_DIR/data` (Linux/macOS) when `UA_DATA_DIR` is set
+2. **For source checkouts (git clone / ZIP download):** Copy the bundled `data/example_config.py` from the project into that directory as `config.py` (leave the original file unchanged).
+   **For PyPI, uv, or Windows .exe installs:** Run `ua-config` to generate the config file first, which will create `config.py` in the user-state directory.
+3. Open the user-state `config.py` in a text editor (like Notepad, VS Code, or TextEdit) and fill in your information.
    - For detailed info on what each setting does, see [Example Config Docs](docs/example-config.md).
    - Get a free TMDb API key from [TheMovieDB API settings](https://www.themoviedb.org/settings/api).
 
@@ -353,29 +342,17 @@ In your terminal, run the command for your operating system and follow the on-sc
 **Additional Resources:**
 
 - Check out our [Wiki Help Page](docs/home.md).
-- Runtime design and upstream-sync boundaries: [Architecture](docs/architecture.md).
-- Implemented workflow optimizations: [Feature Roadmap](docs/feature-roadmap.md).
-- Third-party integration contract: [Extension API](docs/extensions.md).
-- Web UI endpoints and automation examples: [Web UI API](docs/web-ui-api.md).
 - Windows installation and basic commands: see [Windows Install](docs/windows-install.md).
 - Need a no-root Linux or seedbox setup? See [Seedbox / Linux Install](docs/seedbox.md).
 - Found an issue or need help? Please [open a GitHub Issue](https://github.com/wastaken7/Upload-Assistant/issues) so we can track and resolve it. If you prefer not to create a GitHub account for privacy reasons, join our [Signal group](https://signal.group/#CjQKILmkUCLe5mZULkQGI6B5knmX1ytrIBFicpJ_NZGAHmOrEhDD5F7ctp-obLeLOsa0yCoJ) instead.
 
 ## **Updating:**
 
-- For the persistent Docker/WebUI installation used with Qui, update it from the CLI:
-  ```bash
-  cd /home/artemis/Upload-Assistant-wastaken
-  ./scripts/update-docker.sh
-  ```
-  This pulls the current `main` image and recreates only the Upload Assistant
-  service while preserving `docker-data/` and the
-  `/mnt/seeding` mount. Check that the service reports `healthy` before using
-  Qui again. See [Qui Docker Deployment](docs/qui-docker-deployment.md).
-- For a non-Docker Git installation, navigate into the Upload-Assistant directory and pull the latest changes:
+- To update a Git installation, navigate into the Upload-Assistant directory and pull the latest changes:
+
   ```bash
   cd Upload-Assistant
-  git pull --ff-only
+  git pull
   ```
 
 - Or, if you downloaded the ZIP file, download a fresh ZIP from GitHub and overwrite your existing files.
@@ -408,6 +385,7 @@ The file/folder path works best enclosed in double quotes.
 
 - CLI arguments: [docs/cli-args.md](docs/cli-args.md)
 - Usenet uploading: [docs/usenet.md](docs/usenet.md)
+- Upload order and bandwidth control: [docs/upload-order-and-bandwidth-control.md](docs/upload-order-and-bandwidth-control.md)
 
 ## **Docker Usage:**
 
@@ -441,4 +419,5 @@ Features automated binary managers for:
 </p>
 
 ## **Contributors:**
+
 [![Contributors](https://contrib.rocks/image?repo=wastaken7/Upload-Assistant)](https://github.com/wastaken7/Upload-Assistant/graphs/contributors)

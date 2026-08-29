@@ -13,7 +13,7 @@ from rich.markup import escape
 from src.artwork import is_valid_cover_image
 from src.cleanup import cleanup_manager
 from src.cogs.redaction import Redaction
-from src.config_helpers import format_terminal_link
+from src.config_helpers import format_terminal_link, parse_bool
 from src.console import logger
 from src.dupe_checking import DupeChecker
 from src.extensions import load_extensions
@@ -86,12 +86,15 @@ async def process_trackers(
     http_trackers: Sequence[str],
     other_api_trackers: Sequence[str],
     upload_target: str = "tracker",
+    bandwidth_control: bool | None = None,
 ) -> None:
     extensions = load_extensions(meta.base_dir, config)
     registry = TrackerRegistry(tracker_class_map, extensions.trackers)
     api_tracker_names = set(api_trackers) | registry.by_auth_type("unit3d_api")
     other_api_tracker_names = set(other_api_trackers) | registry.by_auth_type("other_api")
     http_tracker_names = set(http_trackers) | registry.by_auth_type("cookies")
+    if bandwidth_control is None:
+        bandwidth_control = parse_bool(meta.qbit_bandwidth_control) or parse_bool(config["DEFAULT"].get("qbit_bandwidth_control", False))
     tracker_setup = TrackerSetup(config=config)
     tracker_setup_any = cast(Any, tracker_setup)
     enabled_trackers = list(cast(Sequence[str], tracker_setup_any.trackers_enabled(meta)))
@@ -238,8 +241,7 @@ async def process_trackers(
         async def check_bandwidth_and_dupes(tracker_name: str, t_class: Any) -> bool:
             if t_class and getattr(t_class, "is_usenet", False):
                 return True
-            qbit_bw_control = meta.qbit_bandwidth_control or config["DEFAULT"].get("qbit_bandwidth_control", False)
-            if qbit_bw_control:
+            if bandwidth_control:
                 logger.info(f"\n[yellow]{tracker_name}: Checking bandwidth...[/yellow]")
                 waiter = Wait(config)
                 bw_thresh = meta.qbit_bandwidth_threshold or config["DEFAULT"].get("qbit_bandwidth_threshold", 0)
