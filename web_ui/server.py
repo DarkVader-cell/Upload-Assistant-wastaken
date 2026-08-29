@@ -4522,6 +4522,7 @@ def qui_submit():
 
 
 @app.route("/api/qui/status")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def qui_status():
     """Return detached Qui/API job status."""
     ok, response = _submit_auth_ok()
@@ -4535,6 +4536,7 @@ def qui_status():
 
 
 @app.route("/api/qui/log/<job_id>")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def qui_log(job_id: str):
     """Return a detached job log tail."""
     ok, response = _submit_auth_ok()

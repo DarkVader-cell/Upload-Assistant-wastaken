@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Load the optional Whatbox connection settings when this helper is invoked
+# directly.  `source whatbox.env` alone does not export its variables to this
+# child process, so export assignments while loading it.
+whatbox_env_file="${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}"
+if [[ -r "$whatbox_env_file" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "$whatbox_env_file"
+    set +a
+fi
+
 repo_dir="${UA_REPO_DIR:-/home/artemis/Upload-Assistant-wastaken}"
 compose_file="${UA_COMPOSE_FILE:-/opt/yams/docker-compose.yaml}"
 env_file="${UA_COMPOSE_ENV:-/opt/yams/.env}"
