@@ -46,6 +46,10 @@ def test_release_metadata_requires_video_year_and_resolution_and_applies_webui_v
     assert release_metadata_issues(meta) == {}
 
 
+def test_release_metadata_accepts_interlaced_resolution_values():
+    assert parse_release_metadata_submission({"resolution": "480i"}, ["resolution"]) == {"resolution": "480i"}
+
+
 def test_tracker_title_guard_blocks_missing_year_or_resolution_after_tracker_rewrite():
     meta = {"category": "MOVIE", "type": "WEBDL", "year": 2026, "resolution": "1080p"}
     assert set(tracker_release_name_issues(meta, "Pagida Kali None SS WEB-DL DD+ 5.1 H.264-SH3LBY")) == {"year", "resolution"}

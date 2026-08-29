@@ -170,3 +170,32 @@ def test_final_tracker_description_is_saved_outside_debug_mode(tmp_path):
     path = save_tracker_description(tmp_path / "tmp" / "release", "TEST", "release notes")
 
     assert path.read_text(encoding="utf-8") == "release notes"
+
+
+def test_scene_nfo_is_omitted_when_tracker_does_not_request_nfo(tmp_path):
+    async def run():
+        nfo_block = "[center][spoiler=Scene NFO:][code]NFO CONTENT[/code][/spoiler][/center]"
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "release", "description": f"{nfo_block}\nRelease notes", "auto_nfo": True, "description_nfo_content": "NFO CONTENT"})
+        builder = DescriptionBuilder("TEST", {"DEFAULT": {}, "TRACKERS": {"TEST": {}}})
+
+        result = await builder.general_description_generator(
+            meta,
+            audio_spectrogram=False,
+            bluray=False,
+            book=False,
+            custom_header=False,
+            custom_signature=False,
+            game=False,
+            logo=False,
+            mediainfo=False,
+            menu_screenshots=False,
+            nfo=False,
+            screenshots=False,
+            tonemapped_header=False,
+            tv_info=False,
+            ua_signature=False,
+        )
+
+        assert result == "Release notes"
+
+    asyncio.run(run())

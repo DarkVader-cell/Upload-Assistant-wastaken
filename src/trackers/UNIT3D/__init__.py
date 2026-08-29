@@ -299,7 +299,9 @@ class UNIT3D:
             "576p": "6",
             "576i": "7",
             "480p": "8",
-            "480i": "9",
+            # Keep 480i as valid release metadata, but do not assume every
+            # Unit3D tracker exposes an interlaced-SD category. Trackers that
+            # explicitly support it override this mapping.
         }
         if mapping_only:
             return resolution_id

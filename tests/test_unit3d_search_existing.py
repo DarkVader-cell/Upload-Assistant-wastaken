@@ -5,6 +5,7 @@ import pytest
 
 from src.meta import Meta
 from src.trackers.UNIT3D.aither import Aither
+from src.trackers.UNIT3D.lst import LST
 from src.trackers.UNIT3D.samaritano import Samaritano
 from src.trackers.UNIT3D.torrentdesi import DesiTorrents
 
@@ -83,6 +84,12 @@ def test_missing_tmdb_keeps_category_filter(monkeypatch: pytest.MonkeyPatch) -> 
     asyncio.run(tracker.search_existing(meta))
 
     assert ("categories[]", "2") in requests[0]  # noqa: S101
+
+
+def test_generic_unit3d_mapping_treats_480i_as_other() -> None:
+    tracker = LST({"TRACKERS": {"LST": {}}})
+
+    assert asyncio.run(tracker.get_resolution_id(Meta(resolution="480i"))) == {"resolution_id": "10"}  # noqa: S101
 
 
 def test_unit3d_duplicate_search_follows_same_origin_pages(monkeypatch: pytest.MonkeyPatch) -> None:

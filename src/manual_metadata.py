@@ -120,8 +120,8 @@ def parse_release_metadata_submission(payload: Any, requested_fields: Any) -> di
         result["year"] = int(year)
     if "resolution" in fields:
         resolution = str(payload.get("resolution") or "").strip().lower()
-        if not re.fullmatch(r"(?:2160|1440|1080|720|576|540|480|432|360|288)p", resolution):
-            raise ValueError("Resolution must be a value such as 1080p")
+        if not re.fullmatch(r"(?:(?:2160|1440|1080|720|576|540|480|432|360|288)p|(?:1080|576|540|480)i)", resolution):
+            raise ValueError("Resolution must be a value such as 1080p or 480i")
         result["resolution"] = resolution
     if not result:
         raise ValueError("No release metadata fields were requested")

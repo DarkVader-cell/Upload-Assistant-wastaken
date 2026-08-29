@@ -8,6 +8,43 @@ from src.torrentcreate import TorrentCreator
 
 
 @pytest.mark.asyncio
+async def test_qbit_hash_lookup_accepts_hybrid_hash_and_uses_resolved_v1_hash(tmp_path, monkeypatch):
+    requested_hash = "b" * 64
+    resolved_v1_hash = "a" * 40
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {
+                "hash": requested_hash,
+                "infohash_v1": resolved_v1_hash,
+                "name": "Example.Release",
+                "comment": "https://lst.gg/torrents/123",
+            }
+
+    class Session:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def get(self, _url, *, params, **_kwargs):
+            if params != {"hash": requested_hash}:
+                raise AssertionError(f"unexpected qBittorrent lookup parameters: {params}")
+            return Response()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("src.torrent_clients.qbittorrent.httpx.AsyncClient", Session)
+    meta = Meta({"base_dir": str(tmp_path), "uuid": "release", "path": str(tmp_path / "release.mkv"), "infohash": requested_hash})
+
+    await Clients({}).get_ptp_from_hash_qbit(meta, {"qui_proxy_url": "https://qbit.example"}, pathed=True)
+
+    assert meta.torrent_comments == [{"hash": resolved_v1_hash, "name": "Example.Release", "comment": "https://lst.gg/torrents/123"}]  # noqa: S101
+    assert meta.get_tracker_id("LST") == "123"  # noqa: S101
+
+
+@pytest.mark.asyncio
 async def test_base_subs_contains_external_subtitle_with_custom_torrent(tmp_path):
     video = tmp_path / "release.mkv"
     subtitle = tmp_path / "release.pt-BR.srt"

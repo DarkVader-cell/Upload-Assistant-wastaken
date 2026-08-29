@@ -280,16 +280,16 @@ class QbittorrentClientMixin:
                 return meta
             qbt_client = potential_qbt_client
 
-        info_hash_v1 = meta.infohash
-        if not isinstance(info_hash_v1, str) or not info_hash_v1 or not meta.path:
+        info_hash = meta.infohash
+        if not isinstance(info_hash, str) or not info_hash or not meta.path:
             return meta
-        logger.debug(f"[cyan]Searching for infohash: {info_hash_v1}")
+        logger.debug(f"[cyan]Searching for infohash: {info_hash}")
         logger.debug(f"[cyan]Fetching qBittorrent properties ({'proxy' if proxy_url else 'direct'}, pathed={pathed})[/cyan]")
 
         class TorrentInfo:
             def __init__(self, properties_data: dict[str, Any]) -> None:
-                self.hash = properties_data.get("hash", info_hash_v1)
-                self.infohash_v1 = properties_data.get("infohash_v1", info_hash_v1)
+                self.hash = str(properties_data.get("hash", info_hash) or info_hash)
+                self.infohash_v1 = str(properties_data.get("infohash_v1", "") or "")
                 self.name = properties_data.get("name", "")
                 self.comment = properties_data.get("comment", "")
                 self.tracker = ""
@@ -300,11 +300,11 @@ class QbittorrentClientMixin:
                 if qbt_session is None:
                     raise RuntimeError("qbt_session should not be None")
                 request_started = time.perf_counter()
-                response = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/properties", params={"hash": info_hash_v1}, timeout=14.0)
+                response = await qbt_session.get(f"{qbt_proxy_url}/api/v2/torrents/properties", params={"hash": info_hash}, timeout=14.0)
                 logger.debug(f"[cyan]qBittorrent properties proxy response: status={response.status_code}, elapsed={time.perf_counter() - request_started:.2f}s[/cyan]")
                 if response.status_code == 200:
                     torrent_properties = response.json()
-                    logger.debug(f"[cyan]Retrieved torrent properties via proxy for hash: {info_hash_v1}")
+                    logger.debug(f"[cyan]Retrieved torrent properties via proxy for hash: {info_hash}")
 
                     torrents = [TorrentInfo(torrent_properties)]
                 else:
@@ -318,12 +318,12 @@ class QbittorrentClientMixin:
                         raise RuntimeError("qbt_client should not be None")
                     request_started = time.perf_counter()
                     torrent_properties = await self.retry_qbt_operation(
-                        lambda: asyncio.to_thread(qbt_client.torrents_properties, torrent_hash=info_hash_v1),
-                        f"Get torrent properties for hash {info_hash_v1}",
+                        lambda: asyncio.to_thread(qbt_client.torrents_properties, torrent_hash=info_hash),
+                        f"Get torrent properties for hash {info_hash}",
                         initial_timeout=14.0,
                     )
                     logger.debug(f"[cyan]qBittorrent properties direct response: elapsed={time.perf_counter() - request_started:.2f}s[/cyan]")
-                    logger.debug(f"[cyan]Retrieved torrent properties via client for hash: {info_hash_v1}")
+                    logger.debug(f"[cyan]Retrieved torrent properties via client for hash: {info_hash}")
 
                     torrents = [TorrentInfo(torrent_properties)]
                 except Exception as e:
@@ -350,7 +350,13 @@ class QbittorrentClientMixin:
 
         for torrent in torrents:
             try:
-                if getattr(torrent, "infohash_v1", "") == info_hash_v1:
+                # qBittorrent accepts both v1 and v2/hybrid hashes for the
+                # properties request.  Its reply, however, may expose only
+                # the v1 hash.  A strict v1==requested comparison therefore
+                # discarded valid hybrid torrents as "not found".
+                resolved_v1_hash = str(getattr(torrent, "infohash_v1", "") or "")
+                resolved_hash = resolved_v1_hash or str(getattr(torrent, "hash", "") or info_hash)
+                if resolved_hash:
                     comment = getattr(torrent, "comment", "")
 
                     torrent_comments = meta.torrent_comments
@@ -359,7 +365,7 @@ class QbittorrentClientMixin:
                         meta.torrent_comments = torrent_comments
 
                     comment_data = {
-                        "hash": getattr(torrent, "infohash_v1", ""),
+                        "hash": resolved_hash,
                         "name": getattr(torrent, "name", ""),
                         "comment": comment,
                     }
@@ -377,7 +383,7 @@ class QbittorrentClientMixin:
                         torrent_storage_dir = client.get("torrent_storage_dir")
                         if not torrent_storage_dir:
                             # Export .torrent file
-                            torrent_hash = getattr(torrent, "infohash_v1", "")
+                            torrent_hash = resolved_hash
                             logger.debug(f"[cyan]Exporting .torrent file for hash: {torrent_hash}")
 
                             try:
@@ -427,7 +433,7 @@ class QbittorrentClientMixin:
                 continue
 
         if not found:
-            logger.info("[bold red]Matching site torrent with the specified infohash_v1 not found.")
+            logger.info("[bold red]Matching site torrent with the specified infohash not found.")
 
         if qbt_session:
             await qbt_session.aclose()

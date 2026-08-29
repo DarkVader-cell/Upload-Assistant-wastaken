@@ -542,6 +542,21 @@ class BEYONDHD:
 
     async def get_name(self, meta: Meta) -> str:
         name = meta.name or ""
+        imdb_info = meta.imdb_info if isinstance(meta.imdb_info, dict) else {}
+        imdb_title = str(imdb_info.get("title", "") or "").strip()
+        imdb_aka = str(imdb_info.get("aka", "") or "").strip()
+
+        # BeyondHD requires IMDb's display title first. The normal release
+        # name starts with the TMDb title and may already include a generated
+        # AKA, so remove that segment before rebuilding it in BHD's order.
+        if imdb_title:
+            generated_aka = str(meta.aka or "").strip()
+            if generated_aka:
+                name = name.replace(f"{generated_aka} ", "", 1)
+            name = name.replace(str(meta.title or ""), imdb_title, 1)
+            if imdb_aka and imdb_aka != imdb_title and not meta.no_aka and not meta.anime:
+                name = name.replace(imdb_title, f"{imdb_title} AKA {imdb_aka}", 1)
+
         if meta.source in ("PAL DVD", "NTSC DVD", "DVD", "NTSC", "PAL"):
             audio = meta.audio
             audio = " ".join(audio.split())
