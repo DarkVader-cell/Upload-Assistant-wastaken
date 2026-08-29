@@ -12,7 +12,7 @@ import aiofiles
 from src.binaries import configured_binary
 from src.console import logger
 from src.exceptions import NoAudioMediaError
-from src.mediainfo import MediaInfo
+from src.mediainfo import MediaInfo, strip_report_by_line
 from src.meta import Meta
 
 
@@ -450,8 +450,8 @@ async def export_info(
     else:
         media_info = cast(str, MediaInfo.parse(video, output="STRING", full=False))
 
-    # Keep the CLI footer so every exported text report identifies its MediaInfo version.
-    filtered_media_info = media_info
+    # Trackers reject MediaInfo's generated ReportBy footer as an unwanted tag.
+    filtered_media_info = strip_report_by_line(media_info)
 
     async with aiofiles.open(f"{base_dir}{'/' + 'tmp' + '/'}{folder_id}/MEDIAINFO.txt", "w", newline="", encoding="utf-8") as export:
         await export.write(filtered_media_info.replace(video, Path(video).name))
