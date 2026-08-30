@@ -631,4 +631,7 @@ class Anthelion:
         return imdb_tmdb_list
 
     async def get_name(self, meta: Meta) -> str:
-        return meta.title
+        # The upload name must retain the release metadata (including year and
+        # resolution).  Returning the bare display title makes the shared
+        # pre-upload guard reject otherwise valid releases.
+        return str(meta.name or meta.title or "")

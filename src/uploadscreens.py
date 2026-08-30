@@ -24,6 +24,16 @@ from src.tracker_images import deduplicate_images
 type ImageDict = dict[str, Any]
 
 
+def _image_upload_timeout(config: dict[str, Any]) -> float:
+    """Return a bounded per-host timeout so failed hosts fall back promptly."""
+    configured = config.get("DEFAULT", {}).get("image_upload_timeout", 15)
+    try:
+        timeout = float(configured)
+    except (TypeError, ValueError):
+        timeout = 15.0
+    return min(60.0, max(5.0, timeout))
+
+
 def _build_image_start_limiter(delay: float) -> Callable[[], Awaitable[None]]:
     """Create an async wait function that spaces image-upload starts."""
     start_lock = asyncio.Lock()
@@ -82,7 +92,7 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
     """Upload one image to the selected host and return its generated URLs."""
     image, img_host, config, _meta = args
     try:
-        timeout = 60  # Default timeout
+        timeout = _image_upload_timeout(config)
         img_url, raw_url, web_url = None, None, None
 
         if img_host == "imgbox":
@@ -886,7 +896,7 @@ async def _upload_screens(
                     running_tasks.add(future)
 
                     try:
-                        result = await asyncio.wait_for(future, timeout=60.0)
+                        result = await asyncio.wait_for(future, timeout=_image_upload_timeout(config))
                         running_tasks.discard(future)
 
                         if result.get("status") == "success":
@@ -896,6 +906,9 @@ async def _upload_screens(
                                     uploaded_image_files.add(str(Path(str(task_args[0])).resolve()))
                             return (index, result)
                         reason = result.get("reason", "Unknown error")
+                        if "timed out" in reason.lower():
+                            logger.info(f"[yellow]{img_host} timed out for image {index}; switching to the next image host.[/yellow]")
+                            return None
                         if "duplicate" in reason.lower():
                             logger.info(f"[yellow]Skipping host because duplicate image {index}: {reason}[/yellow]")
                             return None
@@ -911,16 +924,10 @@ async def _upload_screens(
                         return None
 
                     except TimeoutError:
-                        logger.info(f"[red]Upload task {index} timed out after 60 seconds[/red]")
+                        logger.info(f"[red]Upload task {index} timed out after {_image_upload_timeout(config):g} seconds; switching hosts.[/red]")
                         if future in running_tasks:
                             future.cancel()
                             running_tasks.discard(future)
-
-                        if retry_count < max_retries:
-                            retry_count += 1
-                            logger.info(f"[yellow]Retry {retry_count}/{max_retries} for image {index} after timeout[/yellow]")
-                            await asyncio.sleep(1.1 * retry_count)
-                            continue
                         return None
 
                 except asyncio.CancelledError:
@@ -945,8 +952,26 @@ async def _upload_screens(
     try:
         results: list[tuple[int, dict[str, Any]]] = []
         try:
-            upload_results = await asyncio.gather(*[async_upload(task, max_retries) for task in upload_tasks])
-            results = [res for res in upload_results if res is not None]
+            # A timeout or failure from one screenshot nearly always means the
+            # selected host is unavailable.  Do not make every remaining image
+            # wait for the same host: cancel the batch and let the fallback
+            # logic switch hosts immediately.
+            pending = {asyncio.create_task(async_upload(task, max_retries)) for task in upload_tasks}
+            host_failed = False
+            while pending:
+                completed, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+                for task in completed:
+                    result = task.result()
+                    if result is None:
+                        host_failed = True
+                        break
+                    results.append(result)
+                if host_failed:
+                    for task in pending:
+                        task.cancel()
+                    await asyncio.gather(*pending, return_exceptions=True)
+                    pending.clear()
+                    logger.info(f"[yellow]{img_host} failed during screenshot upload; switching hosts without waiting for remaining images.[/yellow]")
             results.sort(key=lambda x: x[0])
         except Exception as e:
             logger.error(f"[red]Error during uploads: {e!s}[/red]")

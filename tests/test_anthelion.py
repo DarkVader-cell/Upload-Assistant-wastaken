@@ -112,3 +112,9 @@ def test_anthelion_imdb_tags_are_not_marked_as_manual() -> None:
 
     assert asyncio.run(tracker.get_tags(meta)) == ["action"]  # noqa: S101
     assert meta.ant_user_tags is False  # noqa: S101
+
+
+def test_anthelion_name_keeps_release_year_and_resolution() -> None:
+    meta = SimpleNamespace(title="Example Movie", name="Example Movie 2026 1080p WEB-DL")
+
+    assert asyncio.run(object.__new__(Anthelion).get_name(meta)) == "Example Movie 2026 1080p WEB-DL"  # noqa: S101

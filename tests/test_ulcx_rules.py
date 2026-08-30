@@ -1,4 +1,7 @@
+# ruff: noqa: S101
+
 import pytest
+
 from src.meta import Meta
 from src.prep_helpers import check_pre_release
 from src.trackers.UNIT3D.ulcx import ULCX
@@ -48,6 +51,13 @@ def make_ulcx() -> ULCX:
         }
     }
     return ULCX(config)
+
+
+def test_ulcx_image_policy_rehosts_instead_of_reusing_beyondhd_links():
+    tracker = make_ulcx()
+
+    assert "bhd" not in tracker.approved_image_hosts
+    assert "beyondhd.co" not in tracker.image_host_policy.url_host_mapping
 
 
 @pytest.mark.asyncio

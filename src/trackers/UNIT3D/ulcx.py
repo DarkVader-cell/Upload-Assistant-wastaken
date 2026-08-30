@@ -7,6 +7,7 @@ import aiofiles
 from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
+from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.UNIT3D import UNIT3D
 
 Config = dict[str, Any]
@@ -21,6 +22,20 @@ class ULCX(UNIT3D):
     display_name = "ULCX"
     reject_english_original_bloat = True
     base_url = "https://upload.cx"
+    # Keep ULCX screenshots separate from tracker-specific uploads such as
+    # BeyondHD.  In particular, BeyondHD's private image host is not a valid
+    # fallback for ULCX.
+    approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
+    image_host_policy = ImageHostPolicy(
+        {
+            "ibb.co": "imgbb",
+            "imgbox.com": "imgbox",
+            "onlyimage.org": "onlyimage",
+            "ptscreens.com": "ptscreens",
+            "img.passtheima.ge": "passtheimage",
+        },
+        approved_image_hosts,
+    )
     banned_groups = (
         "4K4U",
         "Alcaide_Kira",
@@ -77,6 +92,7 @@ class ULCX(UNIT3D):
     def __init__(self, config: Config) -> None:
         super().__init__(config, tracker_name="ULCX")
         self.config = config
+        self.rehost_images_manager = RehostImagesManager(config)
 
     async def get_additional_checks(self, meta: Meta) -> bool:
         keywords = [k.lower() for k in (meta.keywords or [])]

@@ -16,6 +16,7 @@ from src.rehostimages import (
     select_common_image_host,
 )
 from src.tracker_images import get_tracker_image_collection, has_tracker_image_collection
+from src.uploadscreens import _image_upload_timeout
 
 
 class _Alpha:
@@ -86,6 +87,12 @@ def test_select_common_image_host_keeps_per_tracker_fallback_without_common_host
     )
 
     assert selected is None
+
+
+def test_image_upload_timeout_is_short_by_default_and_bounded() -> None:
+    assert _image_upload_timeout({"DEFAULT": {}}) == 15.0
+    assert _image_upload_timeout({"DEFAULT": {"image_upload_timeout": "2"}}) == 5.0
+    assert _image_upload_timeout({"DEFAULT": {"image_upload_timeout": 120}}) == 60.0
 
 
 def test_music_does_not_rehost_missing_screenshots() -> None:
