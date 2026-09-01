@@ -15,6 +15,7 @@ from aiofiles import os as aio_os
 
 from src.artwork import is_public_http_url, is_valid_image_bytes
 from src.console import logger
+from src.image_hosts import is_enabled_image_host
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
 from src.takescreens import TakeScreensManager
@@ -97,7 +98,7 @@ def select_common_image_host(
         (
             (int(match.group(1)), host.lower())
             for key, value in default_config.items()
-            if (match := re.fullmatch(r"img_host_(\d+)", key)) and (host := _as_str(value)) and host.strip()
+            if (match := re.fullmatch(r"img_host_(\d+)", key)) and (host := _as_str(value)) and is_enabled_image_host(host)
         ),
         key=lambda item: item[0],
     )
@@ -325,7 +326,11 @@ async def _check_additional_image_collections(
     approved_hosts = set(approved_image_hosts or [])
     if not approved_hosts:
         return
-    configured_hosts = [value for key, value in default_config.items() if re.fullmatch(r"img_host_(\d+)", key) and isinstance(value, str) and value]
+    configured_hosts = [
+        value
+        for key, value in default_config.items()
+        if re.fullmatch(r"img_host_(\d+)", key) and is_enabled_image_host(value)
+    ]
     if not any(host in approved_hosts for host in configured_hosts):
         logger.warning(f"[yellow]No configured image host is approved by {tracker} for supplemental images.[/yellow]")
         return
@@ -519,7 +524,11 @@ async def _check_hosts(
     logger.debug(f"[yellow]No valid images found for {tracker}, will attempt to reupload...")
 
     images_reuploaded = False
-    configured_indices = sorted(int(match.group(1)) for key in default_config if (match := re.fullmatch(r"img_host_(\d+)", key)) and _as_str(default_config.get(key)))
+    configured_indices = sorted(
+        int(match.group(1))
+        for key in default_config
+        if (match := re.fullmatch(r"img_host_(\d+)", key)) and is_enabled_image_host(default_config.get(key))
+    )
     if not configured_indices:
         return [], True, images_reuploaded
 
@@ -809,7 +818,11 @@ async def _handle_image_upload(
         uploaded_images: list[dict[str, str]] = []
 
         # Add a max retry limit to prevent infinite loop
-        configured_indices = sorted(int(match.group(1)) for key in default_config if (match := re.fullmatch(r"img_host_(\d+)", key)) and _as_str(default_config.get(key)))
+        configured_indices = sorted(
+            int(match.group(1))
+            for key in default_config
+            if (match := re.fullmatch(r"img_host_(\d+)", key)) and is_enabled_image_host(default_config.get(key))
+        )
         if not configured_indices:
             return [], True, images_reuploaded
 
@@ -821,7 +834,7 @@ async def _handle_image_upload(
             current_img_host_key = f"img_host_{current_upload_index}"
             current_img_host = _as_str(default_config.get(current_img_host_key))
 
-            if not current_img_host:
+            if not is_enabled_image_host(current_img_host):
                 current_position += 1
                 continue
 

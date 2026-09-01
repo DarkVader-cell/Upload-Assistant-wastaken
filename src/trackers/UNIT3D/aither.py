@@ -1,6 +1,8 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 from typing import Any, ClassVar, cast
 
+import langcodes
+
 from src.console import logger
 from src.languages import languages_manager
 from src.meta import Meta
@@ -65,7 +67,7 @@ class Aither(UNIT3D):
         return should_continue
 
     def _audio_tracks_allowed(self, meta: Meta) -> bool:
-        """Reject duplicate primary audio languages unless marked compatible."""
+        """Enforce Aither's original-audio policy, ignoring auxiliary tracks."""
         mediainfo = cast(dict[str, Any], meta.mediainfo or {})
         media = cast(dict[str, Any], mediainfo.get("media") or {})
         tracks = cast(list[dict[str, Any]], media.get("track") or [])
@@ -77,7 +79,7 @@ class Aither(UNIT3D):
             title = str(track.get("Title") or track.get("title") or "").lower()
             if "commentary" in title:
                 continue
-            language = str(track.get("Language") or "und").strip().lower()
+            language = self._audio_language_code(track.get("Language"))
             tracks_by_language.setdefault(language, []).append(track)
 
         for language, language_tracks in tracks_by_language.items():
@@ -91,7 +93,54 @@ class Aither(UNIT3D):
                 )
                 return False
 
+        # If MediaInfo lacks individual audio tracks (for example a disc), use
+        # the already-normalised metadata assembled by the language processor.
+        primary_languages = set(tracks_by_language)
+        if not primary_languages:
+            primary_languages = {self._audio_language_code(language) for language in (meta.audio_languages or [])}
+        primary_languages.discard("")
+        primary_languages.discard("und")
+
+        original = meta.original_language
+        if isinstance(original, list):
+            original = original[0] if original else ""
+        original_language = self._audio_language_code(original)
+        # The common language check establishes the original language in normal
+        # uploads.  Do not reject a direct/partial metadata path solely because
+        # that upstream lookup has not supplied it yet.
+        if not original_language:
+            return True
+        allowed = {original_language}
+        japanese_english_dual = {"en", "ja"}
+        if primary_languages and primary_languages not in (allowed, japanese_english_dual):
+            logger.info(
+                f"{self.tracker}: [bold red]Primary audio must be the original language only, "
+                f"or exactly English + Japanese. Found: {', '.join(sorted(primary_languages))}.[/bold red]"
+            )
+            return False
+
         return True
+
+    @staticmethod
+    def _audio_language_code(value: Any) -> str:
+        """Normalise the common MediaInfo/display forms needed by this rule."""
+        raw = str(value or "").strip()
+        token = raw.lower().replace("_", "-")
+        token = token.split("-", 1)[0].split(" ", 1)[0]
+        aliases = {
+            "english": "en", "eng": "en", "en": "en",
+            "japanese": "ja", "jpn": "ja", "jp": "ja", "ja": "ja",
+            "undetermined": "und", "undefined": "und",
+        }
+        if token in aliases:
+            return aliases[token]
+        try:
+            return str(langcodes.Language.get(raw).language or token).lower()
+        except (LookupError, ValueError):
+            try:
+                return str(langcodes.find(raw).language or token).lower()
+            except (LookupError, ValueError):
+                return token
 
     async def get_additional_data(self, meta: Meta):
         hdr_value = meta.hdr or ""

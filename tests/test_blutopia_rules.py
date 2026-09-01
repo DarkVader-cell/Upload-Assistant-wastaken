@@ -6,7 +6,6 @@ import pytest
 from src.meta import Meta
 from src.trackers.UNIT3D.blutopia import Blutopia
 from src.trackers.UNIT3D.ulcx import ULCX
-from src.trackers.UNIT3D.znth import Zenith
 
 
 def make_meta(**overrides):
@@ -62,7 +61,6 @@ def test_blutopia_accepts_truehd_with_standalone_ac3():
     [
         (tracker(), "BLUTOPIA"),
         (object.__new__(ULCX), "ULCX"),
-        (Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}), "ZENITH"),
     ],
 )
 @pytest.mark.parametrize(

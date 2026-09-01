@@ -79,6 +79,16 @@ def test_select_common_image_host_accepts_legacy_set_policy() -> None:
     assert selected == "imgbb"
 
 
+def test_select_common_image_host_skips_disabled_imgbox() -> None:
+    selected = select_common_image_host(
+        {"img_host_1": "imgbox", "img_host_2": "imgbb"},
+        ["ALPHA"],
+        {"ALPHA": _Alpha},
+    )
+
+    assert selected == "imgbb"
+
+
 def test_select_common_image_host_keeps_per_tracker_fallback_without_common_host() -> None:
     selected = select_common_image_host(
         {"img_host_1": "imgbox", "img_host_2": "ptscreens"},

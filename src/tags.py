@@ -44,7 +44,7 @@ async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> st
             release_group = anime_match.group(1)
             logger.debug(f"Anime regex match: {release_group}")
     if (not meta.anime or not matched_anime) and meta.is_disc != "BDMV":
-        # Non-anime pattern: group at the end after last hyphen, avoiding resolutions and numbers
+        # Non-anime pattern: group at the end after a hyphen or tilde, avoiding resolutions and numbers
         if Path(video).is_dir():
             # If video is a directory, use the directory name as basename
             basename_stripped = Path(os.path.normpath(video)).name
@@ -86,7 +86,7 @@ async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> st
             basename_stripped = name
 
         non_anime_match = re.search(
-            r"(?<=-)((?!\s*(?:WEB-DL|Blu-ray|H-264|H-265))(?:\W|\b)(?!(?:\d{3,4}[ip]))(?!\d+\b)(?:\W|\b)([\w .]+?))(?:\[.+\])?(?:\))?(?:\s\[.+\])?$", basename_stripped
+            r"(?<=[-~])((?!\s*(?:WEB-DL|Blu-ray|H-264|H-265))(?:\W|\b)(?!(?:\d{3,4}[ip]))(?!\d+\b)(?:\W|\b)([\w .]+?))(?:\[.+\])?(?:\))?(?:\s\[.+\])?$", basename_stripped
         )
         if non_anime_match:
             release_group = non_anime_match.group(1).strip()

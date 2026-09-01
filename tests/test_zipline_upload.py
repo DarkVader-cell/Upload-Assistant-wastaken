@@ -129,7 +129,7 @@ def test_midnightscene_uses_its_fixed_endpoint_and_token(tmp_path: Path) -> None
             {
                 "files": {"file": ("image.png", b"image")},
                 "headers": {"Authorization": "midnightscene-token"},
-                "timeout": 60,
+                "timeout": 15.0,
             },
         )
     ]

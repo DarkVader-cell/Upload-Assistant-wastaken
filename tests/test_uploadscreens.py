@@ -115,7 +115,7 @@ def test_upload_screens_preserves_partial_successes_across_fallback(tmp_path: Pa
         host = str(args[1])
         filename = Path(image).name
         calls.append((filename, host))
-        if filename == "image-2.png" and host == "imgbox":
+        if filename == "image-2.png" and host == "lostimg":
             return {"status": "failed", "reason": "duplicate image"}
         return {
             "status": "success",
@@ -127,10 +127,10 @@ def test_upload_screens_preserves_partial_successes_across_fallback(tmp_path: Pa
     async def exercise() -> tuple[list[dict[str, str]], int]:
         for filename in ("image-1.png", "image-2.png"):
             (tmp_path / filename).write_bytes(b"image")
-        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "imgbox"})
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "lostimg"})
         config = {
             "DEFAULT": {
-                "img_host_1": "imgbox",
+                "img_host_1": "lostimg",
                 "img_host_2": "ptscreens",
                 "image_upload_concurrency": 1,
                 "image_upload_delay": 0,
@@ -148,7 +148,7 @@ def test_upload_screens_preserves_partial_successes_across_fallback(tmp_path: Pa
     image_list, uploaded_count = asyncio.run(exercise())
     assert uploaded_count == 2
     assert len(image_list) == 2
-    assert calls == [("image-1.png", "imgbox"), ("image-2.png", "imgbox"), ("image-2.png", "ptscreens")]
+    assert calls == [("image-1.png", "lostimg"), ("image-2.png", "lostimg"), ("image-2.png", "ptscreens")]
 
 
 def test_upload_screens_preserves_partial_custom_assets_across_fallback(tmp_path: Path) -> None:
@@ -158,7 +158,7 @@ def test_upload_screens_preserves_partial_custom_assets_across_fallback(tmp_path
         assert isinstance(args, list)
         filename, host = Path(str(args[0])).name, str(args[1])
         calls.append((filename, host))
-        if filename == "plot-2.png" and host == "imgbox":
+        if filename == "plot-2.png" and host == "lostimg":
             return {"status": "failed", "reason": "temporary host failure"}
         return {
             "status": "success",
@@ -171,8 +171,8 @@ def test_upload_screens_preserves_partial_custom_assets_across_fallback(tmp_path
         assets = [tmp_path / "plot-1.png", tmp_path / "plot-2.png"]
         for asset in assets:
             asset.write_bytes(b"image")
-        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "imgbox"})
-        config = {"DEFAULT": {"img_host_1": "imgbox", "img_host_2": "ptscreens", "image_upload_concurrency": 1, "image_upload_delay": 0}, "TRACKERS": {}}
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "lostimg"})
+        config = {"DEFAULT": {"img_host_1": "lostimg", "img_host_2": "ptscreens", "image_upload_concurrency": 1, "image_upload_delay": 0}, "TRACKERS": {}}
         with patch("src.uploadscreens.upload_image_task", new=fake_upload):
             return await _upload_screens(config, meta, 2, 1, 0, 2, [str(asset) for asset in assets], {}, max_retries=0)
 
@@ -180,7 +180,7 @@ def test_upload_screens_preserves_partial_custom_assets_across_fallback(tmp_path
 
     assert count == 2
     assert [str(image["raw_url"]).split("/")[-2] for image in uploaded] == ["plot-1.png", "plot-2.png"]
-    assert calls == [("plot-1.png", "imgbox"), ("plot-2.png", "imgbox"), ("plot-2.png", "ptscreens")]
+    assert calls == [("plot-1.png", "lostimg"), ("plot-2.png", "lostimg"), ("plot-2.png", "ptscreens")]
 
 
 def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp_path: Path) -> None:
@@ -190,7 +190,7 @@ def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp
         assert isinstance(args, list)
         host = str(args[1])
         calls.append(host)
-        if host == "imgbox":
+        if host == "lostimg":
             return {"status": "failed", "reason": "temporary host failure"}
         return {
             "status": "success",
@@ -202,10 +202,10 @@ def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp
     async def exercise() -> tuple[list[dict[str, str]], int]:
         image_path = tmp_path / "image-1.png"
         image_path.write_bytes(b"image")
-        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "imgbox"})
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "lostimg"})
         config = {
             "DEFAULT": {
-                "img_host_1": "imgbox",
+                "img_host_1": "lostimg",
                 "img_host_2": "ptscreens",
                 "img_host_3": "imgbb",
                 "image_upload_concurrency": 1,
@@ -224,7 +224,37 @@ def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp
     image_list, uploaded_count = asyncio.run(exercise())
     assert uploaded_count == 1
     assert len(image_list) == 1
-    assert calls == ["imgbox", "ptscreens"]
+    assert calls == ["lostimg", "ptscreens"]
+
+
+def test_upload_screens_skips_disabled_imgbox(tmp_path: Path) -> None:
+    calls: list[str] = []
+
+    async def fake_upload(args: object) -> dict[str, str]:
+        assert isinstance(args, list)
+        calls.append(str(args[1]))
+        return {
+            "status": "success",
+            "img_url": "https://ptscreens.com/image.png",
+            "raw_url": "https://ptscreens.com/image.png",
+            "web_url": "https://ptscreens.com/image.png",
+        }
+
+    async def exercise() -> None:
+        (tmp_path / "image-1.png").write_bytes(b"image")
+        meta = Meta({"base_dir": str(tmp_path), "uuid": "test", "imghost": "imgbox"})
+        config = {"DEFAULT": {"img_host_1": "imgbox", "img_host_2": "ptscreens", "image_upload_delay": 0}, "TRACKERS": {}}
+        with (
+            patch("src.uploadscreens.screenshots_dir", return_value=tmp_path),
+            patch("src.uploadscreens.os.chdir"),
+            patch("src.uploadscreens.Path.cwd", return_value=tmp_path),
+            patch("src.uploadscreens.upload_image_task", new=fake_upload),
+        ):
+            await _upload_screens(config, meta, 1, 1, 0, 1, [], {})
+
+    asyncio.run(exercise())
+
+    assert calls == ["ptscreens"]
 
 
 def test_upload_screens_resolves_fallback_from_selected_host_slot(tmp_path: Path) -> None:

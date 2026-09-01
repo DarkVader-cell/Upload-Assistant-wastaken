@@ -19,6 +19,10 @@ If a process cannot be terminated, its session remains visible and the API retur
 
 qBittorrent and Deluge profiles keep their existing configuration and path-mapping contracts. Connection, timeout, retry, SSL, authentication, and remote-path errors should be corrected in the affected profile rather than by removing the profile. The configuration editor repairs default, injecting, and searching references only when a profile is intentionally removed.
 
+## Torrent and image-host metadata
+
+New and reused-base torrents are stamped with `UA, Arty's fork` in both their comment and `created by` fields. Image-host requests use `DEFAULT["image_upload_timeout"]`, which defaults to 15 seconds and is bounded between 5 and 60 seconds; keep the value low enough for fallback hosts to remain responsive.
+
 ## Validation before publishing
 
 Run the following from a Python 3.14 environment after source changes:

@@ -3480,6 +3480,7 @@ async def main() -> None:
     except Exception as e:
         if not _shutdown_requested:
             logger.error(f"[bold red]Unexpected error: {e}[/bold red]")
+            raise
     finally:
         with contextlib.suppress(Exception):
             await close_tvdb()

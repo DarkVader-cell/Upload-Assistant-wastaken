@@ -1633,7 +1633,7 @@ def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
             text=True,
             bufsize=1,
             cwd=str(base_dir),
-            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8", "UA_DETACHED_JOB_ID": job_id},
+            env={**_webui_subprocess_env(), "UA_DETACHED_JOB_ID": job_id},
         )
         with active_processes_lock:
             active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}

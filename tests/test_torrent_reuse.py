@@ -75,6 +75,8 @@ async def test_base_subs_contains_external_subtitle_with_custom_torrent(tmp_path
 
     torrent = Torrent.read(tmp_path / "tmp" / meta.uuid / "BASE_SUBS.torrent")
     assert sorted(path.name for path in torrent.files) == sorted([video.name, subtitle.name])  # noqa: S101
+    assert torrent.comment == "UA, Arty's fork"  # noqa: S101
+    assert torrent.created_by == "UA, Arty's fork"  # noqa: S101
 
 
 @pytest.mark.asyncio

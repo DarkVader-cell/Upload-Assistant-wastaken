@@ -90,6 +90,22 @@ def test_identical_aka_is_omitted():
     assert "AKA" not in name  # noqa: S101
 
 
+def test_aka_matching_tmdb_original_title_is_omitted():
+    meta = Meta(
+        category="TV",
+        type="WEBDL",
+        title="TMDB Localized Title",
+        original_title="TMDB Original Title",
+        aka="AKA TMDB Original Title",
+        season="S01",
+        episode="E01",
+    )
+
+    name, *_ = asyncio.run(NameManager({"DEFAULT": {}}).get_name(meta))
+
+    assert "AKA" not in name  # noqa: S101
+
+
 def test_tv_hddvd_naming_uses_the_tracker_aware_prefix_without_crashing():
     meta = Meta(
         category="TV",

@@ -251,6 +251,8 @@ config: dict[str, Any] = {
         "smart_image_host_selection": True,
         # Maximum number of image uploads running at once. Set to 0 to use host defaults.
         "image_upload_concurrency": 0,
+        # Per-image-host request timeout in seconds. Defaults to 15; values are bounded from 5 to 60.
+        "image_upload_timeout": 15,
         # Delay between starting image uploads, in seconds.
         "image_upload_delay": 0.0,
         # Minimum number of successful image uploads required to continue.

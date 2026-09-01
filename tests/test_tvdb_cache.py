@@ -102,7 +102,8 @@ def test_upload_main_closes_tvdb_after_failure(monkeypatch):
         monkeypatch.setattr(upload, "do_the_thing", fail_upload)
         monkeypatch.setattr(upload, "close_tvdb", record_close)
 
-        await upload.main()
+        with pytest.raises(RuntimeError, match="upload failed"):
+            await upload.main()
 
         assert closed is True
 

@@ -37,3 +37,33 @@ def test_aither_allows_commentary_and_compatibility_tracks() -> None:
         }
     )
     assert _checker()._audio_tracks_allowed(meta) is True
+
+
+def test_aither_allows_original_language_only() -> None:
+    meta = Meta(
+        {
+            "original_language": "Tamil",
+            "mediainfo": {"media": {"track": [{"@type": "Audio", "Language": "tam", "Title": "Main"}]}},
+        }
+    )
+    assert _checker()._audio_tracks_allowed(meta) is True
+
+
+def test_aither_allows_only_english_japanese_dual_audio() -> None:
+    meta = Meta(
+        {
+            "original_language": "Japanese",
+            "mediainfo": {"media": {"track": [{"@type": "Audio", "Language": "eng"}, {"@type": "Audio", "Language": "jpn"}]}},
+        }
+    )
+    assert _checker()._audio_tracks_allowed(meta) is True
+
+
+def test_aither_rejects_non_original_non_japanese_english_dual_audio() -> None:
+    meta = Meta(
+        {
+            "original_language": "Tamil",
+            "mediainfo": {"media": {"track": [{"@type": "Audio", "Language": "tam"}, {"@type": "Audio", "Language": "eng"}]}},
+        }
+    )
+    assert _checker()._audio_tracks_allowed(meta) is False

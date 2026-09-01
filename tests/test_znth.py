@@ -6,6 +6,19 @@ from src.meta import Meta
 from src.trackers.UNIT3D.znth import Zenith
 
 
+def test_zenith_movie_name_keeps_the_tmdb_year_when_imdb_disagrees():
+    meta = Meta(
+        category="MOVIE",
+        name="Example Movie 2026 1080p WEB-DL",
+        year=2026,
+        imdb_info={"year": 2025},
+    )
+
+    name = asyncio.run(Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}).get_name(meta))["name"]
+
+    assert name == "Example Movie 2026 1080p WEB-DL"
+
+
 def test_zenith_supports_music_and_uses_its_music_naming_guide():
     meta = Meta(
         category="MUSIC",

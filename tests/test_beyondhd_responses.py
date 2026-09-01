@@ -35,6 +35,20 @@ def test_beyondhd_uses_imdb_title_before_its_aka() -> None:
     assert name == "IMDb Display AKA Original Title 2026 1080p WEB-DL-GRP"
 
 
+def test_beyondhd_omits_aka_already_present_in_tmdb_metadata() -> None:
+    meta = Meta(
+        name="Localized Title AKA Original Title 2026 1080p WEB-DL-GRP",
+        title="Localized Title",
+        original_title="Original Title",
+        aka="AKA Original Title",
+        imdb_info={"title": "IMDb Display", "aka": "Original Title"},
+    )
+
+    name = asyncio.run(BEYONDHD({"TRACKERS": {"BEYONDHD": {}}}).get_name(meta))
+
+    assert name == "IMDb Display 2026 1080p WEB-DL-GRP"
+
+
 def test_beyondhd_maps_480i_to_other_category() -> None:
     meta = Meta(type="ENCODE", resolution="480i")
 

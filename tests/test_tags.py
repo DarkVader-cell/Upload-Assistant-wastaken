@@ -1,5 +1,7 @@
 """Regression tests for release-group extraction."""
 
+import asyncio
+
 import pytest
 
 from src.get_name import NameManager
@@ -60,3 +62,9 @@ async def test_release_group_after_dts_hd_audio_is_preserved():
     tag = await get_tag(filename, Meta(category="MOVIE", uuid=filename))
 
     assert tag == "-GROUP"
+
+
+def test_tilde_delimited_release_group_is_detected() -> None:
+    filename = "Movie Name 1080p AMZN WEB-DL AVC DDP 2.0 ESubS ~ DRiv3R.mkv"
+
+    assert asyncio.run(get_tag(filename, Meta(category="MOVIE"))) == "-DRiv3R"

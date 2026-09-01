@@ -12,6 +12,7 @@ from rich.markup import escape
 from src.cogs.redaction import Redaction
 from src.console import logger
 from src.description_review import get_base_description
+from src.get_name import is_redundant_aka
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.tracker_images import get_tracker_image_collection
@@ -554,7 +555,7 @@ class BEYONDHD:
             if generated_aka:
                 name = name.replace(f"{generated_aka} ", "", 1)
             name = name.replace(str(meta.title or ""), imdb_title, 1)
-            if imdb_aka and imdb_aka != imdb_title and not meta.no_aka and not meta.anime:
+            if imdb_aka and not is_redundant_aka(imdb_aka, imdb_title, meta.title, meta.original_title) and not meta.no_aka and not meta.anime:
                 name = name.replace(imdb_title, f"{imdb_title} AKA {imdb_aka}", 1)
 
         if meta.source in ("PAL DVD", "NTSC DVD", "DVD", "NTSC", "PAL"):

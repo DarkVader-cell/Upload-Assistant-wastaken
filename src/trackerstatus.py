@@ -11,6 +11,7 @@ from src.cleanup import cleanup_manager
 from src.console import logger, prompt_in_thread
 from src.dupe_checking import DupeChecker
 from src.imdb import imdb_manager
+from src.languages import languages_manager
 from src.meta import Meta
 from src.metadata_searching import get_douban_id
 from src.trackers.AVISTAZ.routing import AvistaZNetworkRouter
@@ -25,6 +26,24 @@ def merge_tracker_status(processed: dict[str, dict[str, Any]], existing: Mapping
     for tracker, status in processed.items():
         merged.setdefault(tracker, {}).update(status)
     return merged
+
+
+def requires_english_subtitles_for_non_english_audio(meta: Meta, tracker: str) -> bool:
+    """Apply the user's baseline subtitle rule before tracker-specific checks."""
+    if tracker.upper() == "DESITORRENTS" or meta.category not in {"MOVIE", "TV"}:
+        return False
+
+    def has_english(languages: Any) -> bool:
+        values = [languages] if isinstance(languages, str) else languages or []
+        return any(
+            (normalized := str(language).strip().lower()) in {"en", "eng", "english", "en-us", "en-gb"}
+            or normalized.startswith("english ")
+            or normalized.startswith("english(")
+            for language in values
+        )
+
+    audio_languages = meta.audio_languages or []
+    return bool(audio_languages) and not has_english(audio_languages) and not has_english(meta.subtitle_languages or [])
 
 
 class TrackerStatusManager:
@@ -157,6 +176,14 @@ class TrackerStatusManager:
                         logger.info(f"[yellow]{tracker_name}: Skipping upload because required GAME fields are missing: {', '.join(game_missing)}[/yellow]")
                         local_tracker_status["skipped"] = True
                         local_tracker_status["skip_reason"] = f"missing required GAME fields: {', '.join(game_missing)}"
+
+                if not local_tracker_status["banned"] and not local_tracker_status["skipped"]:
+                    if not local_meta.language_checked:
+                        await languages_manager.process_desc_language(local_meta, tracker=tracker_name)
+                    if requires_english_subtitles_for_non_english_audio(local_meta, tracker_name):
+                        logger.info(f"[yellow]{tracker_name}: Skipping upload because non-English audio requires English subtitles.[/yellow]")
+                        local_tracker_status["skipped"] = True
+                        local_tracker_status["skip_reason"] = "non-English audio requires English subtitles"
 
                 if not local_tracker_status["banned"] and not local_tracker_status["skipped"]:
                     claimed = await tracker_setup.get_torrent_claims(local_meta, tracker_name)

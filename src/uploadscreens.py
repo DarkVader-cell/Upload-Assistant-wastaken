@@ -16,6 +16,7 @@ import httpx
 import pyimgbox
 
 from src.console import logger
+from src.image_hosts import is_enabled_image_host
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
 from src.temp_paths import screenshots_dir
@@ -681,6 +682,11 @@ async def _upload_screens(
     initial_img_host = str(default_config.get(f"img_host_{img_host_num}") or "")
     img_host = str(meta.imghost or "").strip().lower()
 
+    configured_host_slots = [
+        (index, str(default_config.get(f"img_host_{index}") or "").strip().lower())
+        for index in range(1, 10)
+    ]
+
     image_list = deduplicate_images(meta.image_list)
     meta.image_list = image_list
 
@@ -698,7 +704,7 @@ async def _upload_screens(
             host_key = f"img_host_{i}"
             if host_key in default_config:
                 host = default_config[host_key]
-                if host in allowed_hosts:
+                if host in allowed_hosts and is_enabled_image_host(host):
                     approved_host = host
                     img_host_num = i
                     logger.info(f"[green]Switching to approved image host: {approved_host}[/green]")
@@ -714,14 +720,26 @@ async def _upload_screens(
     # callers still pass the default slot (usually img_host_1). Resolve the
     # actual slot before walking the fallback chain so a failed selected host
     # is not retried as the next host or causes an earlier host to be skipped.
-    configured_host_slots = [
-        (index, str(default_config.get(f"img_host_{index}") or "").strip().lower())
-        for index in range(1, 10)
-    ]
     current_host_num = next(
         (index for index, configured_host in configured_host_slots if configured_host == img_host),
         img_host_num,
     )
+
+    if not is_enabled_image_host(img_host):
+        fallback_host = next(
+            (
+                (index, host)
+                for index, host in configured_host_slots
+                if index > current_host_num and is_enabled_image_host(host) and (allowed_hosts is None or host in allowed_hosts)
+            ),
+            None,
+        )
+        if fallback_host is None:
+            logger.info("[red]Imgbox is disabled and no enabled fallback image host is configured.[/red]")
+            return image_list, len(image_list)
+        current_host_num, img_host = fallback_host
+        meta.imghost = img_host
+        logger.info(f"[yellow]Skipping disabled image host; using {img_host} instead.[/yellow]")
 
     logger.debug(f"[blue]Using image host: {img_host} (configured: {initial_img_host})[/blue]")
     using_custom_img_list = bool(custom_img_list)
@@ -1005,7 +1023,7 @@ async def _upload_screens(
                     continue
 
                 next_host = str(default_config.get(next_host_key) or "").strip().lower()
-                if not next_host or (allowed_hosts is not None and next_host not in allowed_hosts):
+                if not is_enabled_image_host(next_host) or (allowed_hosts is not None and next_host not in allowed_hosts):
                     next_host_num += 1
                     continue
 

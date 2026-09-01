@@ -36,6 +36,12 @@ def _title_key(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", normalized.casefold())
 
 
+def is_redundant_aka(aka: object, *known_titles: object) -> bool:
+    """Return whether an AKA repeats a title already supplied by metadata."""
+    aka_key = _title_key(str(aka or ""))
+    return bool(aka_key) and any(aka_key == _title_key(str(title or "")) for title in known_titles)
+
+
 class NameManager:
     def __init__(self, config: dict[str, Any]) -> None:
         self.config = config
@@ -58,7 +64,7 @@ class NameManager:
         type = str(meta.type).upper()
         title = meta.title
         alt_title = meta.aka
-        if alt_title and _title_key(str(title)) == _title_key(str(alt_title)):
+        if alt_title and is_redundant_aka(alt_title, title, meta.original_title):
             alt_title = ""
         year = str(meta.year) if meta.year is not None else ""
         manual_year_value = meta.manual_year
