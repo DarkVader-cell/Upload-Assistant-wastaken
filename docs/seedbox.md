@@ -156,6 +156,22 @@ the infohash. The Cactus recovery path uses an additional hardlink under the
 torrent's internal filename when necessary; it refuses missing, mismatched, or
 multi-file payloads for manual review rather than risking a bad seed.
 
+#### Forcing a completed release from QUI
+
+Normal reconciliation intentionally leaves torrents tagged `to_upload` on
+Clementine. When that tag remains after all intended tracker uploads are
+finished, select the original or any matching tracker hardlink in QUI and run
+the external-program action **Force selected Clementine release to Cactus
+HDD**. It resolves every completed `Uploads` hardlink for the same payload,
+bypasses the tag gate, and handles the original source after those verified
+handoffs complete.
+
+The action is safe to invoke while a normal batch is active: it is accepted by
+the local bridge and retries the remote worker's explicit busy result every 30
+seconds. It does not copy, register, or delete anything until the existing
+worker finishes; the normal state lock and infohash verification still govern
+the transfer.
+
 ### Whatbox qBittorrent and Deluge reuse
 
 The Whatbox deployment uses the host's qBittorrent Web API on port `17416` for
