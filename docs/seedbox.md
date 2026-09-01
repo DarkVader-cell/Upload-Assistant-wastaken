@@ -112,6 +112,20 @@ podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-was
 curl -fsS http://127.0.0.1:12345/api/health
 ```
 
+Apply the same update to the Clementine client from its own checkout; its
+WebUI health endpoint is on port `12346`. With the installed
+`podman-compose`, use `up -d --no-build` after the pull. Do not add
+`--force-recreate`: that version can remove the old container before raising
+an internal error. The normal `up -d --no-build` command recreates a missing
+or changed UA service safely.
+
+The current published image creates a checkout-default configuration during
+startup. Keep `UA_DATA_DIR=/Upload-Assistant` and the existing
+`docker-data/data:/Upload-Assistant/data` mount in the homelab and Whatbox
+compose files until that image-level migration is corrected. This is a
+compatibility setting, not a data migration; it preserves the existing
+configuration and avoids the image rejecting the config it creates itself.
+
 If Podman reports a stale pod with no infra container, remove only that named
 pod and recreate the service; persistent `docker-data/` mounts are unaffected:
 
