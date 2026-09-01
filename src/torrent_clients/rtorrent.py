@@ -281,23 +281,27 @@ class RtorrentClientMixin:
     def add_fast_resume(self, metainfo: dict[str, Any], datapath: str, _torrent: Torrent) -> dict[str, Any]:
         """Add fast resume data to a metafile dict."""
         # Get list of files
-        files = metainfo["info"].get("files", None)
-        single = files is None
+        info = cast(dict[str, Any], metainfo["info"])
+        files_value = info.get("files")
+        single = files_value is None
         if single:
             if Path(datapath).is_dir():
-                datapath = Path(datapath) / metainfo["info"]["name"]
-            files = [
+                datapath = str(Path(datapath) / str(info["name"]))
+            files: list[dict[str, Any]] = [
                 {
                     "path": [str(Path(datapath).resolve())],
-                    "length": metainfo["info"]["length"],
+                    "length": info["length"],
                 }
             ]
+        else:
+            files = cast(list[dict[str, Any]], files_value)
 
         # Prepare resume data
-        resume = metainfo.setdefault("libtorrent_resume", {})
-        resume["bitfield"] = len(metainfo["info"]["pieces"]) // 20
-        resume["files"] = []
-        piece_length_value = metainfo["info"]["piece length"]
+        resume = cast(dict[str, Any], metainfo.setdefault("libtorrent_resume", {}))
+        resume["bitfield"] = len(info["pieces"]) // 20
+        resume_files: list[dict[str, int]] = []
+        resume["files"] = resume_files
+        piece_length_value = info["piece length"]
         piece_length = int(piece_length_value) if isinstance(piece_length_value, (int, float, str)) else 0
         if piece_length <= 0:
             raise ValueError(f"Invalid piece length: {piece_length_value!r}")
@@ -305,7 +309,7 @@ class RtorrentClientMixin:
 
         for fileinfo in files:
             # Get the path into the filesystem
-            filepath = str(Path(*fileinfo["path"]))
+            filepath = str(Path(*cast(list[str], fileinfo["path"])))
             if not single:
                 filepath = Path(datapath) / filepath.strip(os.sep)
 
@@ -319,7 +323,7 @@ class RtorrentClientMixin:
                 )
 
             # Add resume data for this file
-            resume["files"].append(
+            resume_files.append(
                 {
                     "priority": 1,
                     "mtime": int(Path(filepath).stat().st_mtime),
@@ -396,7 +400,7 @@ class RtorrentClientMixin:
             torrent_comments = [cast(dict[str, Any], entry) for entry in torrent_comments_list if isinstance(entry, dict)]
             meta.torrent_comments = torrent_comments
 
-            comment_data = {
+            comment_data: dict[str, Any] = {
                 "hash": getattr(torrent, "infohash_v1", "") or "",
                 "name": getattr(torrent, "name", "") or "",
                 "comment": comment,
@@ -417,7 +421,7 @@ class RtorrentClientMixin:
                 logger.info(f"[green]Stored {len(torrent_comments)} torrent comments for later use")
 
             if not pathed:
-                valid, resolved_path = await self.is_valid_torrent(meta, torrent_path, info_hash_v1, "rtorrent", client)
+                valid, resolved_path = await self.is_valid_torrent(meta, str(torrent_path), info_hash_v1, "rtorrent", client)
 
                 if valid:
                     base_torrent_path = Path(extracted_torrent_dir) / "BASE.torrent"
