@@ -123,6 +123,39 @@ podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-was
 Do not remove the persistent `docker-data/` directories when recreating the
 container.
 
+### Clementine SSD-to-Cactus handoff
+
+Completed tracker hardlinks are handed from Clementine's SSD to Cactus only
+after their local upload window. The credential remains on the homelab host;
+the local handoff watcher invokes the worker on Clementine every 15 seconds.
+The worker takes an exclusive lock, so a manual QUI request, a retry, and the
+periodic watcher cannot copy or delete the same torrent concurrently.
+
+For each eligible batch, the worker:
+
+1. Reannounces all eligible source torrents and waits 120 seconds before any
+   copy begins, giving trackers time to record final source-side statistics.
+2. Copies the payload resumably to Cactus, or makes a hardlink to an already
+   transferred identical inode. This keeps duplicate tracker releases to one
+   physical Cactus copy.
+3. Imports the exact torrent infohash into Cactus qBittorrent. The importer
+   waits up to 90 seconds for qBittorrent resume data and requires a complete,
+   seed-ready registration.
+4. Removes the Clementine tracker hardlink only after that verification. A
+   failed or interrupted transfer remains resumable and leaves the source
+   intact.
+
+The handoff state is stored on Clementine in
+`docker-data/data/handoff-state.json`; it records transfer stages and allows a
+later watcher pass to resume safely. The matching `.torrent` metadata on
+Cactus is retained under `.ua-handoff/` for verification and recovery.
+
+If a historical entry is absent from Cactus qBittorrent, do not re-add it by
+name alone. Recover it only when its stored payload and torrent metadata match
+the infohash. The Cactus recovery path uses an additional hardlink under the
+torrent's internal filename when necessary; it refuses missing, mismatched, or
+multi-file payloads for manual review rather than risking a bad seed.
+
 ### Whatbox qBittorrent and Deluge reuse
 
 The Whatbox deployment uses the host's qBittorrent Web API on port `17416` for
