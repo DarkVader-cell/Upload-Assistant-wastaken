@@ -166,11 +166,17 @@ HDD**. It resolves every completed `Uploads` hardlink for the same payload,
 bypasses the tag gate, and handles the original source after those verified
 handoffs complete.
 
+Both single-file and directory releases are supported. Directory matching uses
+the complete set of hardlinked payload files rather than the directory inode,
+so matching tracker trees are included without treating unrelated directories
+as duplicates.
+
 The action is safe to invoke while a normal batch is active: it is accepted by
 the local bridge and retries the remote worker's explicit busy result every 30
 seconds. It does not copy, register, or delete anything until the existing
 worker finishes; the normal state lock and infohash verification still govern
-the transfer.
+the transfer. Repeated clicks for the same selection are coalesced into one
+pending request.
 
 ### Whatbox qBittorrent and Deluge reuse
 
