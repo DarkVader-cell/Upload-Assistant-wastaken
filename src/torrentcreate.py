@@ -465,8 +465,8 @@ class TorrentCreator:
                     exclude_globs=exclude or [],
                     include_globs=custom_include,
                     creation_date=datetime.now(UTC),
-                    comment=f"{meta.ua_name} (fork)",
-                    created_by=f"{meta.ua_name} (fork)",
+                    comment="UA, Arty's fork",
+                    created_by="UA, Arty's fork",
                     piece_size=piece_size,
                 )
                 progress_id = f"torrent-hash-{meta.uuid}"
@@ -557,8 +557,8 @@ class TorrentCreator:
         if Path(torrentpath).exists():
             base_torrent = Torrent.read(torrentpath)
             base_torrent.trackers = ["https://fake.tracker"]
-            base_torrent.comment = "Upload-Assistant (fork)"
-            base_torrent.created_by = "Upload-Assistant (fork)"
+            base_torrent.comment = "UA, Arty's fork"
+            base_torrent.created_by = "UA, Arty's fork"
             info_dict = base_torrent.metainfo["info"]
             valid_keys = ["name", "piece length", "pieces", "private", "source"]
 
