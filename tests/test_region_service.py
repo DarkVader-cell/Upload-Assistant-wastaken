@@ -7,7 +7,11 @@ from src.region import get_service
 
 @pytest.mark.parametrize(
     ("service_tag", "expected"),
-    [("AMZN", ("AMZN", "Amazon Prime Video")), ("MY5", ("MY5", "MY5")), ("NF", ("NF", "Netflix"))],
+    [
+        ("AMZN", ("AMZN", "Amazon Prime Video")),
+        ("MY5", ("MY5", "MY5")),
+        ("NF", ("NF", "Netflix")),
+    ],
 )
 @pytest.mark.asyncio
 async def test_get_service_detects_release_tag(service_tag: str, expected: tuple[str, str]) -> None:
