@@ -79,6 +79,13 @@ def test_get_database_identifier_returns_tmdb_id():
     assert BJShare.get_database_identifier(object.__new__(BJShare), soup) == "tv/999999999"  # noqa: S101
 
 
+def test_get_imdblink_uses_normalized_imdb_identifier():
+    BJShare.database_identifier = ""
+    meta = Meta(imdb_tt="tt1234567", imdb_info={"imdbID": "tt7654321"}, tmdb_id="123")
+
+    assert BJShare.get_imdblink(object.__new__(BJShare), meta) == "tt1234567"  # noqa: S101
+
+
 def test_search_existing_queries_only_media_identifiers():
     tracker = object.__new__(BJShare)
     tracker.session = FakeSession()
@@ -123,8 +130,8 @@ def test_get_database_overview_extracts_synopsis():
 def test_get_database_credits_extracts_creator_and_cast():
     soup = BeautifulSoup(
         '<div class="box"><div class="head">InformaÃ§Ãµes</div><table>'
-        '<tr><td><b>Criador:</b></td><td>Ron Howard</td></tr>'
-        '<tr><td><b>Elenco:</b></td><td>Russell Crowe, RenÃ©e Zellweger</td></tr>'
+        "<tr><td><b>Criador:</b></td><td>Ron Howard</td></tr>"
+        "<tr><td><b>Elenco:</b></td><td>Russell Crowe, RenÃ©e Zellweger</td></tr>"
         "</table></div>",
         "html.parser",
     )
@@ -147,11 +154,13 @@ def test_get_overview_returns_database_overview_when_already_has_the_info():
 def test_get_subtitle_hardcoded_portuguese():
     tracker = object.__new__(BJShare)
     tracker.tracker = "BJSHARE"
-    meta = Meta({
-        "language_checked": True,
-        "subtitle_languages": ["Portuguese"],
-        "hardcoded_subs": True,
-    })
+    meta = Meta(
+        {
+            "language_checked": True,
+            "subtitle_languages": ["Portuguese"],
+            "hardcoded_subs": True,
+        }
+    )
 
     result = asyncio.run(tracker.get_subtitle(meta))
     assert result == "Queimada no vídeo"  # noqa: S101
@@ -160,11 +169,13 @@ def test_get_subtitle_hardcoded_portuguese():
 def test_get_subtitle_embedded_portuguese():
     tracker = object.__new__(BJShare)
     tracker.tracker = "BJSHARE"
-    meta = Meta({
-        "language_checked": True,
-        "subtitle_languages": ["Portuguese"],
-        "hardcoded_subs": False,
-    })
+    meta = Meta(
+        {
+            "language_checked": True,
+            "subtitle_languages": ["Portuguese"],
+            "hardcoded_subs": False,
+        }
+    )
 
     result = asyncio.run(tracker.get_subtitle(meta))
     assert result == "Embutida"  # noqa: S101
@@ -173,12 +184,13 @@ def test_get_subtitle_embedded_portuguese():
 def test_get_subtitle_no_portuguese():
     tracker = object.__new__(BJShare)
     tracker.tracker = "BJSHARE"
-    meta = Meta({
-        "language_checked": True,
-        "subtitle_languages": ["English"],
-        "hardcoded_subs": False,
-    })
+    meta = Meta(
+        {
+            "language_checked": True,
+            "subtitle_languages": ["English"],
+            "hardcoded_subs": False,
+        }
+    )
 
     result = asyncio.run(tracker.get_subtitle(meta))
     assert result == "Nenhuma"  # noqa: S101
-

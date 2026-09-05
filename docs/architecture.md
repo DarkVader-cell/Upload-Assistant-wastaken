@@ -4,6 +4,8 @@ CLI and Web UI runs share an `ExecutionContext`, which owns HTTP connections, me
 
 Tracker classes remain importable from their historical modules. `TrackerRegistry` normalizes construction and capability lookup over the live legacy class map, allowing individual trackers to migrate without breaking callers or tests.
 
+IMDb identifiers are normalized once during preparation as `meta.imdb_tt` (for example, `tt1234567`). Tracker searches, payloads, tags, and generated IMDb links consume that canonical value rather than rebuilding an ID from legacy metadata fields.
+
 The runtime writes generated state under configurable `data/cache` paths. Preparation manifests point to immutable SHA-256 objects, checkpoint files are written atomically, and both are keyed by the source signature plus preparation options. Pipeline signatures include extension stages, so changed code or extension order cannot silently resume incompatible work. A bounded WAL-mode SQLite store keeps a non-secret release projection shared by CLI, Web UI, and detached Qui processes; indexed status/time queries avoid loading the history into the Web UI process.
 
 `src/extensions.py` is the stable fork boundary for third-party trackers, metadata providers, pipeline stages, and health checks. Extensions are disabled by default, cannot replace built-in tracker names, and may be loaded from the `upload_assistant.extensions` package entry-point group or explicitly configured local directories. See `docs/extensions.md` for the version 1 contract.

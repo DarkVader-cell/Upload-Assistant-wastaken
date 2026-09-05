@@ -81,7 +81,7 @@ token. The Whatbox entry uses `/config/ua-submit-whatbox`, which posts to the
 Whatbox WebUI and reads `/config/.ua-token-whatbox`.
 
 For the Whatbox qBittorrent instance, the external-program path mapping must
-rewrite the qBittorrent host path `/mnt/mpathr/artemisprime` to the path seen
+rewrite the qBittorrent host path `/home/artemisprime` to the path seen
 by the Whatbox Upload Assistant container, `/mnt/seeding`. Its argument
 template is `{content_path} -client qbittorrent`; the wrapper supplies the
 unattended mode and session prefix.

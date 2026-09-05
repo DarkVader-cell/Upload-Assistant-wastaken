@@ -2607,9 +2607,7 @@ class Common:
         # compact comparison as a safe fallback for those titles.
         source_compact = re.sub(r"[^a-z0-9]+", "", source_value.casefold())
         result_compact = re.sub(r"[^a-z0-9]+", "", result_title.casefold())
-        return source_title == cls._unit3d_title_key(result_title) or (
-            bool(source_compact) and source_compact in result_compact
-        )
+        return source_title == cls._unit3d_title_key(result_title) or (bool(source_compact) and source_compact in result_compact)
 
     async def _apply_region_distributor(self, meta: Meta, attributes: dict[str, Any]) -> None:
         region_id = attributes.get("region_id", 0)
@@ -2740,10 +2738,7 @@ class Common:
                 attributes = data[0].get("attributes", {})
 
                 if not id and not self._unit3d_result_matches_source(meta, attributes):
-                    logger.warning(
-                        f"[yellow]Ignoring {tracker} metadata IDs because its search result "
-                        "does not match the source filename.[/yellow]"
-                    )
+                    logger.warning(f"[yellow]Ignoring {tracker} metadata IDs because its search result does not match the source filename.[/yellow]")
                     return None, None, None, None, None, None, None, [], None
 
                 # Extract data from the attributes
@@ -2888,8 +2883,8 @@ class Common:
         try:
             async with httpx.AsyncClient() as client:
                 # get douban url
-                if meta.imdb_id is not None and meta.imdb_id != 0:
-                    data["search"] = f"tt{meta.imdb_id}"
+                if meta.imdb_tt:
+                    data["search"] = meta.imdb_tt
                     ptgen_json = await fetch_ptgen(client, url, data)
 
                     # Check for error and retry if needed

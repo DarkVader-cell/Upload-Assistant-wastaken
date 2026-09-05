@@ -59,7 +59,7 @@ def test_dupe_search_uses_pending_aware_paginated_endpoint() -> None:
 
     tracker = DigitalCore({"DEFAULT": {}, "TRACKERS": {"DIGITALCORE": {"api_key": "key"}}})
     tracker.session = Session()  # type: ignore[assignment]
-    meta = Meta(category="MOVIE", resolution="1080p", imdb="1234567", name="Movie.2026")
+    meta = Meta(category="MOVIE", resolution="1080p", imdb="1234567", imdb_tt="tt1234567", name="Movie.2026")
 
     results = asyncio.run(tracker.search_existing(meta))
 

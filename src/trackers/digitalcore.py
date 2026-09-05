@@ -133,7 +133,7 @@ class DigitalCore:
         return None
 
     async def search_existing(self, meta: Meta) -> list[dict[str, Any]]:
-        imdb_id = meta.imdb_info.get("imdbID") or (f"tt{meta.imdb}" if meta.imdb else "")
+        imdb_id = meta.imdb_tt
         category_id = self.get_category_id(meta)
         dupes: list[dict[str, Any]] = []
         search_name = str(meta.name or meta.clean_name or meta.title or "").strip()

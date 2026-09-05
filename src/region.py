@@ -2236,6 +2236,7 @@ async def get_service(
         "MSNBC": "MNBC",
         "MTOD": "MTOD",
         "MUBI": "MUBI",
+        "MY5": "MY5",
         "NATG": "NATG",
         "National Audiovisual Institute": "INA",
         "National Film Board": "NFB",

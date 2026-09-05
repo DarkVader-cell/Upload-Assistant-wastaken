@@ -15,7 +15,7 @@ fi
 repo_dir="${UA_REPO_DIR:-/home/artemis/Upload-Assistant-wastaken}"
 compose_file="${UA_COMPOSE_FILE:-/opt/yams/docker-compose.yaml}"
 env_file="${UA_COMPOSE_ENV:-/opt/yams/.env}"
-whatbox_host="${UA_WHATBOX_HOST:-cactus.whatbox.ca}"
+whatbox_host="${UA_WHATBOX_HOST:-grape.whatbox.ca}"
 whatbox_user="${UA_WHATBOX_USER:-artemisprime}"
 whatbox_repo="${UA_WHATBOX_REPO:-Upload-Assistant-wastaken}"
 

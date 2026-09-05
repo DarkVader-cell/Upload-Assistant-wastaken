@@ -42,7 +42,7 @@ class RtorrentClientMixin:
 
     def rtorrent(self, path: str, torrent_path: str, torrent: Torrent, meta: Meta, local_path: str, remote_path: str, client: dict[str, Any], tracker: str) -> None:
         # Get the appropriate source path (same as in qbittorrent method)
-        tracker_dir: str | None = None
+        tracker_dir: Path | None = None
         dst = path
         filelist = coerce_str_list(meta.filelist)
         src = filelist[0] if len(filelist) == 1 and Path(filelist[0]).is_file() and not meta.keep_folder else meta.path
@@ -117,14 +117,14 @@ class RtorrentClientMixin:
                 if link_target is None:
                     raise RuntimeError("link_target cannot be None")
                 tracker_dir = tracker_directory(link_target, link_dir_name, tracker)
-                Path(tracker_dir).mkdir(parents=True, exist_ok=True)
+                tracker_dir.mkdir(parents=True, exist_ok=True)
 
                 logger.debug(f"[bold yellow]Linking to tracker directory: {tracker_dir}")
                 logger.debug(f"[cyan]Source path: {src}")
 
                 # Extract only the folder or file name from `src`
                 src_name = Path(src.rstrip(os.sep)).name  # Ensure we get just the name
-                dst = Path(tracker_dir) / src_name  # Destination inside linked folder
+                dst = str(tracker_dir / src_name)  # Destination inside linked folder
 
                 # path magic
                 if Path(dst).exists() or Path(dst).is_symlink():
@@ -252,7 +252,7 @@ class RtorrentClientMixin:
             fr_file = f"{Path(path).parent.as_posix()}/fr.torrent"
             modified_fr = True
             logger.debug(f"[cyan]Modified fast resume file path because path mapping: {fr_file}")
-        if (meta.category in ("BOOK", "GAME") and len(filelist) > 1 and isdir) or isdir is False:
+        if isdir is False:
             path = Path(path).parent.as_posix()
         logger.debug(f"[cyan]Final path for rTorrent: {path}")
 

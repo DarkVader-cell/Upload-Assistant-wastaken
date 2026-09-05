@@ -200,8 +200,7 @@ class Blutopia(UNIT3D):
         ac3_count = sum(1 for track in audio_tracks if self._is_ac3(track))
         if ac3_count < truehd_count:
             logger.info(
-                f"{self.tracker}: [bold red]Every TrueHD audio track must have a standalone AC-3 compatibility track "
-                f"({ac3_count} AC-3 for {truehd_count} TrueHD).[/bold red]"
+                f"{self.tracker}: [bold red]Every TrueHD audio track must have a standalone AC-3 compatibility track ({ac3_count} AC-3 for {truehd_count} TrueHD).[/bold red]"
             )
             return False
 
@@ -258,22 +257,26 @@ class Blutopia(UNIT3D):
         blu_name = meta.name
         if meta.category == "TV" and meta.episode_title != "":
             blu_name = blu_name.replace(f"{meta.episode_title} {meta.resolution}", f"{meta.resolution}", 1)
-        imdb_name = meta.imdb_info.get("title", "")
-        imdb_year = self._valid_release_year(meta.imdb_info.get("year"))
-        imdb_aka = meta.imdb_info.get("aka", "")
-        year = str(meta.year) if meta.year is not None else ""
-        aka = meta.aka
         webdv = meta.webdv
-        if imdb_name and imdb_name.strip():
-            if aka:
-                blu_name = blu_name.replace(f"{aka} ", "", 1)
-            blu_name = blu_name.replace(f"{meta.title}", imdb_name, 1)
 
-            if imdb_aka and imdb_aka.strip() and imdb_aka != imdb_name and not meta.no_aka:
-                blu_name = blu_name.replace(f"{imdb_name}", f"{imdb_name} AKA {imdb_aka}", 1)
+        tmdb_title = str(meta.title or "").strip()
+        aka = str(meta.aka or "").strip()
+        if tmdb_title and aka:
+            aka_title = re.sub(r"^aka\s+", "", aka, flags=re.IGNORECASE).strip()
+            for alternate_title in (aka, aka_title):
+                if not alternate_title:
+                    continue
+                pattern = rf"^{re.escape(alternate_title)}\s+{re.escape(tmdb_title)}(?=\s|$)"
+                if re.search(pattern, blu_name, flags=re.IGNORECASE):
+                    blu_name = re.sub(pattern, f"{tmdb_title} {aka}", blu_name, count=1, flags=re.IGNORECASE)
+                    break
 
-        if meta.category != "TV" and imdb_year and imdb_year.strip() and year and year.strip() and imdb_year != year:
-            blu_name = blu_name.replace(f"{year}", imdb_year, 1)
+        tmdb_year = str(meta.year or "").strip()
+        if meta.category != "TV" and tmdb_title and tmdb_year:
+            title_prefix = re.escape(tmdb_title)
+            if aka and re.match(rf"^{title_prefix}\s+{re.escape(aka)}(?=\s|$)", blu_name, flags=re.IGNORECASE):
+                title_prefix = f"{title_prefix}\\s+{re.escape(aka)}"
+            blu_name = re.sub(rf"^({title_prefix}\s+)(?:19|20)\d{{2}}(?=\s|$)", rf"\g<1>{tmdb_year}", blu_name, count=1, flags=re.IGNORECASE)
 
         if webdv:
             blu_name = blu_name.replace("HYBRID ", "", 1)

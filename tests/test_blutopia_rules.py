@@ -1,3 +1,5 @@
+# ruff: noqa: S101
+
 import asyncio
 from types import SimpleNamespace
 
@@ -56,18 +58,30 @@ def test_blutopia_accepts_truehd_with_standalone_ac3():
     assert asyncio.run(tracker().get_additional_checks(meta)) is True
 
 
+def test_blutopia_uses_tmdb_title_and_year_before_the_alternate_title():
+    meta = Meta(
+        category="MOVIE",
+        title="TMDb Title",
+        aka="AKA Other Title",
+        name="AKA Other Title TMDb Title 2025 1080p WEB-DL-GRP",
+        year=2026,
+        imdb_info={"title": "IMDb Display Title", "aka": "IMDb Original Title", "year": 2025},
+        tracker_status={"BLUTOPIA": {}},
+    )
+
+    name = asyncio.run(tracker().get_name(meta))["name"]
+
+    assert name == "TMDb Title AKA Other Title 2026 1080p WEB-DL-GRP"
+
+
 @pytest.mark.parametrize(
-    ("adapter", "tracker_name"),
+    ("adapter", "tracker_name", "expected_year"),
     [
-        (tracker(), "BLUTOPIA"),
-        (object.__new__(ULCX), "ULCX"),
+        (tracker(), "BLUTOPIA", "2026"),
+        (object.__new__(ULCX), "ULCX", "2025"),
     ],
 )
-@pytest.mark.parametrize(
-    ("imdb_year", "expected_year"),
-    [(None, "2026"), ("None", "2026"), ("", "2026"), (2025, "2025")],
-)
-def test_unit3d_tracker_name_only_replaces_local_year_with_a_valid_imdb_year(adapter, tracker_name, imdb_year, expected_year):
+def test_unit3d_tracker_year_precedence(adapter, tracker_name, expected_year):
     adapter.tracker = tracker_name
     name = "Pagida Kali 2026 1080p SS WEB-DL DD+ 5.1 H.264-SH3LBY"
     meta = Meta(
@@ -77,7 +91,7 @@ def test_unit3d_tracker_name_only_replaces_local_year_with_a_valid_imdb_year(ada
         name=name,
         year=2026,
         resolution="1080p",
-        imdb_info={"title": "Pagida Kali", "aka": "Pagida Kali", "year": imdb_year},
+        imdb_info={"title": "Pagida Kali", "aka": "Pagida Kali", "year": 2025},
         tracker_status={tracker_name: {}},
     )
 
