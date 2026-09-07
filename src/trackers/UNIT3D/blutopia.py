@@ -180,6 +180,21 @@ class Blutopia(UNIT3D):
         match = re.search(r"(\d{3,4})", value)
         return bool(match and int(match.group(1)) < 720)
 
+    @staticmethod
+    def _remove_nfo_sections(description: str) -> str:
+        """BLU does not allow scene NFOs in the uploaded description."""
+        return re.sub(
+            r"\[center\]\[spoiler=[^\]]*NFO:\]\[code\].*?\[/code\]\[/spoiler\]\[/center\]",
+            "",
+            description,
+            flags=re.IGNORECASE | re.DOTALL,
+        ).strip()
+
+    async def get_description(self, meta: Meta) -> dict[str, str]:
+        description_data = await super().get_description(meta)
+        description = description_data.get("description", "")
+        return {"description": self._remove_nfo_sections(description)}
+
     async def get_additional_checks(self, meta: Meta) -> bool:
         should_continue = True
         release_group = str(meta.tag or "").lstrip("-")
