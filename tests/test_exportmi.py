@@ -7,7 +7,20 @@ from unittest.mock import Mock, patch
 import pytest
 
 from bin.download_integrity import SHA256_BY_ASSET
+from src.exportmi import mi_resolution
 from src.mediainfo import MediaInfo, _binary, _input_path, strip_report_by_line
+
+
+def test_resolution_prefers_mediainfo_dimensions_over_filename_guess() -> None:
+    resolution = asyncio.run(mi_resolution("unrecognized", {"screen_size": "480p"}, 720, "p"))
+
+    assert resolution == "576p"
+
+
+def test_resolution_uses_filename_guess_when_dimensions_are_unknown() -> None:
+    resolution = asyncio.run(mi_resolution("unrecognized", {"screen_size": "576p"}, 0, "p"))
+
+    assert resolution == "576p"
 
 
 def test_cli_backed_mediainfo_preserves_track_access() -> None:

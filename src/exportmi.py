@@ -146,11 +146,12 @@ async def mi_resolution(
             "OTHERp": "OTHER",
         }
         try:
-            resolution = guess["screen_size"]
-            # Check if the resolution from guess exists in our map
-            if resolution not in res_map:
-                # If not in the map, use width-based mapping
-                resolution = width_map.get(f"{width}{scan}", "OTHER")
+            # Prefer the resolution derived from MediaInfo dimensions.  The
+            # filename guess can be missing or misleading (for example, a
+            # 576p video whose filename does not include its resolution).
+            resolution = width_map.get(f"{width}{scan}", "OTHER")
+            if resolution == "OTHER":
+                resolution = guess.get("screen_size", "OTHER")
         except Exception:
             # If we can't get from guess, use width-based mapping
             resolution = width_map.get(f"{width}{scan}", "OTHER")
