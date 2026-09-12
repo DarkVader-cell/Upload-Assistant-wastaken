@@ -73,7 +73,7 @@ python upload.py "/path/to/content" --trackers yourtracker
 
 ## Whatbox deployment used by this project
 
-The Whatbox HDD instance uses the `grape.whatbox.ca` SSH host, rootless Podman,
+The Whatbox HDD instance uses the `destiny.whatbox.ca` SSH host, rootless Podman,
 and the deployment directory `~/Upload-Assistant-wastaken`. The WebUI container
 is `upload-assistant-wastaken`, is defined by `docker-compose.local.yml`, and
 pulls `ghcr.io/darkvader-cell/upload-assistant-wastaken:latest` directly.
@@ -84,7 +84,7 @@ features.
 Connect and inspect it with:
 
 ```bash
-ssh artemisprime@grape.whatbox.ca
+ssh artemisprime@destiny.whatbox.ca
 cd ~/Upload-Assistant-wastaken
 podman ps -a
 ```
@@ -95,7 +95,9 @@ podman logs --tail 100 upload-assistant-wastaken
 ```
 
 The WebUI is exposed on port `12345`, for example
-`http://grape.whatbox.ca:12345` when the Whatbox firewall allows that port.
+`http://destiny.whatbox.ca:12345` when the Whatbox firewall allows that port.
+The qBittorrent WebUI is available through the Whatbox-provided HTTPS link:
+`https://qbittorrent.destinyhdd.box.ca`.
 
 Restart without rebuilding:
 
@@ -111,6 +113,19 @@ podman compose -f docker-compose.local.yml down
 podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken
 curl -fsS http://127.0.0.1:12345/api/health
 ```
+
+From the maintained checkout, the deployment wrapper updates both the local
+homelab client and Destiny/Whatbox in sequence:
+
+```bash
+./scripts/ua-update
+```
+
+Use `./scripts/ua-update local` or `./scripts/ua-update whatbox` for one
+client only. The wrapper pulls the published image, recreates only the UA
+service, and checks the container status; it does not touch persistent
+`docker-data/` state. Whatbox credentials are read from the local
+`whatbox.env` file and are never committed.
 
 Apply the same update to the Clementine client from its own checkout; its
 WebUI health endpoint is on port `12346`. With the installed
@@ -137,7 +152,7 @@ podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-was
 Do not remove the persistent `docker-data/` directories when recreating the
 container.
 
-### Clementine SSD-to-Grape handoff
+### Clementine SSD-to-Destiny handoff
 
 The worker migrates completed `Uploads` tracker hardlinks and, once every
 related tracker handoff is verified and the source is no longer hardlinked,
@@ -146,36 +161,36 @@ The retained `to_upload` tag does not block this verified original migration.
 Completed BeyondHD originals with no UA `Uploads` representation are handled
 as direct sources through the same exact-torrent verification path. If tracker
 hardlinks are attached on Clementine, their batch completes first and the
-original reuses the verified Grape payload as a destination hardlink.
+original reuses the verified Destiny payload as a destination hardlink.
 Sources remain age-gated; ordinary UA originals also retain their upload-lifecycle
 gate until they satisfy the verified source conditions. Historical non-BeyondHD
 originals without matching handoff state still require the explicit non-Uploads
 QUI recovery action; otherwise a cross-seed search may be needed to reconstruct
 the missing original seed.
 
-Completed tracker hardlinks are handed from Clementine's SSD to Grape only
+Completed tracker hardlinks are handed from Clementine's SSD to Destiny only
 after their local upload window. The credential remains on the homelab host;
 the local retry timer invokes the worker every 15 minutes (with a small random
 delay), while QUI remains available for an immediate selected release.
 The worker takes an exclusive lock, so a manual QUI request, a retry, and the
 periodic watcher cannot copy or delete the same torrent concurrently.
-The Clementine-to-Grape SSH and rsync legs force IPv4 (`-4`); Whatbox advertises
-an IPv6 address for the Grape hostname that is not reliable from Clementine.
+The Clementine-to-Destiny SSH and rsync legs force IPv4 (`-4`); Whatbox advertises
+an IPv6 address for the destination hostname that is not reliable from Clementine.
 
 For each eligible batch, the worker:
 
 1. Reannounces all eligible source torrents and waits 120 seconds before any
    copy begins, including a delayed retry after an outage, giving trackers time
    to record final source-side statistics.
-2. Copies the payload resumably to Grape, or makes a hardlink to an already
+2. Copies the payload resumably to Destiny, or makes a hardlink to an already
    transferred identical inode. This keeps duplicate tracker releases to one
-   physical Grape copy.
-3. Imports the exact torrent infohash into Grape qBittorrent. The importer
+   physical Destiny copy.
+3. Imports the exact torrent infohash into Destiny qBittorrent. The importer
    waits up to 90 seconds for qBittorrent resume data and requires a complete,
    seed-ready registration.
 4. Removes the Clementine tracker hardlink only after that verification. The
    original SSD source is then copied and registered as its own exact torrent
-   once all matching tracker handoffs have verified on Grape. A later cleanup
+   once all matching tracker handoffs have verified on Destiny. A later cleanup
    pass removes the original only after that source handoff is verified.
    A failed or interrupted transfer leaves the source intact, records an
    exponential retry deadline in handoff state, and is retried by the timer.
@@ -183,13 +198,16 @@ For each eligible batch, the worker:
 #### Direct BeyondHD originals
 
 A completed BeyondHD original can be handed off even when it was not created
-by a UA `Uploads` hardlink. The worker copies the exact original torrent,
-imports it into Grape qBittorrent, verifies it is complete and seed-ready, and
-only then deletes the Clementine source. If the same SSD payload has attached
-UA tracker hardlinks, those handoffs finish first; the original then uses a
-Grape hardlink to their verified canonical inode. A source with remaining SSD
-hardlinks, incomplete data, or an unsupported directory tree is skipped and
-left intact for a later retry.
+by a UA `Uploads` hardlink. The worker recognizes the exact BeyondHD source,
+maps Clementine `Downloads`/`files` paths to Grape, and copies the original
+torrent. It imports that torrent into Grape qBittorrent, verifies it is
+complete and seed-ready, and only then deletes the Clementine source. If the
+same SSD payload has attached UA tracker hardlinks, those handoffs finish
+first; the original then uses a Grape hardlink to their verified canonical
+inode. Directory payloads are validated recursively, including size,
+symlink rejection, and hardlink identity when reusing a canonical copy. A
+source with remaining SSD hardlinks, incomplete data, or an unsupported tree
+is skipped and left intact for a later retry.
 
 The handoff state is stored on Clementine in
 `docker-data/data/handoff-state.json`; it records transfer stages and allows a
