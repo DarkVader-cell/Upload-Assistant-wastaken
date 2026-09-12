@@ -19,8 +19,6 @@ from src.torrent_clients import DelugeClientMixin, QbittorrentClientMixin, Rtorr
 from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local
 from src.torrent_manifest import TorrentManifest
 from src.torrent_policy import HDBITS_POLICY, TorrentStats, generic_reuse_allowed
-
-from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local
 from src.torrentcreate import SUBTITLE_EXTENSIONS
 
 # Secure XML-RPC client using defusedxml to prevent XML attacks
@@ -290,19 +288,22 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                     continue
                 candidates = result if isinstance(result, list) else [result] if isinstance(result, str) else []
                 for candidate in candidates:
-                    if meta.subtitle_files and not self._torrent_includes_all_local_subtitles(candidate, meta) and not self._torrent_has_no_subtitles(candidate):
-                        continue
-                    torrent = Torrent.read(candidate)
-                    has_subs = any(Path(str(file)).suffix.casefold() in SUBTITLE_EXTENSIONS for file in torrent.files)
-                    entry = manifest.register(candidate, "base_subs" if has_subs else "base", f"client:{client_name}")
-                    managed = str(manifest.entry_path(entry))
-                    if managed not in paths:
-                        paths.append(managed)
-                    meta.reuse_torrent_client = client_name
-                    candidate_path = Path(candidate)
-                    client_staging = Path(meta.base_dir) / "tmp" / meta.uuid / "torrents" / ".client"
-                    if client_staging.resolve() in candidate_path.resolve().parents:
-                        candidate_path.unlink(missing_ok=True)
+                    try:
+                        if meta.subtitle_files and not self._torrent_includes_all_local_subtitles(candidate, meta) and not self._torrent_has_no_subtitles(candidate):
+                            continue
+                        torrent = Torrent.read(candidate)
+                        has_subs = any(Path(str(file)).suffix.casefold() in SUBTITLE_EXTENSIONS for file in torrent.files)
+                        entry = manifest.register(candidate, "base_subs" if has_subs else "base", f"client:{client_name}")
+                        managed = str(manifest.entry_path(entry))
+                        if managed not in paths:
+                            paths.append(managed)
+                        meta.reuse_torrent_client = client_name
+                        candidate_path = Path(candidate)
+                        client_staging = Path(meta.base_dir) / "tmp" / meta.uuid / "torrents" / ".client"
+                        if client_staging.resolve() in candidate_path.resolve().parents:
+                            candidate_path.unlink(missing_ok=True)
+                    except Exception as error:
+                        logger.info(f"[yellow]Invalid torrent candidate from client '{client_name}', continuing: {error}[/yellow]")
         finally:
             meta.client = original_client
         return paths

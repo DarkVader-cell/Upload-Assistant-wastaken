@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -183,7 +184,14 @@ async def test_client_search_prefers_torrent_with_all_local_subtitles(tmp_path, 
 @pytest.mark.asyncio
 async def test_client_search_continues_when_one_client_fails(tmp_path, monkeypatch):
     reusable_torrent = tmp_path / "reusable.torrent"
-    reusable_torrent.touch()
+    torrent = Torrent()
+    torrent.metainfo["info"] = {
+        "name": "release.mkv",
+        "length": 1,
+        "piece length": 16384,
+        "pieces": b"x" * 20,
+    }
+    torrent.write(reusable_torrent, overwrite=True)
 
     async def fake_search(_self, _meta, client_name, *_args):
         if client_name == "broken":
@@ -200,7 +208,9 @@ async def test_client_search_continues_when_one_client_fails(tmp_path, monkeypat
 
     found = await Clients(config).find_existing_torrent(meta)
 
-    assert found == str(reusable_torrent)  # noqa: S101
+    assert found is not None  # noqa: S101
+    assert Path(found).is_file()  # noqa: S101
+    assert found != str(reusable_torrent)  # noqa: S101
     assert meta.reuse_torrent_client == "working"  # noqa: S101
 
 

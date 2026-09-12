@@ -48,7 +48,7 @@ import signal
 import threading
 import time
 import traceback
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlparse
 

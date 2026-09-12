@@ -2660,6 +2660,9 @@ async def get_service(
     for key, value in services.items():
         if value == service and len(key) > len(service_longname):
             service_longname = key
+    # Keep the established compact brand spelling when local aliases include
+    # a spaced variant (for example, ``Jio Hotstar``).
+    service_longname = {"JHS": "JioHotstar"}.get(service, service_longname)
     if service_longname in ("Amazon Prime", "Amazon Prime Video"):
         service_longname = "Amazon"
     return service, service_longname

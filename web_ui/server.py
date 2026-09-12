@@ -35,7 +35,7 @@ from collections.abc import Mapping, Sequence
 import psutil
 
 import web_ui.auth as auth_mod
-from src.webui_progress import PROGRESS_STDOUT_PREFIX, ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
+from src.webui_progress import PROGRESS_STDOUT_PREFIX
 from src.prompt_sound import PROMPT_SOUND_STDOUT_MARKER
 from src.app_paths import CODE_DIR, DATA_DIR, STATE_DIR
 from src.external_tools import EXTERNAL_TOOL_KEYS, check_external_tools
