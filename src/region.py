@@ -4,6 +4,8 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from src.custom_streaming_services import CUSTOM_STREAMING_SERVICES
+
 GuessitFn = Callable[[str, dict[str, Any] | None], dict[str, Any]]
 _guessit_module = importlib.import_module("guessit")
 _guessit_fn: GuessitFn = _guessit_module.guessit
@@ -2208,6 +2210,8 @@ async def get_service(
         "Fawsome TV": "FSTV",
         "FBW": "FBW",
         "FBWatch": "FBW",
+
+        "FILMICCA": "FLMC",
         "Filmicca": "FLMC",
         "Filmin": "FLMN",
         "Filmio": "FMIO",
@@ -2607,6 +2611,9 @@ async def get_service(
         "ZEE5": "ZEE5",
     }
 
+    # Keep project-specific aliases out of this upstream-maintained catalogue.
+    services.update(CUSTOM_STREAMING_SERVICES)
+
     if get_services_only:
         return services
 
@@ -2624,6 +2631,14 @@ async def get_service(
     title_guess_title = str(title_guess.get("title", ""))
     title_guess_episode_title = str(title_guess.get("episode_title", ""))
     longest_match = 0
+
+
+    # SonyLIV is commonly embedded in release filenames without separators
+    # (and sometimes alongside punctuation/underscores). Recognise it
+    # anywhere in the filename, independent of case, before whole-word scans.
+    if "sonyliv" in re.sub(r"[^a-z0-9]", "", video_name.casefold()):
+        service = "SONY"
+
     for key, value in services.items():
         # Keep long descriptive names for metadata, but only match concise filename aliases.
         filename_alias = re.sub(r"[.()]", " ", key)

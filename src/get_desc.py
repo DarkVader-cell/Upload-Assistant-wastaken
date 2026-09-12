@@ -341,6 +341,18 @@ class DescriptionBuilder:
         val = self.config["DEFAULT"].get(key, default)
         return str(val) if val is not None else default
 
+    @staticmethod
+    def _manual_audio_language_values(meta: Meta) -> list[str]:
+        """Return explicitly supplied audio-language overrides in display order."""
+        raw_languages = meta.manual_audio_languages
+        if not raw_languages:
+            return []
+        values = [raw_languages] if isinstance(raw_languages, str) else raw_languages
+        result: list[str] = []
+        for value in values:
+            result.extend(part.strip() for part in str(value).split(",") if part.strip())
+        return list(dict.fromkeys(result))
+
     async def get_custom_header(self, meta: Meta) -> str:
         """Returns a custom header if configured."""
         try:
@@ -636,6 +648,12 @@ class DescriptionBuilder:
         """Returns the screenshot header if applicable."""
         try:
             screenheader = self._get_str_config("screenshot_header", "", meta)
+            if screenheader.strip().lower() in {
+                "[h2]screenshots[/h2]",
+                "[h3]screenshots[/h3]",
+                "[b]screenshots[/b]",
+            }:
+                return ""
             if screenheader:
                 return screenheader
         except Exception as e:

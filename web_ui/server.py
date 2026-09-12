@@ -238,8 +238,11 @@ _tracker_status_check_lock = threading.Lock()
 
 
 def _load_argument_presets() -> list[dict[str, str]]:
-    """Load the shared Web UI argument presets from the data directory."""
-    return load_argument_presets(ARGUMENT_PRESETS_PATH, MAX_ARGUMENT_PRESETS)
+    """Load shared presets, falling back to the legacy checkout location."""
+    read_path = ARGUMENT_PRESETS_PATH
+    if not read_path.exists() and LEGACY_ARGUMENT_PRESETS_PATH.exists():
+        read_path = LEGACY_ARGUMENT_PRESETS_PATH
+    return load_argument_presets(read_path, MAX_ARGUMENT_PRESETS)
 
 
 def _save_argument_presets(presets: list[dict[str, str]]) -> None:

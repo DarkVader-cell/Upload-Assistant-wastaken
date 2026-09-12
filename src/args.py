@@ -371,6 +371,21 @@ class Args:
         )
         parser.add_argument("--queue", nargs=1, required=False, help="(--queue queue_name) Process an entire folder (files/subfolders) in a queue")
         parser.add_argument("-lq", "--limit-queue", dest="limit_queue", nargs=1, required=False, help="Limit the amount of queue files processed", default=0)
+        parser.add_argument("--plan", "--dry-run-plan", dest="dry_run_plan", action="store_true", help="Show stages, cache hits, expected calls, and selected trackers without executing")
+        parser.add_argument("--no-resume", action="store_true", help="Ignore saved preparation checkpoints for this run")
+        parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)
+        parser.add_argument(
+            "--queue-prepare-concurrency",
+            type=int,
+            default=0,
+            help="Prepare unattended queue items concurrently; uploads remain serialized",
+        )
+        parser.add_argument(
+            "--unit3d-dupe-max-pages",
+            type=int,
+            default=0,
+            help="Maximum live Unit3D duplicate-search pages per tracker (0 uses config)",
+        )
         parser.add_argument(
             "-sc",
             "--site-check",
@@ -502,6 +517,28 @@ class Args:
             type=str,
             dest="manual_cast",
         )
+
+            "--prompt-missing-ids",
+            dest="prompt_missing_ids",
+            action="store_true",
+            required=False,
+            help="Pause for IMDb/TMDb review when filename matching leaves either ID unresolved",
+        )
+        parser.add_argument(
+            "--no-prompt-missing-ids",
+            dest="no_prompt_missing_ids",
+            action="store_true",
+            required=False,
+            help="Do not pause detached uploads when IMDb/TMDb IDs remain unresolved",
+        )
+        parser.add_argument(
+            "--imdb-optional",
+            dest="imdb_optional",
+            action="store_true",
+            required=False,
+            help="Allow an upload to proceed with only a TMDb ID",
+        )
+        parser.add_argument("--cast", nargs=1, required=False, help="Comma-separated cast override (takes priority over API metadata)", type=str, dest="manual_cast")
         parser.add_argument("-mal", "--mal", nargs=1, required=False, help="MAL ID", type=str, dest="mal_manual")
         parser.add_argument("-tvmaze", "--tvmaze", nargs=1, required=False, help="TVMAZE ID", type=str, dest="tvmaze_manual")
         parser.add_argument("-tvdb", "--tvdb", nargs=1, required=False, help="TVDB ID", type=str, dest="tvdb_manual")
@@ -539,6 +576,15 @@ class Args:
         parser.add_argument("--no-edition", dest="no_edition", action="store_true", required=False, help="Remove Edition from title")
         parser.add_argument("--dual-audio", dest="dual_audio", action="store_true", required=False, help="Add Dual-Audio to the title")
         parser.add_argument("-ol", "--original-language", dest="manual_language", nargs=1, required=False, help="Set original audio language")
+        parser.add_argument(
+            "-al",
+            "--audio-language",
+            "--audio-language-override",
+            dest="manual_audio_languages",
+            nargs="+",
+            required=False,
+            help="Override detected audio language(s), comma-separated or space-separated",
+        )
         parser.add_argument(
             "-oil",
             "--only-if-languages",
@@ -857,6 +903,13 @@ class Args:
             required=False,
             help="(qBitTorrent only with auto torrent searching) Force recheck torrent in client before uploading",
             dest="force_recheck",
+        )
+        parser.add_argument(
+            "--force-upload",
+            action="store_true",
+            required=False,
+            help="Force tracker uploads past tracker-specific media eligibility checks (does not bypass authentication, duplicates, or tracker bans)",
+            dest="force_upload",
         )
         parser.add_argument("-dr", "--draft", action="store_true", required=False, help="Send to drafts (BEYONDHD, LST)")
         parser.add_argument("-mq", "--modq", action="store_true", required=False, help="Send to modQ")

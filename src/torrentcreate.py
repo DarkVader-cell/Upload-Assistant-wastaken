@@ -483,8 +483,8 @@ class TorrentCreator:
                     exclude_globs=exclude or [],
                     include_globs=custom_include,
                     creation_date=datetime.now(UTC),
-                    comment=f"{meta.ua_name} (fork)",
-                    created_by=f"{meta.ua_name} (fork)",
+                    comment="UA, Arty's fork",
+                    created_by="UA, Arty's fork",
                     piece_size=piece_size,
                 )
                 progress_id = f"torrent-hash-{meta.uuid}"
@@ -588,6 +588,43 @@ class TorrentCreator:
     async def create_base_from_existing_torrent(torrentpath: str, base_dir: str, uuid: str) -> str | None:
         if Path(torrentpath).exists():
             base_torrent = Torrent.read(torrentpath)
+            base_torrent.trackers = ["https://fake.tracker"]
+            base_torrent.comment = "UA, Arty's fork"
+            base_torrent.created_by = "UA, Arty's fork"
+            info_dict = base_torrent.metainfo["info"]
+            valid_keys = ["name", "piece length", "pieces", "private", "source"]
+
+            # Add the correct key based on single vs multi file torrent
+            if "files" in info_dict:
+                valid_keys.append("files")
+            elif "length" in info_dict:
+                valid_keys.append("length")
+
+            # Remove everything not in the whitelist
+            for each in list(info_dict):
+                if each not in valid_keys:
+                    info_dict.pop(each, None)  # type: ignore
+            for each in list(base_torrent.metainfo):
+                if each not in (
+                    "announce",
+                    "comment",
+                    "creation date",
+                    "created by",
+                    "encoding",
+                    "info",
+                    "imdb",
+                    "tmdb",
+                    "tvdb",
+                    "tvmaze",
+                    "mal",
+                    "douban",
+                    "igdb",
+                    "asin",
+                    "isbn",
+                ):
+                    base_torrent.metainfo.pop(each, None)  # type: ignore
+            base_torrent.source = "L4G"
+            base_torrent.private = True
             has_subs = any(Path(str(f)).suffix.lower() in SUBTITLE_EXTENSIONS for f in base_torrent.files)
             manifest = TorrentManifest(base_dir, uuid)
             entry = manifest.register(torrentpath, "base_subs" if has_subs else "base", "client")
