@@ -510,14 +510,6 @@ class Args:
         imdb_group.add_argument("-imdb", "--imdb", nargs=1, required=False, help="IMDb ID", type=str, dest="imdb_manual")
         imdb_group.add_argument("--no-imdb", action="store_true", required=False, help="Do not search for or use IMDb metadata")
         parser.add_argument(
-            "--cast",
-            nargs=1,
-            required=False,
-            help="Comma-separated cast or XXX performer override (takes priority over detected metadata)",
-            type=str,
-            dest="manual_cast",
-        )
-
             "--prompt-missing-ids",
             dest="prompt_missing_ids",
             action="store_true",
@@ -538,7 +530,14 @@ class Args:
             required=False,
             help="Allow an upload to proceed with only a TMDb ID",
         )
-        parser.add_argument("--cast", nargs=1, required=False, help="Comma-separated cast override (takes priority over API metadata)", type=str, dest="manual_cast")
+        parser.add_argument(
+            "--cast",
+            nargs=1,
+            required=False,
+            help="Comma-separated cast or XXX performer override (takes priority over detected metadata)",
+            type=str,
+            dest="manual_cast",
+        )
         parser.add_argument("-mal", "--mal", nargs=1, required=False, help="MAL ID", type=str, dest="mal_manual")
         parser.add_argument("-tvmaze", "--tvmaze", nargs=1, required=False, help="TVMAZE ID", type=str, dest="tvmaze_manual")
         parser.add_argument("-tvdb", "--tvdb", nargs=1, required=False, help="TVDB ID", type=str, dest="tvdb_manual")

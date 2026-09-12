@@ -283,7 +283,11 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                     logger.info(f"[yellow]Client '{client_name}' not found in TORRENT_CLIENTS config, skipping...")
                     continue
                 meta.client = client_name
-                result = await self._search_single_client_for_torrent(meta, client_name, False, False, None, True)
+                try:
+                    result = await self._search_single_client_for_torrent(meta, client_name, False, False, None, True)
+                except Exception as error:
+                    logger.info(f"[yellow]Torrent search failed for client '{client_name}', continuing with remaining clients: {error}[/yellow]")
+                    continue
                 candidates = result if isinstance(result, list) else [result] if isinstance(result, str) else []
                 for candidate in candidates:
                     if meta.subtitle_files and not self._torrent_includes_all_local_subtitles(candidate, meta) and not self._torrent_has_no_subtitles(candidate):
