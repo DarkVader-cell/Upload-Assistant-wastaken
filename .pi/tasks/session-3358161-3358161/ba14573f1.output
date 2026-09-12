@@ -1,6 +1,0 @@
-user_reset=admin
-curl: (7) Failed to connect to 127.0.0.1 port 12347 after 0 ms: Could not connect to server
-backup=docker-data/webui-auth/webui_auth.json.bak.20260909T151806Z-credential-reset
-health_http=000
-upload-assistant-wastaken_infra	Created
-upload-assistant-wastaken	Up 16 seconds (starting)

@@ -1,4 +1,0 @@
-alive
- 898293       1 Zl         05:32 [podman] <defunct>
-1006844 1006556 Sl         01:41 podman ps -a --filter name=upload-assistant-wastaken --format {{.Names}}\t{{.Status}}
-1006871 1006844 Sl         01:41 podman ps -a --filter name=upload-assistant-wastaken --format {{.Names}}\t{{.Status}}

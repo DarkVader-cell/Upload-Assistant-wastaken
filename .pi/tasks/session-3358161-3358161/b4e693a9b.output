@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-cd /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken
-podman pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest
-podman rm -f upload-assistant-wastaken 2>/dev/null || true
-podman pod rm -f upload-assistant-wastaken 2>/dev/null || true
-podman compose -f docker-compose.local.yml up -d upload-assistant-wastaken
-podman ps --filter name=upload-assistant-wastaken
