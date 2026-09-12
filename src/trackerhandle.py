@@ -27,6 +27,15 @@ from src.trackersetup import TrackerSetup
 type StatusDict = dict[str, Any]
 
 
+def should_inject_uploaded_torrent(tracker_name: str, status: Mapping[str, Any], is_usenet: bool) -> bool:
+    """Return whether an uploaded torrent should be injected into a client."""
+    if is_usenet:
+        return False
+    if tracker_name.upper() == "BEYONDHD":
+        return True
+    return not bool(status.get("pending_publication"))
+
+
 async def check_mod_q_and_draft(
     tracker_class: Any,
     meta: Meta,

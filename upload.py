@@ -2096,6 +2096,11 @@ async def save_processed_file(log_file: str, file_path: str) -> None:
         await f.write(json.dumps(processed_files, indent=4))
 
 
+def queue_item_has_successful_upload(tracker_statuses: Sequence[Mapping[str, Any]], *, debug: bool = False) -> bool:
+    """Return whether a queue item is safe to mark as processed."""
+    return debug or any(status.get("upload_success") is True for status in tracker_statuses)
+
+
 def get_local_version(version_file: str | Path) -> str | None:
     """Extracts the local version from the version.py file."""
     try:
