@@ -1,5 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 # ruff: noqa: I001
+import atexit
 import ast
 import asyncio
 import base64
@@ -16,6 +17,7 @@ import queue
 import re
 import secrets
 import shlex
+import sqlite3
 import subprocess
 import sys
 import threading
@@ -33,10 +35,24 @@ from collections.abc import Mapping, Sequence
 import psutil
 
 import web_ui.auth as auth_mod
-from src.webui_progress import PROGRESS_STDOUT_PREFIX
+from src.webui_progress import PROGRESS_STDOUT_PREFIX, ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
 from src.prompt_sound import PROMPT_SOUND_STDOUT_MARKER
 from src.app_paths import CODE_DIR, DATA_DIR, STATE_DIR
 from src.external_tools import EXTERNAL_TOOL_KEYS, check_external_tools
+from src.manual_metadata import (
+    parse_detached_metadata_request,
+    parse_detached_release_metadata_request,
+    parse_metadata_submission,
+    parse_release_metadata_submission,
+)
+from src.runtime.history import ReleaseHistoryStore
+from web_ui.browse_index import BrowseIndex
+from web_ui.services.config_remove_api import ConfigSourceOperations, create_config_remove_blueprint
+from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
+from web_ui.services.history_api import create_history_api_blueprint
+from web_ui.services.presets import load_argument_presets, save_argument_presets
+from web_ui.services.qui_sync import QuiEventBroker, create_qui_sync_blueprint, progress_from_log_line
+from web_ui.services.runtime_api import create_runtime_api_blueprint
 from src.meta import Meta
 from src.version import __version__
 from src.update_checker import get_changelog_history, get_update_status
@@ -223,34 +239,12 @@ _tracker_status_check_lock = threading.Lock()
 
 def _load_argument_presets() -> list[dict[str, str]]:
     """Load the shared Web UI argument presets from the data directory."""
-    try:
-        read_path = ARGUMENT_PRESETS_PATH
-        if not read_path.exists() and LEGACY_ARGUMENT_PRESETS_PATH.exists():
-            read_path = LEGACY_ARGUMENT_PRESETS_PATH
-        if not read_path.exists():
-            return []
-        raw = json.loads(read_path.read_text(encoding="utf-8"))
-        if not isinstance(raw, list):
-            return []
-        presets: list[dict[str, str]] = []
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            name = item.get("name")
-            arguments = item.get("arguments")
-            if isinstance(name, str) and isinstance(arguments, str) and name.strip() and arguments.strip():
-                presets.append({"name": name.strip(), "arguments": arguments.strip()})
-        return presets[-MAX_ARGUMENT_PRESETS:]
-    except OSError, TypeError, ValueError:
-        return []
+    return load_argument_presets(ARGUMENT_PRESETS_PATH, MAX_ARGUMENT_PRESETS)
 
 
 def _save_argument_presets(presets: list[dict[str, str]]) -> None:
     """Persist shared Web UI argument presets with an atomic file replacement."""
-    ARGUMENT_PRESETS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = ARGUMENT_PRESETS_PATH.with_suffix(".json.tmp")
-    temp_path.write_text(json.dumps(presets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temp_path.replace(ARGUMENT_PRESETS_PATH)
+    save_argument_presets(ARGUMENT_PRESETS_PATH, presets)
 
 
 # Access logging helper
@@ -808,6 +802,15 @@ active_processes_lock = threading.Lock()
 # Runtime browse roots (set by upload.py when starting web UI)
 _runtime_browse_roots: str | None = None
 
+# Persistent filename index used by the interactive file-browser search.
+# Override the refresh interval with UA_BROWSE_INDEX_TTL (seconds).
+try:
+    _browse_index_ttl = max(30, int(os.environ.get("UA_BROWSE_INDEX_TTL", "900")))
+except (TypeError, ValueError):
+    _browse_index_ttl = 900
+_browse_index = BrowseIndex(Path(__file__).resolve().parent.parent / "tmp" / "browse_index.sqlite3", refresh_seconds=_browse_index_ttl)
+atexit.register(_browse_index.close)
+
 # Runtime flags and stored totp
 saved_totp_secret: str | None = None
 
@@ -1315,7 +1318,19 @@ def _close_webui_process_io(process: _WebUIProcess) -> None:
 # Store active processes
 active_processes: dict[str, ProcessInfo] = {}
 
-
+# Detached Qui jobs are intentionally serialized to preserve submission order.
+detached_jobs: dict[str, dict[str, Any]] = {}
+detached_job_queue: list[str] = []
+detached_jobs_lock = threading.Lock()
+detached_worker_thread: threading.Thread | None = None
+DETACHED_JOB_STATE_PATH = Path(__file__).resolve().parent.parent / "tmp" / "qui_jobs.json"
+QUI_EVENT_BROKER = QuiEventBroker()
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+try:
+    _runtime_config = getattr(_dynamic_import("data.config"), "config", {})
+except (ImportError, AttributeError):
+    _runtime_config = {}
+RELEASE_HISTORY = ReleaseHistoryStore(_PROJECT_ROOT, _runtime_config)
 def _terminate_process_tree(process: _WebUIProcess, timeout: float = 2.0) -> bool:
     """Terminate an upload controller and every child it has started."""
     if process.poll() is not None:
@@ -1323,14 +1338,14 @@ def _terminate_process_tree(process: _WebUIProcess, timeout: float = 2.0) -> boo
 
     try:
         root = psutil.Process(process.pid)
-    except psutil.NoSuchProcess, psutil.AccessDenied, OSError:
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
         return process.poll() is not None
 
     # Snapshot descendants before stopping the controller: once the controller
     # exits, its children may be re-parented and become impossible to identify.
     try:
         processes = root.children(recursive=True)
-    except psutil.NoSuchProcess, psutil.AccessDenied, OSError:
+    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
         processes = []
     processes.append(root)
 
@@ -1499,6 +1514,274 @@ def _discard_session_state(session_id: str, process_state: Mapping[str, object])
         run_token = process_state.get("run_token")
         if run_token and current_state.get("run_token") == run_token:
             active_processes.pop(session_id, None)
+
+
+def _submit_auth_ok() -> tuple[bool, tuple[Any, int] | None]:
+    bearer = _get_bearer_from_header()
+    if bearer:
+        if _token_is_valid(bearer):
+            return True, None
+        return False, (jsonify({"success": False, "error": "Forbidden (invalid token)"}), 403)
+    if not _is_authenticated():
+        return False, (jsonify({"success": False, "error": "Authentication required"}), 401)
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return False, (jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403)
+    return True, None
+
+
+def _detached_job_snapshot(limit: int = 100) -> list[dict[str, Any]]:
+    with detached_jobs_lock:
+        jobs = {job_id: dict(job) for job_id, job in detached_jobs.items()}
+        queued = list(detached_job_queue)
+    return snapshot_detached_jobs(jobs, queued, limit=limit, json_safe=_json_safe)
+
+
+def _persist_detached_jobs_locked() -> None:
+    """Persist detached Qui state without exposing it through the status API."""
+    DETACHED_JOB_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {job_id: dict(job) for job_id, job in detached_jobs.items()}
+    temporary_path = DETACHED_JOB_STATE_PATH.with_suffix(".json.tmp")
+    temporary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    temporary_path.replace(DETACHED_JOB_STATE_PATH)
+
+
+def _set_detached_job(job_id: str, **updates: Any) -> None:
+    snapshot: dict[str, Any] | None = None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if job:
+            job.update(updates)
+            with contextlib.suppress(OSError, TypeError, ValueError):
+                _persist_detached_jobs_locked()
+            snapshot = dict(job)
+    if snapshot is not None:
+        QUI_EVENT_BROKER.publish("job.updated", job_id, snapshot)
+        with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+            RELEASE_HISTORY.record_job(snapshot)
+
+
+def _restore_detached_jobs() -> None:
+    """Restore Qui jobs after a WebUI restart.
+
+    Queued jobs are safe to resume because no child process was started. Jobs
+    which were already running are retained as interrupted instead of being
+    blindly replayed, since a tracker may have accepted the request before the
+    WebUI/container stopped.
+    """
+    restored = restore_detached_jobs(DETACHED_JOB_STATE_PATH)
+    if restored is None:
+        return
+
+    with detached_jobs_lock:
+        detached_jobs.update(restored.jobs)
+        detached_job_queue.extend(restored.queue)
+        with contextlib.suppress(OSError, TypeError, ValueError):
+            _persist_detached_jobs_locked()
+    if restored.queue:
+        _start_detached_worker()
+
+
+def _retry_detached_job(job_id: str) -> bool:
+    """Queue an interrupted/failed Qui job for an explicit safe retry."""
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if not job or str(job.get("status")) not in {"interrupted", "failed"}:
+            return False
+        job.update(
+            {
+                "status": "queued",
+                "message": "Queued for retry",
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "error": None,
+                "metadata_request": None,
+                "release_metadata_request": None,
+                "prompt_request": None,
+                "recovery_available": False,
+            }
+        )
+        detached_job_queue.append(job_id)
+        with contextlib.suppress(OSError, TypeError, ValueError):
+            _persist_detached_jobs_locked()
+        snapshot = dict(job)
+    QUI_EVENT_BROKER.publish("job.retried", job_id, snapshot)
+    with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+        RELEASE_HISTORY.record_job(snapshot)
+    _start_detached_worker()
+    return True
+
+
+def _waiting_metadata_request(job_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if not job or job.get("status") != "waiting_for_metadata":
+            return None
+        request_data = job.get("metadata_request")
+        return dict(request_data) if isinstance(request_data, Mapping) else None
+
+
+def _waiting_release_metadata_request(job_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if not job or job.get("status") != "waiting_for_release_metadata":
+            return None
+        request_data = job.get("release_metadata_request")
+        return dict(request_data) if isinstance(request_data, Mapping) else None
+
+
+def _start_detached_worker() -> None:
+    global detached_worker_thread
+    with detached_jobs_lock:
+        if detached_worker_thread and detached_worker_thread.is_alive():
+            return
+        detached_worker_thread = threading.Thread(target=_detached_worker, name="ua-detached-queue", daemon=True)
+        detached_worker_thread.start()
+
+
+def _detached_worker() -> None:
+    while True:
+        with detached_jobs_lock:
+            if not detached_job_queue:
+                return
+            job_id = detached_job_queue.pop(0)
+            job = dict(detached_jobs.get(job_id) or {})
+        if job:
+            _set_detached_job(job_id, status="starting", message="Starting upload", queue_position=None)
+            _run_detached_job(job_id, job)
+
+
+def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
+    base_dir = Path(__file__).resolve().parent.parent
+    log_path = base_dir / "tmp" / f"ua-{job_id}.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with detached_jobs_lock:
+        if str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled":
+            return
+    started_at = datetime.now(UTC).isoformat()
+    _set_detached_job(
+        job_id,
+        status="running",
+        started_at=started_at,
+        log_path=str(log_path),
+        message="Running upload",
+        metadata_request=None,
+        release_metadata_request=None,
+        prompt_request=None,
+    )
+
+    process: subprocess.Popen[str] | None = None
+    try:
+        command = cast(list[str], job["command"])
+        process = subprocess.Popen(  # noqa: S603 - command is built from validated CLI arguments
+            command,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            cwd=str(base_dir),
+            env={**_webui_subprocess_env(), "UA_DETACHED_JOB_ID": job_id},
+        )
+        with active_processes_lock:
+            active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}
+        with detached_jobs_lock:
+            cancelled_before_read = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
+        if cancelled_before_read and process.poll() is None:
+            with contextlib.suppress(Exception):
+                process.kill()
+        _set_detached_job(job_id, process_active=True)
+
+        with log_path.open("a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(f"\n{'=' * 60}\n{started_at}  detached_job={job_id}\n{' '.join(command)}\n{'=' * 60}\n")
+            if process.stdout is not None:
+                for line in process.stdout:
+                    clean_line = strip_ansi(line)
+                    if progress := progress_from_log_line(clean_line):
+                        _set_detached_job(job_id, progress=progress)
+                    release_metadata_request = parse_detached_release_metadata_request(clean_line.rstrip("\r\n"))
+                    metadata_request = parse_detached_metadata_request(clean_line.rstrip("\r\n"))
+                    if release_metadata_request is not None:
+                        _set_detached_job(
+                            job_id,
+                            status="waiting_for_release_metadata",
+                            message="Waiting for release-name metadata in Operations",
+                            release_metadata_request=release_metadata_request,
+                            metadata_request=None,
+                            prompt_request=None,
+                        )
+                        log_file.write("Waiting for release-name metadata from Web UI\n")
+                    elif metadata_request is not None:
+                        _set_detached_job(
+                            job_id,
+                            status="waiting_for_metadata",
+                            message="Waiting for IMDb/TMDb IDs in Operations",
+                            metadata_request=metadata_request,
+                            release_metadata_request=None,
+                            prompt_request=None,
+                        )
+                        log_file.write("Waiting for metadata IDs from Web UI\n")
+                    else:
+                        log_file.write(clean_line)
+                        if _looks_like_subprocess_prompt(clean_line):
+                            prompt_type = "yes_no" if clean_line.rstrip().lower().endswith(("(y/n)", "(y/n):", "[y/n]", "[y/n]:")) else "text"
+                            _set_detached_job(
+                                job_id,
+                                status="waiting_for_input",
+                                message="Waiting for input in Operations",
+                                prompt_request={"text": clean_line.rstrip(), "input_type": prompt_type},
+                                metadata_request=None,
+                                release_metadata_request=None,
+                            )
+                    log_file.flush()
+
+        return_code = process.wait()
+        finished_at = datetime.now(UTC).isoformat()
+        with detached_jobs_lock:
+            was_cancelled = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
+        if not was_cancelled:
+            status = "completed" if return_code == 0 else "failed"
+            _set_detached_job(
+                job_id,
+                status=status,
+                finished_at=finished_at,
+                return_code=return_code,
+                message=f"Exited with code {return_code}",
+                metadata_request=None,
+                release_metadata_request=None,
+                prompt_request=None,
+            )
+    except Exception as error:
+        finished_at = datetime.now(UTC).isoformat()
+        with detached_jobs_lock:
+            was_cancelled = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
+        if not was_cancelled:
+            _set_detached_job(
+                job_id,
+                status="failed",
+                finished_at=finished_at,
+                error=str(error),
+                message="Detached upload failed",
+                metadata_request=None,
+                release_metadata_request=None,
+                prompt_request=None,
+            )
+        with contextlib.suppress(Exception), log_path.open("a", encoding="utf-8", errors="replace") as log_file:
+            log_file.write(f"\nDetached upload failed: {error}\n{traceback.format_exc()}\n")
+    finally:
+        with active_processes_lock:
+            active_processes.pop(job_id, None)
+        _set_detached_job(job_id, process_active=False)
+        if process and process.poll() is None:
+            with contextlib.suppress(Exception):
+                process.kill()
+
+
+_restore_detached_jobs()
 
 
 def _string_list_preview_values(value: object) -> list[str]:
@@ -1832,9 +2115,14 @@ def _subprocess_prompt_type(buffer: str) -> str | None:
         return None
     if re.search(r"\(\s*y\s*/\s*n\s*\)\s*:?$", lowered):
         return "yes_no"
-    if stripped.endswith(":") or stripped.endswith("?") or " enter " in f" {lowered} " or " select " in f" {lowered} " or lowered.startswith("select "):
+    if stripped.endswith("?") or " enter " in f" {lowered} " or " select " in f" {lowered} " or lowered.startswith("select "):
         return "text"
     return None
+
+
+def _looks_like_subprocess_prompt(buffer: str) -> bool:
+    """Keep the detached-job prompt predicate compatible with older callers."""
+    return _subprocess_prompt_type(buffer) is not None
 
 
 def _webui_subprocess_env() -> dict[str, str]:
@@ -1846,6 +2134,13 @@ def _webui_subprocess_env() -> dict[str, str]:
     # consumes ANSI itself, so its child must not inherit that CLI preference.
     env.pop("NO_COLOR", None)
     env["UA_WEBUI_FORCE_COLOR"] = "1"
+    # The detached child may be launched after a caller has changed its working
+    # directory. Keep the application package importable independently of cwd.
+    project_root = str(CODE_DIR.resolve())
+    python_path_entries = [entry for entry in env.get("PYTHONPATH", "").split(os.pathsep) if entry]
+    if project_root not in python_path_entries:
+        python_path_entries.insert(0, project_root)
+    env["PYTHONPATH"] = os.pathsep.join(python_path_entries)
     env["UA_WEBUI_PROGRESS_STDOUT"] = "1"
     env["UA_WEBUI_PROMPT_SOUND_STDOUT"] = "1"
     return env
@@ -2198,6 +2493,17 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
     if audiobook_bitrate.isdigit():
         audiobook_bitrate = f"{audiobook_bitrate} kbps"
     tv_pack_raw = _stringify_preview_value(meta_data.get("tv_pack")).lower()
+    tracker_uploads: list[dict[str, str]] = []
+    tracker_status = meta_data.get("tracker_status")
+    if isinstance(tracker_status, Mapping):
+        for tracker_name, raw_status in tracker_status.items():
+            if not isinstance(raw_status, Mapping) or raw_status.get("upload_success") is not True:
+                continue
+            upload_name = _stringify_preview_value(raw_status.get("upload_name"))
+            upload_url = _stringify_preview_value(raw_status.get("upload_url"))
+            if upload_name or upload_url:
+                tracker_uploads.append({"tracker": _stringify_preview_value(tracker_name), "name": upload_name, "url": upload_url})
+    tracker_uploads.sort(key=lambda item: item["tracker"].casefold())
 
     return {
         "media_id": _stringify_preview_value(meta_data.get("uuid")) or fallback_path,
@@ -2246,6 +2552,7 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
         "detail_sections": detail_sections,
         "awaiting_input": False,
         "input_type": None,
+        "tracker_uploads": tracker_uploads,
     }
 
 
@@ -2536,6 +2843,7 @@ class ExecutionPreview(TypedDict, total=False):
     detail_sections: list[PreviewDetailSection]
     awaiting_input: bool
     input_type: str | None
+    tracker_uploads: list[dict[str, str]]
     progress: list[ProgressItem]
 
 
@@ -3216,6 +3524,19 @@ def _build_config_items(
     subsection_map: dict[str, str],
     path: list[str],
 ) -> list[ConfigItem]:
+    # Keep service credentials together in the WebUI.  These keys historically
+    # appeared under whichever all-caps heading happened to precede them in
+    # example_config.py, which made credentials such as TVDB easy to miss.
+    default_credential_keys = {
+        "tmdb_api",
+        "tvdb_api",
+        "tvdb_token",
+        "google_books_api_key",
+        "twitch_client_id",
+        "twitch_client_secret",
+        "mam_api_key",
+        "btn_api",
+    }
     items: list[ConfigItem] = []
     user_dict: dict[str, Any] = _as_dict(user_section) or {}
 
@@ -3248,6 +3569,8 @@ def _build_config_items(
         key_path = [*path, key]
         help_text = comments_map.get("/".join(key_path), [])
         subsection_label = subsection_map.get("/".join(key_path))
+        if path == ["DEFAULT"] and key in default_credential_keys:
+            subsection_label = "API CREDENTIALS"
         if subsection_label != current_subsection:
             flush_subsection()
             current_subsection = subsection_label
@@ -5258,6 +5581,321 @@ def config_set_tracker_overrides():
         }
     )
 
+@app.route("/api/qui/submit", methods=["POST", "OPTIONS"])
+@limiter.limit("300 per hour", key_func=_rate_limit_key_func)
+def qui_submit():
+    """Submit one or more unattended uploads for detached FIFO processing."""
+    if request.method == "OPTIONS":
+        return "", 204
+
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+
+    data = _as_dict(request.get_json(silent=True)) or {}
+    raw_paths = data.get("paths")
+    if raw_paths is None:
+        raw_path = data.get("path")
+        raw_paths = [raw_path] if raw_path else []
+    if not isinstance(raw_paths, list):
+        return jsonify({"success": False, "error": "paths must be a list"}), 400
+
+    args = str(data.get("args", "") or "")
+    append_unattended = str(data.get("append_unattended", True)).strip().lower() not in {"0", "false", "no", "off"}
+    try:
+        parsed_args = shlex.split(args)
+        if append_unattended and "-ua" not in parsed_args and "--unattended" not in parsed_args:
+            parsed_args.append("-ua")
+        validated_args = _validate_upload_assistant_args(parsed_args)
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid upload arguments"}), 400
+
+    base_dir = Path(__file__).resolve().parent.parent
+    upload_script = str(base_dir / "upload.py")
+    created: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+    prefix = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(data.get("session_prefix") or "qui")).strip("-") or "qui"
+
+    for raw_path in raw_paths:
+        try:
+            path_text = str(raw_path or "").strip()
+            if not path_text:
+                raise ValueError("empty path")
+            validated_path = _resolve_user_path(path_text, require_exists=True, require_dir=False)
+            _assert_safe_resolved_path(validated_path)
+            job_id = f"{prefix}-{secrets.token_hex(8)}"
+            command = [sys.executable, "-u", upload_script, validated_path, *validated_args]
+            now = datetime.now(UTC).isoformat()
+            job = {
+                "id": job_id,
+                "source_path": validated_path,
+                "args": " ".join(validated_args),
+                "command": command,
+                "status": "queued",
+                "message": "Queued",
+                "created_at": now,
+                "started_at": None,
+                "finished_at": None,
+                "return_code": None,
+                "log_path": str(base_dir / "tmp" / f"ua-{job_id}.log"),
+                "recovery_available": False,
+                "process_active": False,
+                "metadata_request": None,
+                "release_metadata_request": None,
+                "prompt_request": None,
+            }
+            with detached_jobs_lock:
+                detached_jobs[job_id] = job
+                detached_job_queue.append(job_id)
+                _persist_detached_jobs_locked()
+            QUI_EVENT_BROKER.publish("job.queued", job_id, job)
+            with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+                RELEASE_HISTORY.record_job(job)
+            created.append({key: value for key, value in job.items() if key != "command"})
+        except Exception as error:
+            errors.append({"path": str(raw_path), "error": str(error)})
+
+    if created:
+        _start_detached_worker()
+    status_code = 202 if created else 400
+    return jsonify({"success": bool(created), "jobs": _json_safe(created), "errors": _json_safe(errors), "queued_count": len(created)}), status_code
+
+
+@app.route("/api/qui/status")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
+def qui_status():
+    """Return detached Qui/API job status."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    try:
+        limit = int(request.args.get("limit", "100"))
+    except (TypeError, ValueError):
+        limit = 100
+    return jsonify({"success": True, "jobs": _detached_job_snapshot(limit=max(1, min(limit, 500)))})
+
+
+@app.route("/api/qui/log/<job_id>")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
+def qui_log(job_id: str):
+    """Return a detached job log tail."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return jsonify({"success": False, "error": "Invalid job id"}), 400
+    log_path = Path(__file__).resolve().parent.parent / "tmp" / f"ua-{job_id}.log"
+    if not log_path.exists():
+        return jsonify({"success": False, "error": "Log not found"}), 404
+    try:
+        max_bytes = min(max(int(request.args.get("bytes", "50000")), 1000), 500000)
+    except (TypeError, ValueError):
+        max_bytes = 50000
+    data = log_path.read_bytes()
+    return jsonify({"success": True, "job_id": job_id, "log": data[-max_bytes:].decode("utf-8", errors="replace"), "bytes": len(data)})
+
+
+@app.route("/api/qui/retry/<job_id>", methods=["POST"])
+def qui_retry(job_id: str):
+    """Explicitly retry an interrupted or failed detached job."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return jsonify({"success": False, "error": "Invalid job id"}), 400
+    if not _retry_detached_job(job_id):
+        return jsonify({"success": False, "error": "Job is not retryable"}), 409
+    return jsonify({"success": True, "job_id": job_id, "status": "queued"}), 202
+
+
+def _detached_job_by_id(job_id: str) -> dict[str, Any] | None:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
+        return None
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        return dict(job) if job else None
+
+
+def _validated_detached_args(raw_args: object, append_unattended: object = True) -> tuple[list[str], str]:
+    return validate_detached_args(raw_args, append_unattended, _validate_upload_assistant_args)
+
+
+@app.route("/api/qui/update/<job_id>", methods=["POST"])
+def qui_update(job_id: str):
+    """Update arguments for a detached job before it starts or after a failure."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    job = _detached_job_by_id(job_id)
+    if job is None:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+    if str(job.get("status")) not in {"queued", "failed", "interrupted"}:
+        return jsonify({"success": False, "error": "Only queued, failed, or interrupted jobs can be edited"}), 409
+    data = _as_dict(request.get_json(silent=True)) or {}
+    try:
+        validated_args, args_text = _validated_detached_args(data.get("args", ""), data.get("append_unattended", True))
+    except (ValueError, TypeError):
+        return jsonify({"success": False, "error": "Invalid upload arguments"}), 400
+
+    base_dir = Path(__file__).resolve().parent.parent
+    command = [sys.executable, "-u", str(base_dir / "upload.py"), str(job["source_path"]), *validated_args]
+    updates: dict[str, Any] = {"args": args_text, "command": command, "error": None, "message": "Arguments updated"}
+    if str(job.get("status")) in {"failed", "interrupted"}:
+        updates.update({"status": "queued", "started_at": None, "finished_at": None, "return_code": None, "recovery_available": False})
+        with detached_jobs_lock:
+            current = detached_jobs.get(job_id)
+            if current is None:
+                return jsonify({"success": False, "error": "Job not found"}), 404
+            current.update(updates)
+            detached_job_queue.append(job_id)
+            _persist_detached_jobs_locked()
+        _start_detached_worker()
+    else:
+        with detached_jobs_lock:
+            current = detached_jobs.get(job_id)
+            if current is None:
+                return jsonify({"success": False, "error": "Job not found"}), 404
+            current.update(updates)
+            _persist_detached_jobs_locked()
+    snapshot = dict(current)
+    QUI_EVENT_BROKER.publish("job.arguments_updated", job_id, snapshot)
+    with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+        RELEASE_HISTORY.record_job(snapshot)
+    return jsonify({"success": True, "job_id": job_id, "args": args_text, "status": "queued" if str(job.get("status")) in {"failed", "interrupted"} else str(job.get("status"))})
+
+
+@app.route("/api/qui/cancel/<job_id>", methods=["POST"])
+def qui_cancel(job_id: str):
+    """Cancel a queued job or terminate its active detached subprocess."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    if _detached_job_by_id(job_id) is None:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+    with detached_jobs_lock:
+        job = detached_jobs.get(job_id)
+        if job is None:
+            return jsonify({"success": False, "error": "Job not found"}), 404
+        status = str(job.get("status"))
+        if status == "queued":
+            detached_job_queue[:] = [queued_id for queued_id in detached_job_queue if queued_id != job_id]
+            job.update({"status": "cancelled", "message": "Cancelled before execution", "finished_at": datetime.now(UTC).isoformat(), "recovery_available": False})
+            _persist_detached_jobs_locked()
+            snapshot = dict(job)
+        elif status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata", "waiting_for_release_metadata"}:
+            return jsonify({"success": False, "error": "Job is not active"}), 409
+
+    if status == "queued":
+        QUI_EVENT_BROKER.publish("job.cancelled", job_id, snapshot)
+        with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
+            RELEASE_HISTORY.record_job(snapshot)
+        return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
+
+    with active_processes_lock:
+        process_info = active_processes.get(job_id, {})
+        process = process_info.get("process")
+    if isinstance(process, subprocess.Popen) and process.poll() is None:
+        with contextlib.suppress(Exception):
+            process.kill()
+    _set_detached_job(job_id, status="cancelled", message="Cancelled by user", finished_at=datetime.now(UTC).isoformat(), recovery_available=False, prompt_request=None, metadata_request=None, release_metadata_request=None)
+    return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
+
+
+@app.route("/api/qui/input/<job_id>", methods=["POST"])
+def qui_input(job_id: str):
+    """Answer a detached job's currently blocked stdin prompt."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    job = _detached_job_by_id(job_id)
+    if job is None:
+        return jsonify({"success": False, "error": "Job not found"}), 404
+    if str(job.get("status")) not in {"waiting_for_input", "waiting_for_metadata"}:
+        return jsonify({"success": False, "error": "Job is not waiting for input"}), 409
+    data = _as_dict(request.get_json(silent=True)) or {}
+    raw_input = data.get("input", data.get("value", ""))
+    answer = ("y" if raw_input else "n") if isinstance(raw_input, bool) else str(raw_input or "").strip()
+    if not answer or len(answer) > 4000 or "\n" in answer or "\r" in answer:
+        return jsonify({"success": False, "error": "Input must be a non-empty single line"}), 400
+    with active_processes_lock:
+        process_info = active_processes.get(job_id)
+        process = process_info.get("process") if process_info else None
+    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
+        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    try:
+        process.stdin.write(answer + "\n")
+        process.stdin.flush()
+    except (BrokenPipeError, OSError) as error:
+        return jsonify({"success": False, "error": f"Unable to send input: {error}"}), 409
+    _set_detached_job(job_id, status="running", message="Input received; upload resumed", prompt_request=None, metadata_request=None, release_metadata_request=None)
+    return jsonify({"success": True, "job_id": job_id})
+
+
+@app.route("/api/qui/metadata/<job_id>", methods=["POST"])
+def qui_metadata(job_id: str):
+    """Submit metadata IDs to resume a detached upload checkpoint."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    request_data = _waiting_metadata_request(job_id)
+    if request_data is None:
+        return jsonify({"success": False, "error": "Job is not waiting for metadata"}), 409
+    raw_payload = _as_dict(request.get_json(silent=True)) or {}
+    if "input" in raw_payload and not ("tmdb_id" in raw_payload or "imdb_id" in raw_payload):
+        input_text = str(raw_payload.get("input") or "")
+        tokens = [token.strip() for token in re.split(r"[,;\s]+", input_text) if token.strip()]
+        raw_payload = {
+            "tmdb_id": next((token for token in tokens if re.fullmatch(r"(?i)(?:movie|tv)/\d+", token)), ""),
+            "imdb_id": next((token for token in tokens if re.fullmatch(r"(?i)tt\d+", token)), ""),
+            "category": request_data.get("category", ""),
+        }
+    try:
+        payload = parse_metadata_submission(raw_payload, request_data.get("category"))
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+    with active_processes_lock:
+        process_info = active_processes.get(job_id)
+        process = process_info.get("process") if process_info else None
+    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
+        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    try:
+        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        process.stdin.flush()
+    except (BrokenPipeError, OSError) as error:
+        return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
+    _set_detached_job(job_id, status="running", message="Metadata received; resuming upload", metadata_request=None, release_metadata_request=None)
+    return jsonify({"success": True, "job_id": job_id, "metadata": payload})
+
+
+@app.route("/api/qui/release_metadata/<job_id>", methods=["POST"])
+def qui_release_metadata(job_id: str):
+    """Submit release-name fields and resume an unattended upload checkpoint."""
+    ok, response = _submit_auth_ok()
+    if not ok:
+        return response
+    request_data = _waiting_release_metadata_request(job_id)
+    if request_data is None:
+        return jsonify({"success": False, "error": "Job is not waiting for release metadata"}), 409
+    raw_payload = _as_dict(request.get_json(silent=True)) or {}
+    try:
+        payload = parse_release_metadata_submission(raw_payload, request_data.get("fields", []))
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 400
+
+    with active_processes_lock:
+        process_info = active_processes.get(job_id)
+        process = process_info.get("process") if process_info else None
+    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
+        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    try:
+        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
+        process.stdin.flush()
+    except (BrokenPipeError, OSError) as error:
+        return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
+    _set_detached_job(job_id, status="running", message="Release metadata received; rebuilding title", release_metadata_request=None, metadata_request=None, prompt_request=None)
+    return jsonify({"success": True, "job_id": job_id, "release_metadata": payload})
+
 
 @app.route("/api/config_update", methods=["POST"])
 def config_update():
@@ -5976,99 +6614,53 @@ def browse_search():
                 return False
         return True
 
-    items: list[BrowseItem] = []
-
     try:
-        for root in roots:
-            root_abs = str(Path(root).resolve())
-            if not Path(root_abs).is_dir():
+        indexed_items, indexing = _browse_index.search(roots, query, file_filter, max_results)
+        items: list[BrowseItem] = []
+        for indexed_item in indexed_items:
+            name = str(indexed_item["name"])
+            item_type = str(indexed_item["type"])
+            if not name_matches(name):
+                continue
+            if item_type == "file" and file_filter == "desc" and Path(name.lower()).suffix not in SUPPORTED_DESC_EXTS:
+                continue
+            full_path = Path(str(indexed_item["path"]))
+            try:
+                _assert_safe_resolved_path(full_path)
+            except ValueError:
                 continue
             try:
-                for dirpath, dirnames, filenames in os.walk(root_abs):
-                    # Skip hidden dirs
-                    dirnames[:] = [d for d in dirnames if not d.startswith(".")]
-
-                    # Check dirs
-                    for dirname in dirnames:
-                        if name_matches(dirname):
-                            full_path = Path(dirpath) / dirname
-                            try:
-                                _assert_safe_resolved_path(full_path)
-                            except ValueError:
-                                continue
-                            try:
-                                stat_res = Path(full_path).stat()
-                                mtime = stat_res.st_mtime
-                                size = 0
-                            except Exception:
-                                mtime = 0.0
-                                size = 0
-                            items.append(
-                                {
-                                    "name": dirname,
-                                    "path": str(full_path),
-                                    "type": "folder",
-                                    "children": [],
-                                    "mtime": mtime,
-                                    "size": size,
-                                }
-                            )
-                            if len(items) >= max_results:
-                                break
-
-                    if len(items) >= max_results:
-                        break
-
-                    # Check files
-                    for filename in filenames:
-                        if filename.startswith("."):
-                            continue
-                        if not name_matches(filename):
-                            continue
-                        if file_filter == "desc":
-                            ext = Path(filename.lower()).suffix
-                            if ext not in SUPPORTED_DESC_EXTS:
-                                continue
-                        full_path = Path(dirpath) / filename
-                        try:
-                            _assert_safe_resolved_path(full_path)
-                        except ValueError:
-                            continue
-                        try:
-                            stat_res = Path(full_path).stat()
-                            mtime = stat_res.st_mtime
-                            size = stat_res.st_size
-                        except Exception:
-                            mtime = 0.0
-                            size = 0
-                        items.append(
-                            {
-                                "name": filename,
-                                "path": str(full_path),
-                                "type": "file",
-                                "children": None,
-                                "mtime": mtime,
-                                "size": size,
-                            }
-                        )
-                        if len(items) >= max_results:
-                            break
-
-                    if len(items) >= max_results:
-                        break
-            except PermissionError:
+                stat_res = full_path.stat()
+                mtime = stat_res.st_mtime
+                size = stat_res.st_size if item_type == "file" else 0
+            except (FileNotFoundError, PermissionError, OSError):
+                # The index may briefly contain a path removed since the last
+                # refresh. Ignore it without forcing another disk-wide scan.
                 continue
-            except Exception as e:
-                console.print(f"Error searching in {root}: {e}", markup=False)
-                continue
-
-            if len(items) >= max_results:
-                break
+            items.append(
+                {
+                    "name": name,
+                    "path": str(full_path),
+                    "type": "folder" if item_type == "folder" else "file",
+                    "children": [] if item_type == "folder" else None,
+                    "mtime": mtime,
+                    "size": size,
+                }
+            )
 
         # Sort by folders first and then alphabetically
         items.sort(key=lambda x: (0 if x.get("type") == "folder" else 1, (x.get("name") or "").lower()))
 
-        return jsonify({"success": True, "items": items, "query": query, "count": len(items), "truncated": len(items) >= max_results})
+        return jsonify(
+            {
+                "success": True,
+                "items": items,
+                "query": query,
+                "count": len(items),
+                "truncated": len(items) >= max_results,
+                "indexing": indexing,
+            }
+        )
 
     except Exception as e:
         console.print(f"Error in browse_search: {e}", markup=False)
@@ -6230,6 +6822,7 @@ def execution_screenshots():
                     ),
                     "can_replace": can_capture and item.source != "addition",
                     "can_delete": item.source in {"local", "addition"},
+                    "can_refill": can_capture and item.source in {"local", "addition"},
                 }
                 for item in items
             ],
@@ -6249,12 +6842,27 @@ def execution_description():
 
     temp_dir, _meta_file, meta_data = resolved
     content, version = draft(meta_data, temp_dir)
+    tracker_descriptions: list[dict[str, str]] = []
+    for description_file in sorted(temp_dir.glob("*DESCRIPTION.txt")):
+        if not description_file.name.startswith("[") or "]DESCRIPTION.txt" not in description_file.name:
+            continue
+        try:
+            description_content = description_file.read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if description_content.strip():
+            tracker_descriptions.append({
+                "tracker": description_file.name.removeprefix("[").removesuffix("]DESCRIPTION.txt"),
+                "filename": description_file.name,
+                "content": description_content,
+            })
     return jsonify(
         {
             "success": True,
             "content": content,
             "version": version,
             "sources": source_items(meta_data),
+            "tracker_descriptions": tracker_descriptions,
         }
     )
 
@@ -6294,7 +6902,7 @@ def save_execution_description():
             return jsonify({"success": False, "error": "Description changed in another browser tab", "version": current_version}), 409
 
         next_version = current_version + 1
-        save_review(temp_dir, content, next_version)
+        save_review(temp_dir, content, next_version, str(meta_data.get("path") or ""))
     return jsonify({"success": True, "content": content, "version": next_version})
 
 
@@ -6330,7 +6938,7 @@ def reset_execution_description():
             return jsonify({"success": False, "error": "Description changed in another browser tab", "version": current_version}), 409
 
         next_version = current_version + 1
-        save_review(temp_dir, content, next_version)
+        save_review(temp_dir, content, next_version, str(meta_data.get("path") or ""))
     return jsonify({"success": True, "content": content, "version": next_version})
 
 
@@ -6379,10 +6987,35 @@ def add_execution_screenshot():
     return jsonify({"success": True})
 
 
+@app.route("/api/execution_screenshots/regenerate", methods=["POST"])
+def regenerate_execution_screenshots():
+    """Regenerate all screenshots for one reviewed file/group in place."""
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+    payload = _request_json_dict()
+    session_id = _stringify_preview_value(payload.get("session_id"))
+    group = _stringify_preview_value(payload.get("group")) or "main"
+    resolved = _resolve_execution_screenshot_review(session_id)
+    if resolved is None:
+        return jsonify({"success": False, "error": "Screenshots are not available yet"}), 404
+    temp_dir, meta_data = resolved
+    meta_data = _screenshot_review_meta(temp_dir, meta_data)
+    try:
+        from src.screenshot_review import regenerate_screenshot_group
+
+        asyncio.run(regenerate_screenshot_group(temp_dir, meta_data, group))
+    except (FileNotFoundError, ValueError) as error:
+        return jsonify({"success": False, "error": str(error)}), 404
+    except Exception as error:
+        console.print(f"Screenshot regeneration failed for {session_id}: {error}", markup=False)
+        return jsonify({"success": False, "error": "Could not regenerate screenshots"}), 500
+    return jsonify({"success": True, "group": group})
+
+
 @app.route("/api/execution_screenshots/<screenshot_id>/<action>", methods=["POST"])
 def mutate_execution_screenshot(screenshot_id: str, action: str):
     """Delete or replace a reviewed frame with CSRF and same-origin protection."""
-    if action not in {"delete", "replace", "undo"}:
+    if action not in {"delete", "refill", "replace", "undo"}:
         return jsonify({"success": False, "error": "Unsupported screenshot action"}), 404
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
@@ -6395,10 +7028,12 @@ def mutate_execution_screenshot(screenshot_id: str, action: str):
     meta_data = _screenshot_review_meta(temp_dir, meta_data)
 
     try:
-        from src.screenshot_review import delete_screenshot, replace_screenshot, undo_remote_replacement
+        from src.screenshot_review import delete_screenshot, refill_screenshot_slot, replace_screenshot, undo_remote_replacement
 
         if action == "delete":
             delete_screenshot(temp_dir, meta_data, screenshot_id)
+        elif action == "refill":
+            asyncio.run(refill_screenshot_slot(temp_dir, meta_data, screenshot_id))
         elif action == "undo":
             undo_remote_replacement(temp_dir, screenshot_id)
         else:
@@ -7018,8 +7653,12 @@ def internal_error(e: Exception):
     return jsonify({"error": "Internal server error", "success": False}), 500
 
 
+app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, broker=QUI_EVENT_BROKER, snapshots=_detached_job_snapshot, retry_job=_retry_detached_job))
+app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=Path(__file__).resolve().parent.parent))
+app.register_blueprint(create_history_api_blueprint(auth_check=_submit_auth_ok, history=RELEASE_HISTORY, json_safe=_json_safe))
+_config_source_operations = ConfigSourceOperations(_load_config_from_file, _remove_config_key_in_source, _replace_config_value_in_source, _python_literal, _get_nested_value, _write_audit_log)
+app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=Path(__file__).resolve().parent.parent, operations=_config_source_operations))
+
+
 # Keep these helpers referenced so static analysis does not flag them as unused.
-_ = _cfg_delete
-_ = _json_load_list
-_ = _maybe_log_api_access
-_ = _rate_limit_exceeded
+_ = (_cfg_delete, _json_load_list, _maybe_log_api_access, _rate_limit_exceeded)

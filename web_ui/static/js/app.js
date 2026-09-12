@@ -103,6 +103,7 @@ const sanitizeBbcodePreview = (html) => {
       "data-bbcode-color",
       "href",
       "src",
+      "target",
       "title",
     ],
   });
@@ -234,8 +235,10 @@ const getStoredFileBrowserSort = () => {
 
 // Local CSRF cache used by fallback `apiFetch` when `uaApiFetch` isn't present.
 let localCsrf = null;
+let localCsrfRequest = null;
 const loadLocalCsrf = async (force = false) => {
   if (localCsrf && !force) return;
+  if (localCsrfRequest) return localCsrfRequest;
 
   let apiBase = "";
   if (typeof window !== "undefined" && window.location) {
@@ -244,16 +247,24 @@ const loadLocalCsrf = async (force = false) => {
     apiBase = "/api";
   }
 
-  try {
-    const r = await fetch(`${apiBase}/csrf_token`, {
-      credentials: "same-origin",
-    });
-    if (!r.ok) return;
-    const d = await r.json();
-    localCsrf = d && d.csrf_token ? String(d.csrf_token) : null;
-  } catch (e) {
-    // ignore
-  }
+  // Several panels fetch their initial data together. Coalesce fallback CSRF
+  // requests so that an uncached page load does not hit the token endpoint
+  // once for every panel.
+  localCsrfRequest = (async () => {
+    try {
+      const r = await fetch(`${apiBase}/csrf_token`, {
+        credentials: "same-origin",
+      });
+      if (!r.ok) return;
+      const d = await r.json();
+      localCsrf = d && d.csrf_token ? String(d.csrf_token) : null;
+    } catch (_error) {
+      // Keep the fallback usable when the token endpoint is temporarily down.
+    } finally {
+      localCsrfRequest = null;
+    }
+  })();
+  return localCsrfRequest;
 };
 
 // Prefer shared `uaApiFetch` when available (provides CSRF handling and retry-on-auth-fail),
@@ -299,6 +310,16 @@ const argumentCategories = [
         label: "--limit-queue",
         placeholder: "N",
         description: "Limit queue successful uploads",
+      },
+      {
+        label: "--queue-prepare-concurrency",
+        placeholder: "N",
+        description: "Prepare unattended queue items concurrently; uploads remain ordered",
+      },
+      {
+        label: "--unit3d-dupe-max-pages",
+        placeholder: "N",
+        description: "Safety cap for paginated live Unit3D duplicate checks (0 uses config)",
       },
       { label: "--site-check", description: "Site check (can it be uploaded)" },
       {
@@ -362,6 +383,18 @@ const argumentCategories = [
       },
       { label: "--tmdb", placeholder: "movie/123", description: "TMDb id" },
       { label: "--imdb", placeholder: "tt0111161", description: "IMDb id" },
+      {
+        label: "--prompt-missing-ids",
+        description: "Review unresolved IMDb/TMDb IDs after automatic matching",
+      },
+      {
+        label: "--no-prompt-missing-ids",
+        description: "Never pause unattended jobs for unresolved IDs",
+      },
+      {
+        label: "--imdb-optional",
+        description: "Allow continuation when only the TMDb ID is available",
+      },
       { label: "--mal", placeholder: "ID", description: "MAL id" },
       { label: "--tvmaze", placeholder: "ID", description: "TVMaze id" },
       { label: "--tvdb", placeholder: "ID", description: "TVDB id" },
@@ -565,6 +598,12 @@ const argumentCategories = [
         description: "Original language of content",
       },
       {
+        label: "--audio-language",
+        placeholder: "Tamil or Tamil,English",
+        description:
+          "Override MediaInfo audio language(s) for tracker checks and title; adds an explicit override note to the description",
+      },
+      {
         label: "--only-if-languages",
         placeholder: "en,fr",
         description:
@@ -745,6 +784,11 @@ const argumentCategories = [
         description: "Skip auto torrent searching",
       },
       { label: "--skip-dupe-check", description: "Skip dupe check" },
+      {
+        label: "--force-upload",
+        description:
+          "Force past tracker-specific media checks (does not bypass authentication, dupes, bans, or tracker claims)",
+      },
       {
         label: "--skip-dupe-asking",
         description: "Accept any reported dupes without prompting about it",
@@ -1199,6 +1243,7 @@ const ApplicationRail = ({
   appearanceControl,
   updateStatus,
   onOpenUpdate,
+  onOpenOperations,
   onOpenHelp,
   onLogout,
 }) => {
@@ -1258,6 +1303,15 @@ const ApplicationRail = ({
 
       <div className="ua-app-rail-footer grid shrink-0 gap-1 border-t p-2">
         <window.UAApiKeyAlerts trackers={trackers} appBase={appBase} />
+        <button
+          type="button"
+          className="ua-app-rail-button rounded-lg"
+          onClick={onOpenOperations}
+          title="Open unattended operations"
+        >
+          <span className="text-sm font-bold" aria-hidden="true">◉</span>
+          <span>Operations</span>
+        </button>
         <button
           type="button"
           className={`ua-app-rail-button rounded-lg ${updateStatus?.update_available ? "ua-update-rail-button" : ""}`}
@@ -1997,6 +2051,7 @@ function AudionutsUAGUI() {
   const [failedFavicons, setFailedFavicons] = useState(new Set());
   const [isExecuting, setIsExecuting] = useState(false);
   const [isOutputExpanded, setIsOutputExpanded] = useState(false);
+  const [showExecutionPreview, setShowExecutionPreview] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(
     new Set(["/data", "/torrent_storage_dir"]),
   );
@@ -2040,6 +2095,7 @@ function AudionutsUAGUI() {
   const [executionPreview, setExecutionPreview] = useState(null);
   const [executionScreenshots, setExecutionScreenshots] = useState([]);
   const [executionDescription, setExecutionDescription] = useState(null);
+  const [trackerDescriptionSelection, setTrackerDescriptionSelection] = useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [descriptionView, setDescriptionView] = useState("edit");
   const [descriptionVersion, setDescriptionVersion] = useState(0);
@@ -2419,7 +2475,22 @@ function AudionutsUAGUI() {
 
   // Mobile state
   const [isMobile, setIsMobile] = useState(() => shouldUseMobileLayout());
-  const [activePanel, setActivePanel] = useState("main"); // 'main' | 'files' | 'args'
+  const [activePanel, setActivePanel] = useState("main"); // 'main' | 'files' | 'args' | 'operations'
+  const [operationsOpen, setOperationsOpen] = useState(false);
+  const [detachedJobs, setDetachedJobs] = useState([]);
+  const [operationsLoading, setOperationsLoading] = useState(false);
+  const [runtimeHealth, setRuntimeHealth] = useState(null);
+  const [releaseHistory, setReleaseHistory] = useState([]);
+  const [releaseHistoryStats, setReleaseHistoryStats] = useState(null);
+  const [releaseHistorySearch, setReleaseHistorySearch] = useState("");
+  const [releaseHistoryStatus, setReleaseHistoryStatus] = useState("");
+  const [operationDrafts, setOperationDrafts] = useState({});
+  const [operationInput, setOperationInput] = useState({});
+  const [operationMetadata, setOperationMetadata] = useState({});
+  const [operationLog, setOperationLog] = useState({});
+  const [activeLogJobId, setActiveLogJobId] = useState("");
+  const quiCursorRef = useRef(0);
+  const quiEventsAbortControllerRef = useRef(null);
 
   // File Browser search states
   const [fileBrowserSearch, setFileBrowserSearch] = useState("");
@@ -2429,6 +2500,7 @@ function AudionutsUAGUI() {
     useState(false);
   const fileBrowserSearchTimer = useRef(null);
   const fileBrowserSearchQuery = useRef("");
+  const fileBrowserSearchController = useRef(null);
 
   // Preserve the desktop file browser scroll position while the
   // browser is temporarily unmounted or rerendered.
@@ -2445,6 +2517,403 @@ function AudionutsUAGUI() {
   const [descFileError, setDescFileError] = useState("");
   const [descBrowserCollapsed, setDescBrowserCollapsed] = useState(false);
   const [descLinkFocused, setDescLinkFocused] = useState(false);
+
+  const loadDetachedJobs = useCallback(async () => {
+    setOperationsLoading(true);
+    try {
+      const response = await apiFetch(`${API_BASE}/qui/status?limit=200`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) {
+        setDetachedJobs(Array.isArray(data.jobs) ? data.jobs : []);
+      }
+    } catch (error) {
+      console.error("Failed to load unattended jobs:", error);
+    } finally {
+      setOperationsLoading(false);
+    }
+  }, [API_BASE]);
+
+  const loadRuntimeHealth = useCallback(async () => {
+    try {
+      const response = await apiFetch(`${API_BASE}/runtime/health`, { cache: "no-store" });
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) setRuntimeHealth(data);
+    } catch (error) {
+      console.error("Failed to load runtime health:", error);
+    }
+  }, [API_BASE]);
+
+  const loadReleaseHistory = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ limit: "100" });
+      if (releaseHistorySearch.trim()) {
+        params.set("q", releaseHistorySearch.trim());
+      }
+      if (releaseHistoryStatus) params.set("status", releaseHistoryStatus);
+      const response = await apiFetch(
+        `${API_BASE}/release_history?${params.toString()}`,
+        { cache: "no-store" },
+      );
+      const data = await response.json().catch(() => null);
+      if (response.ok && data?.success) {
+        setReleaseHistory(Array.isArray(data.items) ? data.items : []);
+        setReleaseHistoryStats(data.stats || null);
+      }
+    } catch (error) {
+      console.error("Failed to load release history:", error);
+    }
+  }, [API_BASE, releaseHistorySearch, releaseHistoryStatus]);
+
+  useEffect(() => {
+    if (!operationsOpen && activePanel !== "operations") return undefined;
+    loadDetachedJobs();
+    let stopped = false;
+    let retryTimer = null;
+    const sync = async () => {
+      const controller = new AbortController();
+      quiEventsAbortControllerRef.current = controller;
+      try {
+        const response = await apiFetch(`${API_BASE}/qui/events?cursor=${quiCursorRef.current}&wait=20`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.success) {
+          quiCursorRef.current = Number(data.cursor) || quiCursorRef.current;
+          if (Array.isArray(data.events) && data.events.length) await loadDetachedJobs();
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          console.debug("Unattended event sync paused:", error);
+        }
+      } finally {
+        if (quiEventsAbortControllerRef.current === controller) {
+          quiEventsAbortControllerRef.current = null;
+        }
+      }
+      if (!stopped) retryTimer = window.setTimeout(sync, 150);
+    };
+    sync();
+    return () => {
+      stopped = true;
+      if (retryTimer) window.clearTimeout(retryTimer);
+      if (quiEventsAbortControllerRef.current) {
+        quiEventsAbortControllerRef.current.abort();
+        quiEventsAbortControllerRef.current = null;
+      }
+    };
+  }, [activePanel, loadDetachedJobs, operationsOpen]);
+
+  useEffect(() => {
+    if (!operationsOpen && activePanel !== "operations") return undefined;
+    loadRuntimeHealth();
+    const timer = window.setInterval(loadRuntimeHealth, 15000);
+    return () => window.clearInterval(timer);
+  }, [activePanel, loadRuntimeHealth, operationsOpen]);
+
+  useEffect(() => {
+    if (!operationsOpen && activePanel !== "operations") return undefined;
+    const initial = window.setTimeout(loadReleaseHistory, 200);
+    const timer = window.setInterval(loadReleaseHistory, 10000);
+    return () => {
+      window.clearTimeout(initial);
+      window.clearInterval(timer);
+    };
+  }, [activePanel, loadReleaseHistory, operationsOpen]);
+
+  // Keep the selected unattended log live. Previously the log only changed
+  // after repeatedly clicking the button, and every opened log stayed visible.
+  useEffect(() => {
+    if (!activeLogJobId || (!operationsOpen && activePanel !== "operations")) return undefined;
+    const refreshLog = async () => {
+      try {
+        const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(activeLogJobId)}?bytes=30000`, { cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.success) {
+          const nextLog = data.log || "";
+          setOperationLog((previous) => previous[activeLogJobId] === nextLog ? previous : ({ ...previous, [activeLogJobId]: nextLog }));
+        }
+      } catch (error) {
+        console.debug("Failed to refresh unattended log:", error);
+      }
+    };
+    refreshLog();
+    const timer = window.setInterval(refreshLog, 1000);
+    return () => window.clearInterval(timer);
+  }, [API_BASE, activeLogJobId, activePanel, operationsOpen]);
+
+  useEffect(() => {
+    if (activePanel === "operations") setOperationsOpen(true);
+  }, [activePanel]);
+
+  const operationRequest = async (url, options = {}) => {
+    const response = await apiFetch(url, {
+      ...options,
+      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+    });
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data?.success) {
+      throw new Error(data?.error || "Operation failed");
+    }
+    return data;
+  };
+
+  const renderLogWithLinks = (log) => {
+    const parts = String(log || "").split(/(https?:\/\/[^\s<>\]]+)/gi);
+    return parts.map((part, index) => {
+      if (!/^https?:\/\//i.test(part)) return part;
+      const trailing = part.match(/[),.;!?]+$/)?.[0] || "";
+      const href = trailing ? part.slice(0, -trailing.length) : part;
+      return <span key={index}><a href={href} target="_blank" rel="noreferrer" className="text-sky-400 underline hover:text-sky-300">{href}</a>{trailing}</span>;
+    });
+  };
+
+  const submitUnattendedSelection = async () => {
+    const paths = selectedPaths.map((item) => item.path).filter(Boolean);
+    if (!paths.length && selectedPath) paths.push(selectedPath);
+    if (!paths.length) {
+      window.alert("Select one or more files or folders first.");
+      return;
+    }
+    try {
+      await operationRequest(`${API_BASE}/qui/submit`, {
+        method: "POST",
+        body: JSON.stringify({ paths, args: customArgs, append_unattended: true }),
+      });
+      setOperationsOpen(true);
+      setActivePanel("operations");
+      await loadDetachedJobs();
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  const performJobAction = async (jobId, action, body = {}) => {
+    try {
+      if (action === "log") {
+        setActiveLogJobId(jobId);
+        const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(jobId)}?bytes=30000`, { cache: "no-store" });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.success) throw new Error(data?.error || "Unable to load log");
+        setOperationLog((previous) => ({ [jobId]: data.log || "", ...previous }));
+        setOperationsOpen(true);
+        setActivePanel("operations");
+      } else {
+        await operationRequest(`${API_BASE}/qui/${action}/${encodeURIComponent(jobId)}`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        });
+        await loadDetachedJobs();
+      }
+    } catch (error) {
+      window.alert(error.message);
+    }
+  };
+
+  const renderOperationsPanel = (overlay = false) => {
+    const panel = (
+      <div className={`${overlay ? "w-full max-w-6xl max-h-[90vh] overflow-y-auto" : "h-full overflow-y-auto"} rounded-xl border p-4 ${isDarkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-lg font-bold">Unattended Operations</h2>
+            <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+              Live control for queued uploads, blocked prompts, retries, and logs. Polls every 2.5 seconds while open.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={submitUnattendedSelection} className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
+              Queue selected ({selectedPaths.length || (selectedPath ? 1 : 0)})
+            </button>
+            <button onClick={() => { loadDetachedJobs(); loadReleaseHistory(); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>
+              {operationsLoading ? "Refreshing…" : "Refresh"}
+            </button>
+            {overlay && <button onClick={() => { setOperationsOpen(false); setActivePanel("main"); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>Close</button>}
+          </div>
+        </div>
+        {runtimeHealth && (
+          <div className={`mb-4 grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2 lg:grid-cols-4 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
+            <div><span className="block opacity-60">Runtime</span><span className={`font-semibold ${runtimeHealth.status === "healthy" ? "text-emerald-500" : "text-amber-500"}`}>{runtimeHealth.status}</span></div>
+            <div><span className="block opacity-60">Artifact reuse</span><span className="font-semibold">{runtimeHealth.cache?.artifacts?.entries || 0} releases / {runtimeHealth.cache?.artifacts?.objects || 0} objects</span></div>
+            <div><span className="block opacity-60">Resumable stages</span><span className="font-semibold">{runtimeHealth.checkpoints?.completed_stages || 0} checkpoints</span></div>
+            <div><span className="block opacity-60">Providers</span><span className="font-semibold">{Object.keys(runtimeHealth.scheduler?.providers || {}).length} observed</span></div>
+            <div className="sm:col-span-2 lg:col-span-4"><span className="opacity-60">External tools: </span><span>{Object.entries(runtimeHealth.tools || {}).map(([name, available]) => `${name}:${available ? "ok" : "missing"}`).join(" · ")}</span></div>
+          </div>
+        )}
+        <section className="mb-5">
+          <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold">Release history</h3>
+              <p className={`text-[11px] ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
+                Persistent across restarts · {releaseHistoryStats?.entries || 0} recorded · {releaseHistoryStats?.completed || 0} completed
+              </p>
+            </div>
+            <div className="flex flex-1 flex-wrap justify-end gap-2 sm:flex-none">
+              <input
+                value={releaseHistorySearch}
+                onChange={(event) => setReleaseHistorySearch(event.target.value)}
+                placeholder="Search name, path, tracker, or job ID"
+                aria-label="Search release history"
+                className={`min-w-[220px] flex-1 rounded border px-2 py-1.5 text-xs sm:w-72 ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
+              />
+              <select
+                value={releaseHistoryStatus}
+                onChange={(event) => setReleaseHistoryStatus(event.target.value)}
+                aria-label="Filter release history by status"
+                className={`rounded border px-2 py-1.5 text-xs ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
+              >
+                <option value="">All statuses</option>
+                <option value="completed">Completed</option>
+                <option value="failed">Failed</option>
+                <option value="skipped">Skipped</option>
+                <option value="debug">Debug</option>
+                <option value="interrupted">Interrupted</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+            </div>
+          </div>
+          {!releaseHistory.length ? (
+            <div className={`rounded-lg border border-dashed p-4 text-center text-xs ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>
+              No matching release history.
+            </div>
+          ) : (
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
+              {releaseHistory.map((item) => {
+                const historyStatus = String(item.status || "unknown");
+                const trackerNames = Array.isArray(item.successful_trackers) && item.successful_trackers.length
+                  ? item.successful_trackers
+                  : Array.isArray(item.trackers) ? item.trackers : [];
+                const trackerUploads = Array.isArray(item.tracker_uploads) ? item.tracker_uploads : [];
+                return (
+                  <div key={item.id} className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-gray-700 bg-gray-900/70" : "border-gray-200 bg-gray-50"}`}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${historyStatus === "completed" ? "bg-emerald-500/20 text-emerald-400" : historyStatus === "failed" || historyStatus === "cancelled" ? "bg-rose-500/20 text-rose-400" : "bg-amber-500/20 text-amber-400"}`}>{historyStatus}</span>
+                          <strong className="truncate text-xs">{item.release_name || item.source_path || item.id}</strong>
+                          {(item.category || item.media_type || item.resolution) && <span className="text-[10px] opacity-60">{[item.category, item.media_type, item.resolution].filter(Boolean).join(" · ")}</span>}
+                        </div>
+                        <p className="mt-1 truncate font-mono text-[10px] opacity-60" title={item.source_path}>{item.source_path}</p>
+                      </div>
+                      <div className="text-right text-[10px] opacity-60">
+                        <div>{new Date(Number(item.updated_at) * 1000).toLocaleString()}</div>
+                        {trackerNames.length > 0 && <div>{trackerNames.join(" · ")}</div>}
+                      </div>
+                    </div>
+                    {trackerUploads.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
+                        {trackerUploads.map((upload) => (
+                          upload.url ? (
+                            <a key={`${item.id}-${upload.tracker}`} href={upload.url} target="_blank" rel="noreferrer" className="rounded border border-blue-500/40 px-1.5 py-0.5 text-blue-400 hover:bg-blue-500/10" title={upload.name || upload.url}>
+                              {upload.tracker}{upload.name ? ` · ${upload.name}` : ""}
+                            </a>
+                          ) : (
+                            <span key={`${item.id}-${upload.tracker}`} className="rounded border px-1.5 py-0.5 opacity-75" title={upload.name || upload.tracker}>
+                              {upload.tracker}{upload.name ? ` · ${upload.name}` : ""}
+                            </span>
+                          )
+                        ))}
+                      </div>
+                    )}
+                    {item.job_id && (historyStatus === "failed" || historyStatus === "interrupted") && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => performJobAction(item.job_id, "retry")}
+                          className="rounded bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                        >Continue upload</button>
+                        <button
+                          onClick={() => performJobAction(item.job_id, "log")}
+                          className={`rounded border px-2 py-1 text-[11px] ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}
+                        >Open log</button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+        <h3 className="mb-2 text-sm font-bold">Live unattended jobs</h3>
+        {!detachedJobs.length ? (
+          <div className={`rounded-lg border border-dashed p-8 text-center text-sm ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>No unattended jobs yet.</div>
+        ) : (
+          <div className="space-y-3">
+            {detachedJobs.map((job) => {
+              const status = String(job.status || "unknown");
+              const editable = Boolean(job.can_edit);
+              const prompt = job.prompt_request || job.metadata_request;
+              const releaseMetadata = job.release_metadata_request;
+              const draft = operationDrafts[job.id] ?? job.args ?? "";
+              const releaseDraft = operationMetadata[job.id] || {};
+              return (
+                <div key={job.id} className={`rounded-lg border p-3 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status === "completed" ? "bg-emerald-500/20 text-emerald-400" : status === "failed" || status === "cancelled" ? "bg-rose-500/20 text-rose-400" : status.startsWith("waiting") ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}>{status}</span>
+                        <span className="text-xs font-mono">{job.id}</span>
+                        {job.queue_position && <span className="text-[11px] opacity-60">queue #{job.queue_position}</span>}
+                      </div>
+                      <p className="mt-1 break-all text-sm font-medium">{job.source_path}</p>
+                      <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{job.message || ""}</p>
+                      {job.progress && (job.progress.percent !== undefined || job.progress.stage) && (
+                        <div className="mt-2">
+                          <div className="mb-1 flex justify-between text-[11px] opacity-70"><span>{job.progress.stage || "progress"}</span><span>{job.progress.percent !== undefined ? `${job.progress.percent}%` : ""}</span></div>
+                          {job.progress.percent !== undefined && <div className={`h-1.5 overflow-hidden rounded-full ${isDarkMode ? "bg-gray-700" : "bg-gray-200"}`}><div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress.percent) || 0))}%` }} /></div>}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={() => performJobAction(job.id, "log")} className={`rounded border px-2 py-1 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}>Log</button>
+                      {job.can_retry && <button onClick={() => performJobAction(job.id, "retry")} className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">Continue upload</button>}
+                      {job.can_cancel && <button onClick={() => performJobAction(job.id, "cancel")} className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-700">Cancel</button>}
+                    </div>
+                  </div>
+                  {editable && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <input value={draft} onChange={(event) => setOperationDrafts((previous) => ({ ...previous, [job.id]: event.target.value }))} className={`min-w-[240px] flex-1 rounded border px-2 py-1.5 text-xs font-mono ${isDarkMode ? "border-gray-600 bg-gray-800 text-gray-100" : "border-gray-300 bg-white text-gray-900"}`} aria-label={`Arguments for ${job.id}`} />
+                      <button onClick={() => performJobAction(job.id, "update", { args: draft, append_unattended: true })} className="rounded bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700">Save settings{status === "failed" || status === "interrupted" ? " & retry" : ""}</button>
+                    </div>
+                  )}
+                  {prompt && (status === "waiting_for_input" || status === "waiting_for_metadata") && (
+                    <div className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}>
+                      <p className="text-xs font-semibold">Input required</p>
+                      <p className="mt-1 whitespace-pre-wrap text-xs">{prompt.text || "Metadata IDs are required to continue."}</p>
+                      <div className="mt-2 flex gap-2">
+                        <input value={operationInput[job.id] || ""} onChange={(event) => setOperationInput((previous) => ({ ...previous, [job.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] }); }} className={`flex-1 rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`} placeholder={prompt.input_type === "yes_no" ? "y or n" : "Enter response"} />
+                        <button onClick={() => performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] })} className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Send</button>
+                      </div>
+                    </div>
+                  )}
+                  {releaseMetadata && status === "waiting_for_release_metadata" && (
+                    <div className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}>
+                      <p className="text-xs font-semibold">Release-name metadata required</p>
+                      <p className="mt-1 text-xs">{releaseMetadata.name || releaseMetadata.title || job.source_path}</p>
+                      {Array.isArray(releaseMetadata.fields) && releaseMetadata.fields.map((field) => (
+                        <label key={field} className="mt-2 block text-xs font-medium">
+                          <span>{field === "year" ? "Release year" : "Resolution"}</span>
+                          <input
+                            value={releaseDraft[field] ?? releaseMetadata.values?.[field] ?? ""}
+                            onChange={(event) => setOperationMetadata((previous) => ({ ...previous, [job.id]: { ...(previous[job.id] || {}), [field]: event.target.value } }))}
+                            placeholder={field === "year" ? "YYYY" : "1080p"}
+                            className={`mt-1 block w-full rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`}
+                          />
+                          {releaseMetadata.issues?.[field] && <span className="mt-1 block font-normal opacity-70">{releaseMetadata.issues[field]}</span>}
+                        </label>
+                      ))}
+                      <button onClick={() => performJobAction(job.id, "release_metadata", { ...(releaseMetadata.values || {}), ...releaseDraft })} className="mt-3 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Rebuild title and continue</button>
+                    </div>
+                  )}
+                  {activeLogJobId === job.id && operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{renderLogWithLinks(operationLog[job.id])}</pre>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+    if (!overlay) return panel;
+    return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">{panel}</div>;
+  };
 
   const richOutputRef = useRef(null);
   const lastFullHashRef = useRef("");
@@ -3279,7 +3748,6 @@ function AudionutsUAGUI() {
   useEffect(() => {
     coverRequestRef.current += 1;
     if (!isExecuting || !sessionId) {
-      setExecutionPreview(null);
       setProgressItems([]);
       setExecutionScreenshots([]);
       setExecutionDescription(null);
@@ -3434,6 +3902,30 @@ function AudionutsUAGUI() {
     } catch (error) {
       console.error(`Could not ${action} screenshot:`, error);
       window.alert(`Could not ${action} screenshot. Please try again.`);
+    } finally {
+      setScreenshotActionId("");
+    }
+  };
+
+  const regenerateExecutionScreenshots = async (group = "main") => {
+    if (!sessionId || screenshotActionId) return;
+    if (!window.confirm(`Regenerate every screenshot in ${group === "main" ? "this file" : `the ${group} group`}?`)) return;
+    setScreenshotActionId(`regenerate:${group}`);
+    try {
+      const response = await apiFetch(`${API_BASE}/execution_screenshots/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: sessionId, group }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok || !data?.success) {
+        window.alert(data?.error || "Could not regenerate screenshots.");
+        return;
+      }
+      await refreshExecutionScreenshots();
+    } catch (error) {
+      console.error("Could not regenerate screenshots:", error);
+      window.alert("Could not regenerate screenshots.");
     } finally {
       setScreenshotActionId("");
     }
@@ -3753,6 +4245,7 @@ function AudionutsUAGUI() {
       if (fileBrowserSearchTimer.current) {
         clearTimeout(fileBrowserSearchTimer.current);
       }
+      fileBrowserSearchController.current?.abort();
     };
   }, []);
 
@@ -3932,9 +4425,13 @@ function AudionutsUAGUI() {
           )
         : null;
     return [...items].sort((a, b) => {
-      const aIsDir = a.type === "folder" ? 0 : 1;
-      const bIsDir = b.type === "folder" ? 0 : 1;
-      if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      // Date sorting must compare every entry together. Keeping folders first
+      // here makes a newer file appear below an older download directory.
+      if (sortBy !== "date") {
+        const aIsDir = a.type === "folder" ? 0 : 1;
+        const bIsDir = b.type === "folder" ? 0 : 1;
+        if (aIsDir !== bIsDir) return aIsDir - bIsDir;
+      }
 
       if (customOrder && a.type === "folder" && b.type === "folder") {
         return (
@@ -4283,6 +4780,7 @@ function AudionutsUAGUI() {
     if (fileBrowserSearchTimer.current) {
       clearTimeout(fileBrowserSearchTimer.current);
     }
+    fileBrowserSearchController.current?.abort();
     if (!searchQuery) {
       setFileBrowserSearchResults(null);
       setFileBrowserSearchLoading(false);
@@ -4290,9 +4788,12 @@ function AudionutsUAGUI() {
     }
     setFileBrowserSearchLoading(true);
     fileBrowserSearchTimer.current = setTimeout(async () => {
+      const controller = new AbortController();
+      fileBrowserSearchController.current = controller;
       try {
         const response = await apiFetch(
           `${API_BASE}/browse_search?q=${encodeURIComponent(searchQuery)}`,
+          { signal: controller.signal },
         );
         if (!response.ok) {
           throw new Error(`Search request failed (${response.status})`);
@@ -4310,6 +4811,7 @@ function AudionutsUAGUI() {
           });
         }
       } catch (error) {
+        if (error?.name === "AbortError") return;
         console.error("File browser search failed:", error);
         if (fileBrowserSearchQuery.current === searchQuery) {
           setFileBrowserSearchResults({
@@ -4319,6 +4821,9 @@ function AudionutsUAGUI() {
           });
         }
       } finally {
+        if (fileBrowserSearchController.current === controller) {
+          fileBrowserSearchController.current = null;
+        }
         if (fileBrowserSearchQuery.current === searchQuery) {
           setFileBrowserSearchLoading(false);
         }
@@ -4919,6 +5424,10 @@ function AudionutsUAGUI() {
   const executeCommand = async () => {
     // Run before any await, including queue creation, to retain user activation.
     window.uaPromptSound?.unlock();
+
+    setIsOutputExpanded(true);
+    setShowExecutionPreview(true);
+    setExecutionPreview(null);
     if (selectedPaths.length > 1) {
       setIsExecuting(true);
       const rootContainer = richOutputRef.current;
@@ -4984,6 +5493,7 @@ function AudionutsUAGUI() {
     await executeSinglePath(path, newSessionId);
 
     setIsExecuting(false);
+    setIsOutputExpanded(true);
     setSessionId("");
   };
 
@@ -5383,6 +5893,20 @@ function AudionutsUAGUI() {
     const sources = Array.isArray(executionDescription?.sources)
       ? executionDescription.sources
       : [];
+    const trackerDescriptions = Array.isArray(executionDescription?.tracker_descriptions)
+      ? executionDescription.tracker_descriptions
+      : [];
+    const selectedTrackerDescription = trackerDescriptions.find(
+      (item) => item.tracker === trackerDescriptionSelection,
+    ) || trackerDescriptions[0];
+    const copyTrackerDescription = async (content) => {
+      try {
+        await navigator.clipboard.writeText(content || "");
+        window.alert("Tracker BBCode copied to the clipboard.");
+      } catch (_error) {
+        window.alert("Clipboard access failed; select and copy the text manually.");
+      }
+    };
     return (
       <div className="flex h-full flex-col">
         <div className="ua-upload-panel-header border-b p-3">
@@ -5429,6 +5953,42 @@ function AudionutsUAGUI() {
               <p className="text-xs text-gray-500">
                 No description sources are available yet.
               </p>
+            )}
+          </section>
+          <section
+            className={`rounded-lg border p-2 ${isDarkMode ? "border-emerald-900/60 bg-gray-800" : "border-emerald-200 bg-emerald-50"}`}
+          >
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className={`text-xs font-bold uppercase tracking-wide ${isDarkMode ? "text-emerald-300" : "text-emerald-800"}`}>Tracker BBCode</p>
+                <p className="mt-1 text-[11px] opacity-70">Copy the exact tracker-specific description after screenshots or tracker formatting changes.</p>
+              </div>
+              {selectedTrackerDescription && (
+                <button
+                  onClick={() => copyTrackerDescription(selectedTrackerDescription.content)}
+                  className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
+                >Copy BBCode</button>
+              )}
+            </div>
+            {trackerDescriptions.length ? (
+              <>
+                <select
+                  value={selectedTrackerDescription?.tracker || ""}
+                  onChange={(event) => setTrackerDescriptionSelection(event.target.value)}
+                  className={`mb-2 w-full rounded border px-2 py-1.5 text-xs ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
+                  aria-label="Select tracker-specific BBCode"
+                >
+                  {trackerDescriptions.map((item) => <option key={item.tracker} value={item.tracker}>{item.tracker}</option>)}
+                </select>
+                <textarea
+                  readOnly
+                  value={selectedTrackerDescription?.content || ""}
+                  className={`min-h-[10rem] w-full resize-y rounded border p-2 font-mono text-[11px] ${isDarkMode ? "border-gray-700 bg-gray-950 text-gray-200" : "border-gray-300 bg-white text-gray-800"}`}
+                  aria-label="Tracker-specific BBCode"
+                />
+              </>
+            ) : (
+              <p className="text-xs opacity-70">Tracker-specific description files will appear here after the upload stage generates them.</p>
             )}
           </section>
           <section className="flex min-h-[24rem] flex-1 flex-col">
@@ -5588,6 +6148,14 @@ function AudionutsUAGUI() {
               >
                 {screenshotActionId === "add" ? <SpinnerIcon /> : <PlusIcon />}
               </button>
+              <button
+                onClick={() => regenerateExecutionScreenshots("main")}
+                disabled={isWorking || !executionScreenshots.some((item) => (item.group || "main") === "main")}
+                className="rounded-md border border-purple-500 px-2 py-1 text-xs text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
+                title="Regenerate every screenshot for this file"
+              >
+                {screenshotActionId === "regenerate:main" ? "Regenerating…" : "Regenerate file"}
+              </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto p-3">
@@ -5619,6 +6187,15 @@ function AudionutsUAGUI() {
                         >
                           Add to this group
                         </button>
+                        {group !== "main" && (
+                          <button
+                            onClick={() => regenerateExecutionScreenshots(group)}
+                            disabled={isWorking}
+                            className="rounded-md border border-purple-500 px-2 py-1 normal-case tracking-normal text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
+                          >
+                            {screenshotActionId === `regenerate:${group}` ? "Regenerating…" : "Regenerate group"}
+                          </button>
+                        )}
                       </div>
                       <div className="ua-upload-screenshot-grid grid gap-3">
                         {screenshots.map((screenshot, index) => {
@@ -5626,6 +6203,8 @@ function AudionutsUAGUI() {
                             screenshotActionId === `replace:${screenshot.id}`;
                           const deleting =
                             screenshotActionId === `delete:${screenshot.id}`;
+                          const refilling =
+                            screenshotActionId === `refill:${screenshot.id}`;
                           const undoing =
                             screenshotActionId === `undo:${screenshot.id}`;
                           const screenshotState =
@@ -5720,6 +6299,21 @@ function AudionutsUAGUI() {
                                       ) : (
                                         <TrashIcon />
                                       )}
+                                    </button>
+                                  )}
+                                  {screenshot.can_refill && (
+                                    <button
+                                      onClick={() =>
+                                        changeExecutionScreenshot(
+                                          screenshot.id,
+                                          "refill",
+                                        )
+                                      }
+                                      disabled={isWorking}
+                                      className="px-2 py-1 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                                      title={`Delete and automatically refill ${screenshot.filename}`}
+                                    >
+                                      {refilling ? "Refilling…" : "Delete + refill"}
                                     </button>
                                   )}
                                   {screenshot.source === "replacement" && (
@@ -6799,6 +7393,7 @@ function AudionutsUAGUI() {
             ),
             isExecuting ? "Media" : "Arguments",
           )}
+          {navButton("operations", <span className="text-sm font-bold">◉</span>, "Operations")}
           {isExecuting &&
             navButton(
               "screenshots",
@@ -6865,6 +7460,7 @@ function AudionutsUAGUI() {
         onOpenUpdate={() =>
           visibleUpdateStatus ? setIsUpdateStatusOpen(true) : openChangelog()
         }
+        onOpenOperations={() => setOperationsOpen(true)}
         onOpenHelp={() => setIsHelpResourcesOpen(true)}
         onLogout={handleLogout}
       />
@@ -7566,7 +8162,7 @@ function AudionutsUAGUI() {
           maxWidth: "800px",
         }}
       >
-        {isExecuting ? (
+        {isExecuting || showExecutionPreview ? (
           isScreenshotReviewOpen ? (
             renderScreenshotsPanel()
           ) : isDescriptionReviewOpen ? (
@@ -7764,6 +8360,7 @@ function AudionutsUAGUI() {
           </>
         )}
       </div>
+      {operationsOpen && renderOperationsPanel(true)}
     </div>
   );
 }
