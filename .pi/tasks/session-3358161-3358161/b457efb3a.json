@@ -1,0 +1,20 @@
+{
+  "id": "b457efb3a",
+  "name": "Inspect Destiny process state",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -u\nps -eo pid,ppid,stat,etime,args | grep -E '[p]odman|[c]onmon|[u]pload.py|[h]elmd' | head -100\npodman inspect upload-assistant-wastaken --format 'status={{.State.Status}} pid={{.State.Pid}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} exit={{.State.ExitCode}} error={{.State.Error}} restart={{.RestartCount}}' 2>&1 || true\npodman exec upload-assistant-wastaken sh -c 'tr \"\\\\0\" \" \" < /proc/1/cmdline; echo; cat /proc/1/status | grep -E \"^State|^Sig\"' 2>&1 || true\nREMOTE",
+  "description": "Inspect Destiny’s current container and host supervisor state after the login reset restart.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b457efb3a.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788967658679,
+  "endTime": 1788967667417,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 699132,
+  "bytesWritten": 3046,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 90
+}

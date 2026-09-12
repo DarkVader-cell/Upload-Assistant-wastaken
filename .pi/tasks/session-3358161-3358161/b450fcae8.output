@@ -1,0 +1,20 @@
+local_http:
+curl: (28) Connection timed out after 15001 milliseconds
+000
+remote_state:
+status=running health=starting
+remote_http:
+401
+recent_logs:
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               

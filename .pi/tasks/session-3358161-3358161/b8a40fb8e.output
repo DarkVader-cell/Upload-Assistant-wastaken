@@ -1,0 +1,21 @@
+checkout=/mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken
+docker-compose.local.yml
+deluge-race_infra		Up 2 days
+netronome_vnstat	ghcr.io/vergoh/vnstat:latest	Up 9 days
+netronome_agent	ghcr.io/autobrr/netronome:latest	Up 9 days
+iperf3-server	docker.io/networkstatic/iperf3:latest	Up 9 days
+deluge-race	lscr.io/linuxserver/deluge:libtorrentv1-2.2.0-ls60	Up 2 days
+upload-assistant-wastaken	ghcr.io/darkvader-cell/upload-assistant-wastaken:latest	Up 41 hours
+usage: podman-compose [-h] [-v] [-f file] [-p PROJECT_NAME]
+                      [--podman-path PODMAN_PATH] [--podman-args args]
+                      [--podman-pull-args args] [--podman-push-args args]
+                      [--podman-build-args args] [--podman-inspect-args args]
+                      [--podman-run-args args] [--podman-start-args args]
+                      [--podman-stop-args args] [--podman-rm-args args]
+                      [--podman-volume-args args] [--no-ansi] [--no-cleanup]
+                      [--dry-run]
+                      [-t {1pod,1podfw,hostnet,cntnet,publishall,identity}]
+                      {help,version,pull,push,build,up,down,ps,run,exec,start,stop,restart,logs}
+                      ...
+podman-compose: error: argument command: invalid choice: 'config' (choose from help, version, pull, push, build, up, down, ps, run, exec, start, stop, restart, logs)
+Error: executing /usr/bin/podman-compose -f docker-compose.local.yml config --services: exit status 2

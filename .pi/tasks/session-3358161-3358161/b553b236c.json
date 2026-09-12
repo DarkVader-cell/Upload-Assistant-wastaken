@@ -1,0 +1,21 @@
+{
+  "id": "b553b236c",
+  "name": "Recreate Destiny service",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; timeout 150 sshpass -e ssh -4 -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -euo pipefail\ncd ~/Upload-Assistant-wastaken\ntimeout 30 podman rm -f upload-assistant-wastaken 2>/dev/null || true\ntimeout 30 podman pod rm -f upload-assistant-wastaken 2>/dev/null || true\ntimeout 60 podman compose -f docker-compose.local.yml up -d upload-assistant-wastaken\nsleep 25\ncode=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:12347/api/health || true)\necho \"health_http=$code\"\ntimeout 20 podman ps -a --filter name=upload-assistant-wastaken --format '{{.Names}}\\t{{.Status}}'\nREMOTE",
+  "description": "Recreate Destiny’s Upload Assistant after clearing orphaned Podman commands, using port 12347.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b553b236c.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788968148122,
+  "endTime": 1788968298212,
+  "exitCode": 124,
+  "signal": null,
+  "pid": 758044,
+  "bytesWritten": 2528,
+  "isAgent": false,
+  "error": "Exited with code 124",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 180
+}

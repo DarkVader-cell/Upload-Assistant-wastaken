@@ -40,8 +40,6 @@ import ast
 import asyncio
 import gc
 import json
-import logging
-import os
 import platform
 import re
 import shlex
@@ -50,14 +48,15 @@ import signal
 import threading
 import time
 import traceback
-from collections.abc import Iterable, Mapping, Sequence
-from pathlib import Path
+from collections.abc import Iterable, Mapping
 from typing import Any, Protocol, cast
 from urllib.parse import urljoin, urlparse
 
 from src.check_requirements import check_dependencies
 
 check_dependencies()
+
+import logging
 
 from bin.get_ffmpeg import FfmpegBinaryManager
 from bin.get_mkbrr import MkbrrBinaryManager
@@ -82,24 +81,17 @@ from src.early_tasks import is_usenet_only as _is_usenet_only
 from src.get_desc import gen_desc
 from src.get_name import NameManager
 from src.get_tracker_data import TrackerDataManager
-from src.manual_metadata import request_release_metadata
-from src.modified_release import detect_modified_release
 from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
-from src.release_validation import release_metadata_issues
-from src.runtime.artifacts import preparation_key
-from src.runtime.context import ExecutionContext
-from src.runtime.pipeline import FunctionStage, Pipeline, StageResult, StageStatus
-from src.runtime.planner import build_execution_plan, preparation_pipeline_signature
-from src.runtime.queue import SafeParallelPreparation
 from src.takescreens import TakeScreensManager, download_artwork_from_meta
 from src.temp_paths import artwork_dir, music_release_snapshot_path, screenshots_dir
+from src.torrent_manifest import TorrentManifest
 from src.torrentcreate import TorrentCreator
 from src.trackerhandle import process_trackers
-from src.trackers.alpharatio import AlphaRatio
 from src.trackers.common import Common
-from src.trackers.passthepopcorn import PassThePopcorn
+from src.trackers.GAZELLE.alpharatio import AlphaRatio
+from src.trackers.GAZELLE.passthepopcorn import PassThePopcorn
 from src.trackersetup import TrackerSetup, api_trackers, http_trackers, other_api_trackers, tracker_class_map
 from src.trackerstatus import TrackerStatusManager
 from src.tvdb import close_tvdb
@@ -170,17 +162,6 @@ def _publish_webui_preview_target(path: str, meta_uuid: str | None = None) -> No
         set_execution_preview_target(_webui_session_id, _webui_run_token, path, meta_uuid)
     except Exception:
         return
-
-
-async def _record_release_history(meta: Meta, *, record_id: str, status: str | None = None) -> None:
-    """Persist a non-secret release summary without delaying the upload loop."""
-    try:
-        from src.runtime.history import ReleaseHistoryStore
-
-        source = "webui" if _webui_session_id else "cli"
-        await asyncio.to_thread(ReleaseHistoryStore(base_dir, config).record_release, meta, status=status, source=source, record_id=record_id)
-    except Exception as error:
-        logger.debug(f"Release history update failed: {error}")
 
 
 def _handle_shutdown_signal(signum: int, _frame: Any) -> None:
@@ -392,12 +373,6 @@ else:
 
 async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
     """Merges saved metadata with the current meta, respecting overwrite rules."""
-    current_path = str(meta.path or "")
-    saved_path = str(saved_meta.get("path") or "")
-    if current_path and (not saved_path or Path(current_path).expanduser().resolve(strict=False) != Path(saved_path).expanduser().resolve(strict=False)):
-        logger.warning("[yellow]Ignoring saved metadata from a different upload path.[/yellow]")
-        return {}
-
     overwrite_list = [
         "anon",
         "asin",
@@ -1131,40 +1106,6 @@ async def _prompt_music_meta(meta: Meta) -> None:
         meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
 
 
-async def _ensure_release_name_metadata(meta: Meta) -> bool:
-    """Stop before tracker checks when mandatory release-name fields are absent.
-
-    Detached Web UI jobs use the same stdin checkpoint as ID correction, which
-    lets an unattended queue wait safely for an operator instead of silently
-    publishing an incomplete title.
-    """
-    issues = release_metadata_issues(meta)
-    if not issues:
-        return True
-
-    fields = ", ".join(issues)
-    if meta.unattended and not os.environ.get("UA_DETACHED_JOB_ID"):
-        logger.error(f"[bold red]Upload blocked: required release metadata is missing ({fields}).[/bold red]")
-        return False
-
-    logger.info(f"[bold yellow]Release metadata required before upload: {fields}.[/bold yellow]")
-    try:
-        changed = request_release_metadata(meta, issues)
-    except (EOFError, RuntimeError, ValueError) as error:
-        logger.error(f"[bold red]Upload blocked: release metadata was not supplied ({error}).[/bold red]")
-        return False
-
-    if changed:
-        meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
-        logger.info(f"[green]Release name rebuilt: {meta.name}[/green]")
-
-    remaining = release_metadata_issues(meta)
-    if remaining:
-        logger.error(f"[bold red]Upload blocked: invalid release metadata remains ({', '.join(remaining)}).[/bold red]")
-        return False
-    return True
-
-
 def book_screens(meta: Meta, min_successful_uploads: int) -> tuple[int, int]:
     """Count non-poster PNG screenshots for a BOOK upload and cap the upload minimum.
 
@@ -1185,15 +1126,16 @@ def book_screens(meta: Meta, min_successful_uploads: int) -> tuple[int, int]:
 
 
 def xxx_min_successful_uploads(meta: Meta, min_successful_uploads: int) -> int:
-    """Cap XXX image uploads to their one-contact-sheet-per-video contract."""
+    """Cap XXX image uploads to its one-contact-sheet-per-video contract."""
     try:
         contact_sheet_count = int(meta.screens or 0)
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         contact_sheet_count = 0
     return min(min_successful_uploads, max(1, contact_sheet_count))
 
-async def _gather_initial_prep(meta: Meta) -> tuple[Meta, Prep] | None:
-    """Resolve initial settings and gather media metadata for one release."""
+
+async def process_meta(meta: Meta, base_dir: str) -> bool:
+    """Process the metadata for each queued path."""
     if not meta.imghost:
         meta.imghost = config["DEFAULT"]["img_host_1"]
         try:
@@ -1203,7 +1145,7 @@ async def _gather_initial_prep(meta: Meta) -> tuple[Meta, Prep] | None:
                 update_oeimg_to_onlyimage()
         except Exception as e:
             logger.error(f"[red]Error checking image hosts: {e}[/red]")
-            return None
+            return False
 
     if not meta.unattended:
         ua = config["DEFAULT"].get("auto_mode", False)
@@ -1216,34 +1158,7 @@ async def _gather_initial_prep(meta: Meta) -> tuple[Meta, Prep] | None:
     except Exception as e:
         logger.info(f"Error in gather_prep: {e}")
         logger.info(traceback.format_exc())
-        return None
-
-    modified_reason = detect_modified_release(
-        [str(meta.path or "")],
-        str(meta.tag or ""),
-        is_disc=bool(meta.is_disc),
-        personal_release=bool(meta.personalrelease),
-    )
-    if modified_reason and not meta.get("modified_release_reason"):
-        meta.modified_release_reason = modified_reason
-    if meta.modified_release_reason and not meta.is_disc and not meta.personalrelease and not config["DEFAULT"].get("allow_renamed_releases", False):
-        logger.info(f"[bold red]Upload blocked: {meta.modified_release_reason}[/bold red]")
-        if meta.unattended:
-            meta.we_are_uploading = False
-            meta.skip_cross_seeding = True
-            return None
-        try:
-            if not CLI_UI.ask_yes_no("Continue with this release anyway?", default=False):
-                meta.we_are_uploading = False
-                meta.skip_cross_seeding = True
-                return None
-        except EOFError:
-            return None
-    return meta, prep
-
-
-async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> bool:
-    """Run the established post-discovery preparation behavior."""
+        return False
 
     # Load covers.json if it exists and not already present in meta
     covers_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/covers.json"
@@ -1307,10 +1222,6 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
 
     if meta.category == "MUSIC":
         await _prompt_music_meta(meta)
-
-    if not await _ensure_release_name_metadata(meta):
-        meta.we_are_uploading = False
-        return False
 
     meta = await gen_desc(meta, takescreens_manager, uploadscreens_manager)
 
@@ -1437,7 +1348,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
         ]:
             if tracker in trackers:
                 status_dict = meta.tracker_status.setdefault(tracker, {})
-                status_dict["skip_upload"] = (meta.unattended_audio_skip or meta.unattended_subtitle_skip) and not meta.force_upload
+                status_dict["skip_upload"] = meta.unattended_audio_skip or meta.unattended_subtitle_skip
 
         await asyncio.sleep(0.2)
         async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
@@ -1764,15 +1675,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                     "DIGITALCORE",
                     "GREATPOSTERWALL",
                     "HAWKEUNO",
-                    "LUMINARR",
                     "ONLYENCODES",
-                    "ANTHELION",
-                    "AITHER",
-                    "BLUTOPIA",
-                    "LST",
-                    "DARKPEERS",
-                    "RACING4EVERYONE",
-                    "YUSCENE",
                     "PASSTHEPOPCORN",
                     "SKIPTHECOMMERCIALS",
                     "TVCHAOSUK",
@@ -1922,12 +1825,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
                     if not host_order and allowed_hosts:
                         host_order = list(allowed_hosts)
 
-                    # Unattended retries may inherit the host selected by a previous
-                    # fallback attempt. Start from the first compatible configured
-                    # host so a stale/dead fallback host cannot suppress earlier
-                    # healthy hosts (for example, imgbox returning HTTP 502 while
-                    # imgbb remains available).
-                    start_index = 0 if meta.unattended else (host_order.index(current_img_host) if current_img_host in host_order else 0)
+                    start_index = host_order.index(current_img_host) if current_img_host in host_order else 0
                     image_list_count = 0
 
                     for idx in range(start_index, len(host_order)):
@@ -2076,8 +1974,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
             await progress_task
 
     has_local_subs = bool(meta.subtitle_files)
-    torrent_path = str(Path(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/BASE.torrent").resolve())
-    subs_torrent_path = str(Path(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/BASE_SUBS.torrent").resolve())
+    torrent_manifest = TorrentManifest(meta.base_dir, meta.uuid)
 
     try:
         await asyncio.gather(early_base_torrent_task, early_usenet_prepare_task)
@@ -2095,7 +1992,7 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
 
     is_usenet_only = _is_usenet_only(meta)
     if not is_usenet_only:
-        if meta.rehash is False and not Path(torrent_path).exists() and not meta.base_torrent_created and not meta.we_checked_them_all:
+        if meta.rehash is False and torrent_manifest.default_path("base") is None and not meta.base_torrent_created and not meta.we_checked_them_all:
             if not reuse_torrent or not Path(reuse_torrent).exists():
                 reuse_torrent = await client.find_existing_torrent(meta)
             if reuse_torrent is not None:
@@ -2103,28 +2000,29 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
 
         # 2. Re-create base torrents if rehash is True
         if meta.rehash is True and meta.nohash is False:
-            await TORRENT_CREATOR.create_torrent(meta, Path(cast(str, meta.path)), "BASE")
+            await TORRENT_CREATOR.create_torrent(meta, Path(cast(str, meta.path)), "BASE", make_default=True)
             if has_local_subs:
-                await TORRENT_CREATOR.create_torrent(meta, Path(cast(str, meta.path)), "BASE_SUBS")
+                await TORRENT_CREATOR.create_torrent(meta, Path(cast(str, meta.path)), "BASE_SUBS", make_default=True)
 
         # 3. Otherwise generate if missing
         else:
             if (
-                not Path(torrent_path).exists()
+                torrent_manifest.default_path("base") is None
                 and base_reuse_torrent
                 and Path(base_reuse_torrent).exists()
                 and (not has_local_subs or client._torrent_has_no_subtitles(base_reuse_torrent))
             ):
                 await TORRENT_CREATOR.create_base_from_existing_torrent(base_reuse_torrent, meta.base_dir, meta.uuid)
-            if not Path(torrent_path).exists() and meta.nohash is False:
+            if torrent_manifest.default_path("base") is None and meta.nohash is False:
                 await TORRENT_CREATOR.create_torrent(meta, Path(cast(str, meta.path)), "BASE")
-            if has_local_subs and not Path(subs_torrent_path).exists() and meta.nohash is False:
+            if has_local_subs and torrent_manifest.default_path("base_subs") is None and meta.nohash is False:
                 await TORRENT_CREATOR.create_torrent(meta, Path(cast(str, meta.path)), "BASE_SUBS")
 
     if meta.nohash:
         meta.client = "none"
 
-    if Path(torrent_path).exists():
+    torrent_path = torrent_manifest.default_path("base")
+    if torrent_path is not None:
         raw_trackers = meta.trackers
         trackers_list = [raw_trackers] if isinstance(raw_trackers, str) else [t for t in raw_trackers if t.strip()]
         trackers_normalized = [t.strip().upper() for t in trackers_list]
@@ -2147,84 +2045,6 @@ async def _process_meta_after_initial(meta: Meta, base_dir: str, prep: Prep) -> 
         await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
     _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
     return True
-
-
-async def process_meta(meta: Meta, base_dir: str, execution_context: ExecutionContext | None = None) -> bool:
-    """Run release preparation through the shared observable pipeline.
-
-    The compatibility stages deliberately delegate to the established
-    implementation. Subsequent refactors can extract one stage at a time while
-    keeping this public function, ordering, and boolean result unchanged.
-    """
-    if execution_context is None:
-        async with ExecutionContext.create(base_dir, config) as owned_context:
-            return await process_meta(meta, base_dir, owned_context)
-
-    extension_registry = execution_context.extensions
-    pipeline_signature = preparation_pipeline_signature(tuple(stage.name for stage in extension_registry.pipeline_stages))
-    source_path = str(meta.path or "")
-    run_key = await asyncio.to_thread(preparation_key, source_path, meta, pipeline_signature)
-    workspace_name = meta.uuid or Path(source_path).name
-    workspace = Path(base_dir) / "tmp" / workspace_name
-    invocation = {
-        "base_dir": meta.base_dir,
-        "item_args": meta.item_args,
-        "path": meta.path,
-        "trackers": meta.trackers,
-    }
-    restored = await execution_context.artifacts.restore(run_key, workspace)
-    # Cached preparation artifacts intentionally omit volatile upload state
-    # such as ``we_are_uploading``. They are safe for preparation-only runs,
-    # but cannot be restored for a real upload because doing so can make the
-    # release fall through as a non-uploading run.
-    if restored is not None and not meta.force_upload and meta.prepare_only:
-        meta.update(restored)
-        meta.update(invocation)
-        execution_context.metrics.increment("artifacts.preparation.hits")
-        return True
-    if meta.force_upload and restored is not None:
-        execution_context.metrics.increment("artifacts.preparation.force_upload_bypasses")
-    execution_context.metrics.increment("artifacts.preparation.misses")
-
-    succeeded = False
-    prepared: tuple[Meta, Prep] | None = None
-
-    async def gather_initial(_context: ExecutionContext, release_meta: Meta) -> StageResult:
-        nonlocal prepared
-        prepared = await _gather_initial_prep(release_meta)
-        return StageResult.completed() if prepared is not None else StageResult.stopped("initial preparation failed")
-
-    async def prepare_release(_context: ExecutionContext, _release_meta: Meta) -> StageResult:
-        nonlocal succeeded
-        if prepared is None:
-            if not meta.imghost:
-                return StageResult.stopped("initial preparation did not complete")
-            resumed_prep = Prep(screens=meta.screens, img_host=meta.imghost, config=config, publish_preview=_publish_webui_preview_target)
-            resumed = (meta, resumed_prep)
-        else:
-            resumed = prepared
-        prepared_meta, prep = resumed
-        succeeded = await _process_meta_after_initial(prepared_meta, base_dir, prep)
-        return StageResult.completed() if succeeded else StageResult.stopped("release preparation failed")
-
-    stages = [
-        FunctionStage("gather_initial_metadata", gather_initial),
-        FunctionStage("prepare_release", prepare_release),
-        *extension_registry.pipeline_stages,
-    ]
-    pipeline = Pipeline(
-        stages,
-        checkpoint_store=execution_context.checkpoints,
-        run_key=run_key,
-        resume=not meta.no_resume,
-        signature=pipeline_signature,
-    )
-    results = await pipeline.run(execution_context, meta)
-    succeeded = bool(results) and all(result.status is not StageStatus.STOPPED for result in results)
-    if succeeded and meta.uuid:
-        await execution_context.artifacts.capture(run_key, Path(base_dir) / "tmp" / meta.uuid, meta.to_dict())
-        execution_context.metrics.increment("artifacts.preparation.writes")
-    return succeeded
 
 
 async def cleanup_screenshot_temp_files(meta: Meta) -> None:
@@ -2276,16 +2096,6 @@ async def save_processed_file(log_file: str, file_path: str) -> None:
         await f.write(json.dumps(processed_files, indent=4))
 
 
-def queue_item_has_successful_upload(tracker_statuses: Sequence[Mapping[str, Any]], *, debug: bool = False) -> bool:
-    """Return whether a queue item is safe to mark as processed.
-
-    Unattended queues must retain items when every tracker failed. Debug mode
-    is intentionally treated as complete because it is a non-uploading dry
-    run and has historically consumed queue entries.
-    """
-    return debug or any(status.get("upload_success") is True for status in tracker_statuses)
-
-
 def get_local_version(version_file: str | Path) -> str | None:
     """Extracts the local version from the version.py file."""
     try:
@@ -2312,7 +2122,7 @@ def get_remote_version(url: str) -> tuple[str | None, str | None]:
                 return match.group(1), content
             logger.info("[red]Version not found in remote file.")
             return None, None
-        logger.warning(f"[yellow]Could not fetch remote version file (HTTP {response.status_code}); continuing with local version[/yellow]")
+        logger.error(f"[red]Failed to fetch remote version file. Status code: {response.status_code}")
         return None, None
     except requests.RequestException as e:
         logger.info(f"[red]An error occurred while fetching the remote version file: {e}")
@@ -2390,10 +2200,9 @@ def extract_changelog(content: str, to_version: str) -> str | None:
     return None
 
 
-async def update_notification(execution_context: ExecutionContext | None = None) -> str:
+async def update_notification() -> str:
     version_file = CODE_DIR / "src" / "version.py"
-    # The upstream project publishes from development; master no longer exists.
-    remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/development/src/version.py"
+    remote_version_url = "https://raw.githubusercontent.com/wastaken7/Upload-Assistant/master/src/version.py"
 
     notice = config["DEFAULT"].get("update_notification", True)
     verbose = config["DEFAULT"].get("verbose_notification", False)
@@ -2415,21 +2224,7 @@ async def update_notification(execution_context: ExecutionContext | None = None)
     if cached_response:
         remote_version, remote_content = cached_response
     else:
-        if execution_context is None:
-            remote_version, remote_content = await asyncio.to_thread(get_remote_version, remote_version_url)
-        else:
-            try:
-                http_client = await execution_context.http.client("update-notification", request_timeout=30.0)
-                response = await http_client.get(remote_version_url)
-                if response.status_code == 200:
-                    remote_content = response.text
-                    match = re.search(r'__version__\s*=\s*"([^"]+)"', remote_content)
-                    remote_version = match.group(1) if match else None
-                else:
-                    remote_version, remote_content = None, None
-            except Exception as error:
-                logger.info(f"[red]An error occurred while fetching the remote version file: {error}")
-                remote_version, remote_content = None, None
+        remote_version, remote_content = get_remote_version(remote_version_url)
         if remote_version and remote_content:
             _write_update_notification_cache(remote_version, remote_content)
     if not remote_version:
@@ -2461,13 +2256,10 @@ def load_heavy_globals() -> None:
     CLI_UI.setup(color="always", title="Upload Assistant")
 
 
-async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None = None) -> None:
-    if execution_context is None:
-        metrics_enabled = bool(config.get("DEFAULT", {}).get("runtime_metrics", False))
-        async with ExecutionContext.create(base_dir, config, metrics_enabled=metrics_enabled) as owned_context:
-            await do_the_thing(base_dir, owned_context)
-        return
+async def do_the_thing(base_dir: str) -> None:
+    from src.api_key_expiry import reset_api_key_expiry_warnings
 
+    reset_api_key_expiry_warnings()
     load_heavy_globals()
     # Reload config from disk so that changes made via the WebUI config
     # editor (or manual file edits between runs) are picked up.  The
@@ -2488,6 +2280,21 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
         config.update(_reloaded)
     except Exception as exc:
         logger.warning(f"[yellow]Warning: could not reload config from disk: {exc}[/yellow]")
+
+    from src.prowlarr import ProwlarrError, apply_prowlarr_credentials, configured_prowlarr, fetch_prowlarr_credentials
+
+    if prowlarr_connection := configured_prowlarr(config):
+        try:
+            report = await asyncio.to_thread(
+                fetch_prowlarr_credentials,
+                prowlarr_connection[0],
+                prowlarr_connection[1],
+                set(tracker_class_map),
+            )
+            applied = apply_prowlarr_credentials(config, report)
+            logger.debug(f"[green]Prowlarr supplied fallback credentials for {len(applied)} tracker(s).[/green]")
+        except ProwlarrError as exc:
+            logger.warning(f"[yellow]Prowlarr credential fallback unavailable: {exc}[/yellow]")
 
     await asyncio.sleep(0.1)  # Ensure it's not racing
 
@@ -2514,8 +2321,6 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                 Path(subdir_path).chmod(0o700)
 
     meta = Meta()
-    history_record_id = ""
-    history_recorded = False
     try:
         remaining_args, pasted_paths = read_paths_from_stdin(sys.argv[1:], sys.stdin)
     except ValueError as exc:
@@ -2540,10 +2345,13 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
             break
 
     meta.ua_name = "Upload-Assistant"
-    meta.current_version = ""
+    meta.current_version = await update_notification()
 
-    # Do not add an Upload Assistant identity/signature to generated descriptions.
-    meta.ua_signature = ""
+    signature = f"Shared with {meta.ua_name}"
+    if meta.current_version:
+        signature += f" {meta.current_version}"
+    signature += " (fork)"
+    meta.ua_signature = signature
     meta.base_dir = base_dir
 
     cleanup_only = any(arg in ("--cleanup", "-cleanup") for arg in sys.argv) and len(sys.argv) <= 2
@@ -2702,18 +2510,6 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
         if path.endswith('"'):
             path = path[:-1]
 
-        if meta.dry_run_plan:
-            queue_list = await QueueManager.plan_queue(path, meta, paths, base_dir)
-            plans: list[dict[str, Any]] = []
-            for queue_item in queue_list:
-                planned_path = str(queue_item.get("path") or "") if isinstance(queue_item, Mapping) else str(queue_item)
-                if planned_path:
-                    plans.append((await build_execution_plan(execution_context, meta, planned_path)).to_dict())
-            logger.info(json.dumps({"plans": plans}, indent=2), extra={"markup": False, "highlighter": None})
-            return
-
-        meta.current_version = await update_notification(execution_context)
-
         is_binary = await get_mkbrr_path(base_dir)
         if not meta.mkbrr:
             try:
@@ -2734,67 +2530,10 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
         skipped_files_count = 0
         base_meta = meta.copy()
 
-        configured_parallel = config.get("DEFAULT", {}).get("queue_prepare_concurrency", 1)
-        requested_parallel = meta.queue_prepare_concurrency or configured_parallel
-        try:
-            preparation_concurrency = max(1, int(requested_parallel))
-        except (TypeError, ValueError):
-            preparation_concurrency = 1
-        parallel_prepared: dict[int, tuple[Meta, bool]] = {}
-        can_prepare_in_parallel = (
-            preparation_concurrency > 1
-            and bool(meta.queue)
-            and bool(meta.unattended)
-            and not meta.site_upload_queue
-            and not meta.args_line_queue
-            and all(isinstance(item, str) for item in queue_list)
-            and len({Path(str(item)).name for item in queue_list}) == len(queue_list)
-        )
-
-        if can_prepare_in_parallel:
-            logger.info(f"[cyan]Preparing up to {preparation_concurrency} queue items concurrently; uploads remain serialized.[/cyan]")
-            preparation_pool: SafeParallelPreparation[tuple[int, str], tuple[int, Meta, bool]] = SafeParallelPreparation(preparation_concurrency)
-
-            async def prepare_queue_item(index_and_path: tuple[int, str]) -> tuple[int, Meta, bool]:
-                index, item_path = index_and_path
-                prepared_meta = base_meta.copy()
-                prepared_meta.path = item_path
-                prepared_meta.uuid = ""
-                prepared_meta.item_args = [item_path]
-                prepared_tmp = Path(base_dir) / "tmp" / Path(item_path).name
-                ensure_secure_tmp_subdir(prepared_tmp)
-                token = current_release_log_path.set(str(prepared_tmp / f"prepare_{int(time.time())}.log"))
-                try:
-                    meta_file = prepared_tmp / "meta.json"
-                    keep_meta = bool(config["DEFAULT"].get("keep_meta", False))
-                    if keep_meta and meta_file.exists() and not prepared_meta.delete_meta:
-                        async with aiofiles.open(meta_file, encoding="utf-8") as existing:
-                            content = await existing.read()
-                        if content.strip():
-                            await merge_meta(prepared_meta, cast(dict[str, Any], json.loads(content)))
-                    succeeded = await process_meta(prepared_meta, base_dir, execution_context)
-                    return index, prepared_meta, succeeded
-                finally:
-                    await cancel_and_drain_early_artifact_tasks(prepared_meta.uuid)
-                    current_release_log_path.reset(token)
-
-            prepared_results = await preparation_pool.prepare(list(enumerate(cast(list[str], queue_list))), prepare_queue_item)
-            for result in prepared_results:
-                if isinstance(result, BaseException):
-                    logger.warning(f"[yellow]Parallel preparation worker failed: {result}; item will retry sequentially.[/yellow]")
-                    continue
-                index, prepared_meta, succeeded = result
-                parallel_prepared[index] = (prepared_meta, succeeded)
-
-        for queue_index, queue_item in enumerate(queue_list):
+        for queue_item in queue_list:
             total_files = len(queue_list)
             current_item_path: str = ""
             tmp_path = ""
-            parallel_meta_success: bool | None = None
-            was_parallel_prepared = False
-            detached_job_id = os.environ.get("UA_DETACHED_JOB_ID", "").strip()
-            history_record_id = detached_job_id or f"{_webui_session_id or 'cli'}:{queue_index}:{time.time_ns()}"
-            history_recorded = False
             current_release_log_path.set(None)
             try:
                 meta = base_meta.copy()
@@ -2841,16 +2580,9 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     else:
                         meta.item_args = list(sys.argv[1:])
 
-                parallel_result = parallel_prepared.get(queue_index)
-                was_parallel_prepared = parallel_result is not None
-                if parallel_result is not None:
-                    meta, parallel_meta_success = parallel_result
-                    path = str(meta.path or path)
-                    _publish_webui_preview_target(path, meta.uuid or None)
-                else:
-                    meta.path = path
-                    meta.uuid = ""
-                    _publish_webui_preview_target(path)
+                meta.path = path
+                meta.uuid = ""
+                _publish_webui_preview_target(path)
 
                 if not path:
                     raise ValueError("The 'path' variable is not defined or is empty.")
@@ -2861,7 +2593,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                 ensure_secure_tmp_subdir(tmp_path)
                 current_release_log_path.set(str(Path(tmp_path) / f"upload_{int(time.time())}.log"))
 
-                if not was_parallel_prepared and meta.delete_tmp and Path(tmp_path).exists():
+                if meta.delete_tmp and Path(tmp_path).exists():
                     try:
                         shutil.rmtree(tmp_path)
                         if os.name != "nt":
@@ -2877,17 +2609,14 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
                 keep_meta = config["DEFAULT"].get("keep_meta", False)
 
-                if not was_parallel_prepared and (not keep_meta or meta.delete_meta):
-                    if Path(meta_file).exists():
-                        try:
-                            meta_file.unlink()
-                            logger.debug(f"[bold yellow]Found and deleted existing metadata file: {meta_file}")
-                        except Exception as e:
-                            logger.info(f"[bold red]Failed to delete metadata file {meta_file}: {e!s}")
-                    else:
-                        logger.debug(f"[yellow]No metadata file found at {meta_file}")
+                if (not keep_meta or meta.delete_meta) and Path(meta_file).exists():
+                    try:
+                        meta_file.unlink()
+                        logger.debug(f"[bold yellow]Found and deleted existing metadata file: {meta_file}")
+                    except Exception as e:
+                        logger.info(f"[bold red]Failed to delete metadata file {meta_file}: {e!s}")
 
-                if not was_parallel_prepared and keep_meta and Path(meta_file).exists():
+                if keep_meta and Path(meta_file).exists():
                     async with aiofiles.open(meta_file, encoding="utf-8") as f:
                         content = await f.read()
                         saved_meta = cast(dict[str, Any], json.loads(content)) if content.strip() else {}
@@ -2903,25 +2632,20 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
             logger.info(f"[green]Gathering info for {Path(path).name}")
 
-            if parallel_meta_success is None:
-                try:
-                    meta_success = await process_meta(meta, base_dir, execution_context)
-                finally:
-                    await cancel_and_drain_early_artifact_tasks(meta.uuid)
-            else:
-                meta_success = parallel_meta_success
+            try:
+                meta_success = await process_meta(meta, base_dir)
+            finally:
+                await cancel_and_drain_early_artifact_tasks(meta.uuid)
             if not meta_success:
                 if "queue" in meta and meta.queue is not None:
                     processed_files_count += 1
                     skipped_files_count += 1
-                    logger.info(f"[yellow]Upload preparation failed for {current_item_path}; leaving it retryable in the queue.\n\n")
-                await cleanup_manager.cleanup()
-                gc.collect()
-                cleanup_manager.reset_terminal()
-                continue
-
-            if meta.prepare_only:
-                logger.info(f"[green]Preparation checkpoint saved for {current_item_path or path}[/green]")
+                    logger.info(f"[cyan]Processed {processed_files_count}/{total_files} files with {skipped_files_count} skipped uploading.\n\n")
+                    if log_file and (not meta.debug or "debug" in Path(log_file).name):
+                        if meta.site_upload_queue:
+                            await QueueManager.save_processed_path(log_file, current_item_path)
+                        else:
+                            await save_processed_file(log_file, current_item_path)
                 await cleanup_manager.cleanup()
                 gc.collect()
                 cleanup_manager.reset_terminal()
@@ -3014,7 +2738,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                         t_upper = (tracker).upper().strip()
                         if t_upper == "USENET":
                             continue
-                        tracker_class = tracker_setup.registry.get(t_upper)
+                        tracker_class = tracker_class_map.get(t_upper)
                         if tracker_class and getattr(tracker_class, "is_usenet", False):
                             usenet_trackers.append(tracker)
                             continue
@@ -3144,7 +2868,8 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     if "queue" in meta and meta.queue is not None:
                         processed_files_count += 1
                         tracker_statuses = [status for status in meta.tracker_status.values() if isinstance(status, Mapping)]
-                        upload_succeeded = queue_item_has_successful_upload(tracker_statuses, debug=bool(meta.debug))
+                        upload_succeeded = any(status.get("upload_success") is True for status in tracker_statuses)
+
                         if not upload_succeeded and not meta.debug:
                             skipped_files_count += 1
                             logger.info(f"[yellow]Processed {processed_files_count}/{total_files} files; no tracker upload succeeded.[/yellow]")
@@ -3154,12 +2879,7 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                             logger.info(f"[cyan]Successfully uploaded {processed_files_count - skipped_files_count} of {meta.limit_queue} in limit with {total_files} files.")
                         else:
                             logger.info(f"[cyan]Successfully uploaded {processed_files_count - skipped_files_count}/{total_files} files.")
-                        # A queue item is complete only after at least one
-                        # tracker accepted it (or in debug mode). Leaving
-                        # zero-success items unlogged lets unattended Qui
-                        # queues retry them after a restart instead of
-                        # silently losing work.
-                        if (upload_succeeded or meta.debug) and log_file and (not meta.debug or "debug" in Path(log_file).name):
+                        if log_file and (not meta.debug or "debug" in Path(log_file).name):
                             if meta.site_upload_queue:
                                 await QueueManager.save_processed_path(log_file, current_item_path)
                             else:
@@ -3200,9 +2920,6 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
                     else:
                         await save_processed_file(log_file, current_item_path)
 
-            await _record_release_history(meta, record_id=history_record_id)
-            history_recorded = True
-
             if "limit_queue" in meta and meta.limit_queue > 0 and (processed_files_count - skipped_files_count) >= meta.limit_queue:
                 if sanitize_meta:
                     try:
@@ -3228,13 +2945,10 @@ async def do_the_thing(base_dir: str, execution_context: ExecutionContext | None
 
     except Exception as e:
         logger.info(f"[bold red]An unexpected error occurred: {e}")
-        if history_record_id and not history_recorded:
-            await _record_release_history(meta, record_id=history_record_id, status="failed")
         if sanitize_meta:
             meta = await Redaction.clean_meta_for_export(meta)
         logger.info(traceback.format_exc())
         cleanup_manager.reset_terminal()
-        raise
 
     finally:
         current_release_log_path.set(None)
@@ -3311,7 +3025,7 @@ async def process_cross_seeds(meta: Meta) -> None:
 
                 # Search for existing torrents
                 if tracker != "PASSTHEPOPCORN":
-                    if hasattr(tracker_class, "get_additional_checks") and not meta.force_upload:
+                    if hasattr(tracker_class, "get_additional_checks"):
                         import inspect
 
                         if inspect.iscoroutinefunction(tracker_class.get_additional_checks):
@@ -3324,7 +3038,7 @@ async def process_cross_seeds(meta: Meta) -> None:
                     dupes = await tracker_class.search_existing(meta)
                 else:
                     ptp = PassThePopcorn(config=config)
-                    if hasattr(ptp, "get_additional_checks") and not meta.force_upload:
+                    if hasattr(ptp, "get_additional_checks"):
                         import inspect
 
                         if inspect.iscoroutinefunction(ptp.get_additional_checks):
@@ -3437,7 +3151,7 @@ async def get_mkbrr_path(base_dir: str | None = None) -> str | None:
         if bundled_mkbrr := MkbrrBinaryManager.find_existing_binary(CODE_DIR):
             return bundled_mkbrr
         resolved_base_dir = base_dir or str(STATE_DIR)
-        mkbrr_path = await MkbrrBinaryManager.ensure_mkbrr_binary(resolved_base_dir, version="v1.24.0")
+        mkbrr_path = await MkbrrBinaryManager.ensure_mkbrr_binary(resolved_base_dir)
         return mkbrr_path if mkbrr_path else None
     except Exception as e:
         logger.error(f"[red]Error setting up mkbrr binary: {e}[/red]")
@@ -3473,7 +3187,6 @@ async def main() -> None:
     except Exception as e:
         if not _shutdown_requested:
             logger.error(f"[bold red]Unexpected error: {e}[/bold red]")
-            raise
     finally:
         with contextlib.suppress(Exception):
             await close_tvdb()
@@ -3487,19 +3200,12 @@ def run() -> None:
     if hasattr(signal, "SIGTERM"):
         signal.signal(signal.SIGTERM, _handle_shutdown_signal)
 
-    exit_code = 0
     try:
         asyncio.run(main())
-    except KeyboardInterrupt:
-        exit_code = 130 if not _shutdown_requested else 0
+    except KeyboardInterrupt, SystemExit:
         if not _shutdown_requested:
             logger.info("\n[yellow]Shutting down...[/yellow]")
-    except SystemExit as error:
-        exit_code = error.code if isinstance(error.code, int) else 1
-        if exit_code and not _shutdown_requested:
-            logger.info("\n[yellow]Upload-Assistant stopped before completion.[/yellow]")
     except BaseException as e:
-        exit_code = 1
         if not _shutdown_requested:
             logger.info(f"[bold red]Critical error: {e}[/bold red]")
     finally:
@@ -3509,7 +3215,7 @@ def run() -> None:
                 # Run cleanup with timeout to prevent hanging on shutdown
                 async def _cleanup_with_timeout() -> None:
                     try:
-                        await asyncio.wait_for(cleanup_manager.cleanup(cancel_unowned_tasks=True), timeout=10.0)
+                        await asyncio.wait_for(cleanup_manager.cleanup(), timeout=10.0)
                     except TimeoutError, asyncio.CancelledError:
                         logger.info("[yellow]Cleanup timed out or was cancelled, forcing exit...[/yellow]")
 
@@ -3521,11 +3227,12 @@ def run() -> None:
         if _shutdown_requested or _is_webui_mode:
             logger.info("[green]Shutdown complete[/green]")
 
-        sys.exit(exit_code)
+        sys.exit(0)
 
 
 def run_config_generator() -> None:
     import runpy
+    import sys
 
     script_path = Path(__file__).with_name("config-generator.py")
     sys.argv[0] = str(script_path)

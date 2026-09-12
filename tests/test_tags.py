@@ -1,20 +1,10 @@
 """Regression tests for release-group extraction."""
 
-import asyncio
-
 import pytest
 
 from src.get_name import NameManager
 from src.meta import Meta
-from src.tags import canonicalize_release_group, get_tag
-
-
-def test_fried_chicken_please_group_is_canonicalized_before_validation() -> None:
-    assert canonicalize_release_group("Fried.Chicken.Please") == "FriedChickenPlease"
-
-
-def test_unknown_release_group_is_unchanged() -> None:
-    assert canonicalize_release_group("OtherGroup") == "OtherGroup"
+from src.tags import get_tag
 
 
 @pytest.mark.parametrize(
@@ -64,7 +54,10 @@ async def test_release_group_after_dts_hd_audio_is_preserved():
     assert tag == "-GROUP"
 
 
-def test_tilde_delimited_release_group_is_detected() -> None:
-    filename = "Movie Name 1080p AMZN WEB-DL AVC DDP 2.0 ESubS ~ DRiv3R.mkv"
+@pytest.mark.asyncio
+async def test_long_release_group_is_preserved_without_scene_detection():
+    filename = "The.Movie.2011.1080p.WEB-DL.DD2.0.H.264-10GaugeSlugBlaster.mkv"
 
-    assert asyncio.run(get_tag(filename, Meta(category="MOVIE"))) == "-DRiv3R"
+    tag = await get_tag(filename, Meta(category="MOVIE", uuid=filename))
+
+    assert tag == "-10GaugeSlugBlaster"

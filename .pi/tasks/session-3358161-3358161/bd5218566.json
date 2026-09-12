@@ -1,0 +1,21 @@
+{
+  "id": "bd5218566",
+  "name": "Inspect upload config",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@clementine.whatbox.ca 'set -e; cd /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken; cfg=docker-data/data/config.py; echo \"config=$cfg\"; grep -n -A28 -B2 '\"AITHER\"' \"$cfg\" | head -40; echo \"nonzero overrides:\"; grep -nE '\"(multiScreens|charLimit|processLimit)\": \"[^0\"]+' \"$cfg\" | head -60; echo \"container env:\"; podman inspect upload-assistant-wastaken --format \"{{range .Config.Env}}{{println .}}{{end}}\" | grep -E \"UA_DATA_DIR|PYTHONPATH\"'",
+  "description": "Inspect Clementine’s persistent tracker configuration and container settings.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/bd5218566.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788961100279,
+  "endTime": 1788961103481,
+  "exitCode": 2,
+  "signal": null,
+  "pid": 4130483,
+  "bytesWritten": 489,
+  "isAgent": false,
+  "error": "Exited with code 2",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 120
+}

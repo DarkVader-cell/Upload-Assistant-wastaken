@@ -1,0 +1,8 @@
+#!/bin/sh
+# QUI wrapper for non-UA/racing handoffs; shared bridge credential is kept local.
+set -eu
+[ "$#" -eq 1 ] || exit 2
+token="$(tr -d '\r\n' < /config/.ua-handoff-token)"
+json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\r//g'; }
+payload="$(printf '{"path":"%s"}' "$(json_escape "$1")")"
+curl -fsS --connect-timeout 5 --max-time 15 -X POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' --data-binary "$payload" http://172.60.0.1:7478/handoff/clementine-racing

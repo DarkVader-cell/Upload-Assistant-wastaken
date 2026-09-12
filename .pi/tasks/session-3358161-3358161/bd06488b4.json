@@ -1,0 +1,20 @@
+{
+  "id": "bd06488b4",
+  "name": "Verify Destiny login service",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o ConnectTimeout=15 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -euo pipefail\nsleep 20\ncd ~/Upload-Assistant-wastaken\nfor port in 12347 12345; do code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 8 http://127.0.0.1:$port/api/health || true); echo \"port_$port=$code\"; done\npodman ps -a --filter name=upload-assistant-wastaken --format '{{.Names}}\\t{{.Status}}'\necho recent_logs:\npodman logs --since 30s upload-assistant-wastaken 2>&1 | tail -25 || true\nREMOTE",
+  "description": "Verify Destiny’s new WebUI port and login-reset service after clearing the orphaned Podman commands.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/bd06488b4.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788967607237,
+  "endTime": 1788967631143,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 693018,
+  "bytesWritten": 226,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 90
+}

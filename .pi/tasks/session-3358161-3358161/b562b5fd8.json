@@ -1,0 +1,21 @@
+{
+  "id": "b562b5fd8",
+  "name": "Check HDD client config",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -euo pipefail\ncd ~/Upload-Assistant-wastaken\npython3 - <<'PY'\nimport ast\nfrom pathlib import Path\ncfg=ast.literal_eval(Path('docker-data/data/config.py').read_text().split('config:',1)[1].strip())\ndef show(name, value):\n    print(f'{name}={value!r}')\ndefault=cfg['DEFAULT']\nfor key in ('default_torrent_client','injecting_client_list','searching_client_list'):\n    show(key, default.get(key))\nfor name, client in cfg.get('TORRENT_CLIENTS', {}).items():\n    if not isinstance(client, dict):\n        continue\n    safe={key: client.get(key) for key in ('torrent_client','qbit_url','qbit_port','deluge_url','deluge_port','local_path','remote_path','torrent_storage_dir','qbit_cat') if key in client}\n    show(f'client.{name}', safe)\nPY\nREMOTE",
+  "description": "Review Destiny’s non-secret torrent-client settings after the HDD slot migration.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b562b5fd8.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788962884572,
+  "endTime": 1788962888314,
+  "exitCode": 1,
+  "signal": null,
+  "pid": 137702,
+  "bytesWritten": 529,
+  "isAgent": false,
+  "error": "Exited with code 1",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 120
+}

@@ -18,7 +18,7 @@ class OnlyEncodes(UNIT3D):
     """
 
     tracker = "ONLYENCODES"
-    display_name = "OnlyEncodes"
+    display_name = "OnlyEncodes+"
     allows_bloated_audio = True
     base_url = "https://onlyencodes.cc"
     approved_image_hosts = ("imgbox", "imgbb", "onlyimage", "ptscreens", "passtheimage")
@@ -224,7 +224,11 @@ class OnlyEncodes(UNIT3D):
         uuid_value = meta.basename_no_ext
         scale = "DS4K" if "DS4K" in uuid_value.upper() else "RM4K" if "RM4K" in uuid_value.upper() else ""
         if name_type in ["ENCODE", "WEBDL", "WEBRIP"] and scale != "":
-            oe_name = oe_name.replace(f"{resolution}", f"{scale}", 1)
+            if scale not in oe_name:
+                if resolution and resolution in oe_name:
+                    oe_name = oe_name.replace(f"{resolution}", f"{resolution} {scale}", 1)
+            elif resolution and f"{resolution} {scale}" not in oe_name:
+                oe_name = oe_name.replace(scale, f"{resolution} {scale}", 1)
 
         tag_value = meta.tag or ""
         tag_lower = tag_value.lower()

@@ -1,0 +1,6 @@
+curl: (7) Failed to connect to 127.0.0.1 port 12347 after 0 ms: Could not connect to server
+port_12347=000
+port_12345=401
+upload-assistant-wastaken_infra	Created
+upload-assistant-wastaken	Up 53 seconds (starting)
+recent_logs:

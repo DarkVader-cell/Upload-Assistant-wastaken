@@ -14,7 +14,7 @@ class Lajidui(NEXUSPHP):
     """
 
     banned_groups = ()
-    display_name = "Lajidui"
+    display_name = "lajidui"
     base_url = "https://pt.lajidui.top"
     source_flag = "[pt.lajidui.top] lajidui"
     torrent_url = f"{base_url}/details.php?id="
@@ -315,7 +315,7 @@ class Lajidui(NEXUSPHP):
             return 10
         if "lpcm" in audio_codec:
             return 11
-        if "ddp" in audio_codec:
+        if "dd+" in audio_codec:
             return 12
         if "dd" in audio_codec:
             return 13

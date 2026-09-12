@@ -1,0 +1,12 @@
+paths:
+/mnt/mpathf/artemisprime=present
+/mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/data=present
+qbit-settings:
+2062:            "qbit_url": "http://127.0.0.1",
+2063:            "qbit_port": "17416",
+2085:            "qbit_url": "http://127.0.0.1",
+2086:            "qbit_port": "17416",
+2168:    "qbit_url": "https://qbittorrent.destinyhdd.box.ca",
+2169:    "qbit_port": "443",
+service-state:
+status=running health=starting

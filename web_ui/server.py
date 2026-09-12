@@ -1,9 +1,9 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 # ruff: noqa: I001
-import atexit
 import ast
 import asyncio
 import base64
+import concurrent.futures
 import contextlib
 import importlib
 import hashlib
@@ -16,7 +16,6 @@ import queue
 import re
 import secrets
 import shlex
-import sqlite3
 import subprocess
 import sys
 import threading
@@ -29,28 +28,20 @@ from types import ModuleType
 from pathlib import Path
 from typing import Any, Literal, Protocol, TypedDict, cast
 from collections.abc import Callable
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 
 import psutil
 
 import web_ui.auth as auth_mod
-from src.webui_progress import PROGRESS_STDOUT_PREFIX, ProgressEvent, clear_progress_callback, reset_progress, set_progress_callback
-from src.manual_metadata import (
-    parse_detached_metadata_request,
-    parse_detached_release_metadata_request,
-    parse_metadata_submission,
-    parse_release_metadata_submission,
-)
-from src.runtime.history import ReleaseHistoryStore
-from web_ui.browse_index import BrowseIndex
-from web_ui.services.config_remove_api import ConfigSourceOperations, create_config_remove_blueprint
-from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
-from web_ui.services.history_api import create_history_api_blueprint
-from web_ui.services.presets import load_argument_presets, save_argument_presets
-from web_ui.services.qui_sync import QuiEventBroker, create_qui_sync_blueprint, progress_from_log_line
-from web_ui.services.runtime_api import create_runtime_api_blueprint
-from src.app_paths import CODE_DIR, STATE_DIR
+from src.webui_progress import PROGRESS_STDOUT_PREFIX
+from src.prompt_sound import PROMPT_SOUND_STDOUT_MARKER
+from src.app_paths import CODE_DIR, DATA_DIR, STATE_DIR
+from src.external_tools import EXTERNAL_TOOL_KEYS, check_external_tools
 from src.meta import Meta
+from src.version import __version__
+from src.update_checker import get_changelog_history, get_update_status
+
+APP_VERSION = __version__
 
 
 def _module_name(*parts: str) -> str:
@@ -135,6 +126,8 @@ class _GLike(Protocol):
 
 
 class _LimiterLike(Protocol):
+    def exempt(self, obj: Callable[..., object]) -> Callable[..., object]: ...
+
     def limit(
         self,
         limit_value: str,
@@ -215,21 +208,49 @@ with contextlib.suppress(Exception):
 cfg_dir = auth_mod.get_config_dir()
 cfg_dir.mkdir(parents=True, exist_ok=True)
 
-ARGUMENT_PRESETS_PATH = Path(__file__).resolve().parent.parent / "data" / "argument_presets.json"
+ARGUMENT_PRESETS_PATH = DATA_DIR / "argument_presets.json"
+LEGACY_ARGUMENT_PRESETS_PATH = CODE_DIR / "data" / "argument_presets.json"
 MAX_ARGUMENT_PRESETS = 50
 _argument_presets_lock = threading.Lock()
 _description_review_locks: weakref.WeakValueDictionary[str, threading.Lock] = weakref.WeakValueDictionary()
 _description_review_locks_lock = threading.Lock()
+_TRACKER_STATUS_CACHE_SECONDS = 15 * 60
+_TRACKER_STATUS_MAX_WORKERS = 8
+_tracker_status_cache: dict[str, dict[str, Any]] = {}
+_tracker_status_cache_lock = threading.Lock()
+_tracker_status_check_lock = threading.Lock()
 
 
 def _load_argument_presets() -> list[dict[str, str]]:
     """Load the shared Web UI argument presets from the data directory."""
-    return load_argument_presets(ARGUMENT_PRESETS_PATH, MAX_ARGUMENT_PRESETS)
+    try:
+        read_path = ARGUMENT_PRESETS_PATH
+        if not read_path.exists() and LEGACY_ARGUMENT_PRESETS_PATH.exists():
+            read_path = LEGACY_ARGUMENT_PRESETS_PATH
+        if not read_path.exists():
+            return []
+        raw = json.loads(read_path.read_text(encoding="utf-8"))
+        if not isinstance(raw, list):
+            return []
+        presets: list[dict[str, str]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            name = item.get("name")
+            arguments = item.get("arguments")
+            if isinstance(name, str) and isinstance(arguments, str) and name.strip() and arguments.strip():
+                presets.append({"name": name.strip(), "arguments": arguments.strip()})
+        return presets[-MAX_ARGUMENT_PRESETS:]
+    except OSError, TypeError, ValueError:
+        return []
 
 
 def _save_argument_presets(presets: list[dict[str, str]]) -> None:
     """Persist shared Web UI argument presets with an atomic file replacement."""
-    save_argument_presets(ARGUMENT_PRESETS_PATH, presets)
+    ARGUMENT_PRESETS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = ARGUMENT_PRESETS_PATH.with_suffix(".json.tmp")
+    temp_path.write_text(json.dumps(presets, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temp_path.replace(ARGUMENT_PRESETS_PATH)
 
 
 # Access logging helper
@@ -345,12 +366,36 @@ def _assert_safe_resolved_path(path: str | Path) -> None:
         raise ValueError("Path outside allowed roots")
 
 
+def _parse_trusted_proxy_count(raw_value: str | None) -> int:
+    """Parse the explicitly trusted number of reverse proxies."""
+    value = (raw_value or "").strip()
+    if not value:
+        return 0
+    try:
+        count = int(value)
+    except ValueError as exc:
+        raise ValueError("UA_WEBUI_TRUSTED_PROXY_COUNT must be an integer from 0 to 10") from exc
+    if count < 0 or count > 10:
+        raise ValueError("UA_WEBUI_TRUSTED_PROXY_COUNT must be an integer from 0 to 10")
+    return count
+
+
+def _apply_proxy_fix(wsgi_app: object, trusted_proxy_count: int) -> object:
+    """Trust forwarded host, scheme, and client IP only when configured."""
+    if trusted_proxy_count == 0:
+        return wsgi_app
+    return ProxyFix(
+        wsgi_app,
+        x_for=trusted_proxy_count,
+        x_proto=trusted_proxy_count,
+        x_host=trusted_proxy_count,
+    )
+
+
 app: Any = Flask(__name__)
-# Ensure Flask sees the proxy headers (Host, X-Forwarded-Proto, X-Forwarded-For)
-# so `request.host_url` and related values reflect the external URL when
-# running behind a reverse proxy (eg. Caddy). Adjust the `x_*` values if
-# there are multiple proxies in front of the app.
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=2, x_host=1)
+trusted_proxy_count = _parse_trusted_proxy_count(os.environ.get("UA_WEBUI_TRUSTED_PROXY_COUNT"))
+app.wsgi_app = _apply_proxy_fix(app.wsgi_app, trusted_proxy_count)
+app.config["UA_WEBUI_TRUSTED_PROXY_COUNT"] = trusted_proxy_count
 # Load stable session secret (env/file/SECRET_KEY fallback). Use bytes directly.
 
 session_secret = auth_mod.load_session_secret()
@@ -493,6 +538,18 @@ def _session_set(key: str, value: object) -> None:
     d = _load_session_dict()
     d[key] = value
     _commit_session_dict(d)
+
+
+def _ensure_csrf_token() -> str:
+    """Return the current session CSRF token, creating it when required."""
+    token = _session_get("csrf_token")
+    if token:
+        return str(token)
+    if not _is_authenticated():
+        return ""
+    token = secrets.token_urlsafe(32)
+    _session_set("csrf_token", token)
+    return token
 
 
 def _session_pop(key: str, default: object = None) -> object:
@@ -745,21 +802,11 @@ SUPPORTED_DESC_EXTS = {".txt", ".nfo", ".md"}
 # Regex for splitting filenames on common separators (dots, dashes, underscores, spaces)
 _BROWSE_SEARCH_SEP_RE = re.compile(r"[\s.\-_]+")
 
-# Lock to prevent concurrent in-process uploads (avoids cross-session interference)
-inproc_lock = threading.Lock()
+# Lock protecting the active execution registry.
 active_processes_lock = threading.Lock()
 
 # Runtime browse roots (set by upload.py when starting web UI)
 _runtime_browse_roots: str | None = None
-
-# Persistent filename index used by the interactive file-browser search.
-# Override the refresh interval with UA_BROWSE_INDEX_TTL (seconds).
-try:
-    _browse_index_ttl = max(30, int(os.environ.get("UA_BROWSE_INDEX_TTL", "900")))
-except (TypeError, ValueError):
-    _browse_index_ttl = 900
-_browse_index = BrowseIndex(Path(__file__).resolve().parent.parent / "tmp" / "browse_index.sqlite3", refresh_seconds=_browse_index_ttl)
-atexit.register(_browse_index.close)
 
 # Runtime flags and stored totp
 saved_totp_secret: str | None = None
@@ -801,14 +848,22 @@ def _verify_csrf_header() -> bool:
 
 
 def _verify_same_origin() -> bool:
-    """Require same-origin via Origin or Referer header.
+    """Require same-origin browser metadata, Origin, or Referer headers.
 
-    Returns True if the request appears to be same-origin against the
-    server's `request.host_url`. If an Origin header is present it must
-    exactly match the host_url; otherwise falls back to checking the
-    Referer prefix. Absence or mismatch results in False.
+    Fetch Metadata is preferred when the browser identifies the request as
+    same-origin. Otherwise the Origin or Referer host must match the server's
+    request host. Absence or mismatch results in False.
     """
     try:
+        # Modern browsers provide Fetch Metadata independently of Referer.
+        # This remains reliable when privacy settings or a reverse proxy omit
+        # or rewrite the Referer/Host values. Sec-Fetch-* headers cannot be set
+        # by cross-origin browser JavaScript, and protected routes still require
+        # the per-session CSRF token separately.
+        fetch_site = _request_header("Sec-Fetch-Site").strip().lower()
+        if fetch_site == "same-origin":
+            return True
+
         # Prefer comparing the origin/referer host:port (netloc) to the
         # request host. This is scheme-insensitive and avoids failures
         # when proxies/Cloudflare terminate TLS or don't forward the
@@ -816,11 +871,11 @@ def _verify_same_origin() -> bool:
         from urllib.parse import urlparse
 
         origin: str = _request_header("Origin")
-        if origin:
+        if origin and origin.strip().lower() != "null":
             with contextlib.suppress(Exception):
                 parsed = urlparse(origin)
                 if parsed.netloc:
-                    return parsed.netloc == request.host
+                    return parsed.netloc.lower() == request.host.lower()
             # Fallback to strict host_url match if parsing fails
             host_url = (request.host_url or "").rstrip("/") + "/"
             return origin.rstrip("/") + "/" == host_url
@@ -830,7 +885,7 @@ def _verify_same_origin() -> bool:
             with contextlib.suppress(Exception):
                 parsed = urlparse(referer)
                 if parsed.netloc:
-                    return parsed.netloc == request.host
+                    return parsed.netloc.lower() == request.host.lower()
             host_url = (request.host_url or "").rstrip("/") + "/"
             return referer.startswith(host_url)
 
@@ -1260,19 +1315,7 @@ def _close_webui_process_io(process: _WebUIProcess) -> None:
 # Store active processes
 active_processes: dict[str, ProcessInfo] = {}
 
-# Detached Qui jobs are intentionally serialized to preserve submission order.
-detached_jobs: dict[str, dict[str, Any]] = {}
-detached_job_queue: list[str] = []
-detached_jobs_lock = threading.Lock()
-detached_worker_thread: threading.Thread | None = None
-DETACHED_JOB_STATE_PATH = Path(__file__).resolve().parent.parent / "tmp" / "qui_jobs.json"
-QUI_EVENT_BROKER = QuiEventBroker()
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-try:
-    _runtime_config = getattr(_dynamic_import("data.config"), "config", {})
-except (ImportError, AttributeError):
-    _runtime_config = {}
-RELEASE_HISTORY = ReleaseHistoryStore(_PROJECT_ROOT, _runtime_config)
+
 def _terminate_process_tree(process: _WebUIProcess, timeout: float = 2.0) -> bool:
     """Terminate an upload controller and every child it has started."""
     if process.poll() is not None:
@@ -1280,14 +1323,14 @@ def _terminate_process_tree(process: _WebUIProcess, timeout: float = 2.0) -> boo
 
     try:
         root = psutil.Process(process.pid)
-    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+    except psutil.NoSuchProcess, psutil.AccessDenied, OSError:
         return process.poll() is not None
 
     # Snapshot descendants before stopping the controller: once the controller
     # exits, its children may be re-parented and become impossible to identify.
     try:
         processes = root.children(recursive=True)
-    except (psutil.NoSuchProcess, psutil.AccessDenied, OSError):
+    except psutil.NoSuchProcess, psutil.AccessDenied, OSError:
         processes = []
     processes.append(root)
 
@@ -1306,16 +1349,10 @@ def _terminate_process_tree(process: _WebUIProcess, timeout: float = 2.0) -> boo
     return process.poll() is not None and not alive
 
 
-# Local store for consoles we've wrapped to avoid assigning attributes on Console
-_ua_console_store: dict[int, dict[str, Any]] = {}
-
-
 def _debug_process_snapshot(session_id: str | None = None) -> dict[str, object]:
     try:
         snapshot: dict[str, object] = {
             "active_sessions": list(active_processes.keys()),
-            "console_store_keys": list(_ua_console_store.keys()),
-            "inproc_lock_locked": inproc_lock.locked(),
         }
         if session_id and session_id in active_processes:
             info = active_processes.get(session_id, {})
@@ -1425,7 +1462,7 @@ def _make_process_state(path: str, args: str) -> dict[str, object]:
 
 
 def set_execution_preview_target(session_id: str, expected_run_token: str, path: str, meta_uuid: str | None = None) -> None:
-    """Update the active preview target for an in-process Web UI execution."""
+    """Update the active preview target for a Web UI execution."""
     cleaned_session_id = str(session_id or "").strip()
     cleaned_run_token = str(expected_run_token or "").strip()
     cleaned_path = str(path or "").strip()
@@ -1464,274 +1501,6 @@ def _discard_session_state(session_id: str, process_state: Mapping[str, object])
             active_processes.pop(session_id, None)
 
 
-def _submit_auth_ok() -> tuple[bool, tuple[Any, int] | None]:
-    bearer = _get_bearer_from_header()
-    if bearer:
-        if _token_is_valid(bearer):
-            return True, None
-        return False, (jsonify({"success": False, "error": "Forbidden (invalid token)"}), 403)
-    if not _is_authenticated():
-        return False, (jsonify({"success": False, "error": "Authentication required"}), 401)
-    if not _verify_csrf_header() or not _verify_same_origin():
-        return False, (jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403)
-    return True, None
-
-
-def _detached_job_snapshot(limit: int = 100) -> list[dict[str, Any]]:
-    with detached_jobs_lock:
-        jobs = {job_id: dict(job) for job_id, job in detached_jobs.items()}
-        queued = list(detached_job_queue)
-    return snapshot_detached_jobs(jobs, queued, limit=limit, json_safe=_json_safe)
-
-
-def _persist_detached_jobs_locked() -> None:
-    """Persist detached Qui state without exposing it through the status API."""
-    DETACHED_JOB_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    payload = {job_id: dict(job) for job_id, job in detached_jobs.items()}
-    temporary_path = DETACHED_JOB_STATE_PATH.with_suffix(".json.tmp")
-    temporary_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
-    temporary_path.replace(DETACHED_JOB_STATE_PATH)
-
-
-def _set_detached_job(job_id: str, **updates: Any) -> None:
-    snapshot: dict[str, Any] | None = None
-    with detached_jobs_lock:
-        job = detached_jobs.get(job_id)
-        if job:
-            job.update(updates)
-            with contextlib.suppress(OSError, TypeError, ValueError):
-                _persist_detached_jobs_locked()
-            snapshot = dict(job)
-    if snapshot is not None:
-        QUI_EVENT_BROKER.publish("job.updated", job_id, snapshot)
-        with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
-            RELEASE_HISTORY.record_job(snapshot)
-
-
-def _restore_detached_jobs() -> None:
-    """Restore Qui jobs after a WebUI restart.
-
-    Queued jobs are safe to resume because no child process was started. Jobs
-    which were already running are retained as interrupted instead of being
-    blindly replayed, since a tracker may have accepted the request before the
-    WebUI/container stopped.
-    """
-    restored = restore_detached_jobs(DETACHED_JOB_STATE_PATH)
-    if restored is None:
-        return
-
-    with detached_jobs_lock:
-        detached_jobs.update(restored.jobs)
-        detached_job_queue.extend(restored.queue)
-        with contextlib.suppress(OSError, TypeError, ValueError):
-            _persist_detached_jobs_locked()
-    if restored.queue:
-        _start_detached_worker()
-
-
-def _retry_detached_job(job_id: str) -> bool:
-    """Queue an interrupted/failed Qui job for an explicit safe retry."""
-    with detached_jobs_lock:
-        job = detached_jobs.get(job_id)
-        if not job or str(job.get("status")) not in {"interrupted", "failed"}:
-            return False
-        job.update(
-            {
-                "status": "queued",
-                "message": "Queued for retry",
-                "started_at": None,
-                "finished_at": None,
-                "return_code": None,
-                "error": None,
-                "metadata_request": None,
-                "release_metadata_request": None,
-                "prompt_request": None,
-                "recovery_available": False,
-            }
-        )
-        detached_job_queue.append(job_id)
-        with contextlib.suppress(OSError, TypeError, ValueError):
-            _persist_detached_jobs_locked()
-        snapshot = dict(job)
-    QUI_EVENT_BROKER.publish("job.retried", job_id, snapshot)
-    with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
-        RELEASE_HISTORY.record_job(snapshot)
-    _start_detached_worker()
-    return True
-
-
-def _waiting_metadata_request(job_id: str) -> dict[str, Any] | None:
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
-        return None
-    with detached_jobs_lock:
-        job = detached_jobs.get(job_id)
-        if not job or job.get("status") != "waiting_for_metadata":
-            return None
-        request_data = job.get("metadata_request")
-        return dict(request_data) if isinstance(request_data, Mapping) else None
-
-
-def _waiting_release_metadata_request(job_id: str) -> dict[str, Any] | None:
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
-        return None
-    with detached_jobs_lock:
-        job = detached_jobs.get(job_id)
-        if not job or job.get("status") != "waiting_for_release_metadata":
-            return None
-        request_data = job.get("release_metadata_request")
-        return dict(request_data) if isinstance(request_data, Mapping) else None
-
-
-def _start_detached_worker() -> None:
-    global detached_worker_thread
-    with detached_jobs_lock:
-        if detached_worker_thread and detached_worker_thread.is_alive():
-            return
-        detached_worker_thread = threading.Thread(target=_detached_worker, name="ua-detached-queue", daemon=True)
-        detached_worker_thread.start()
-
-
-def _detached_worker() -> None:
-    while True:
-        with detached_jobs_lock:
-            if not detached_job_queue:
-                return
-            job_id = detached_job_queue.pop(0)
-            job = dict(detached_jobs.get(job_id) or {})
-        if job:
-            _set_detached_job(job_id, status="starting", message="Starting upload", queue_position=None)
-            _run_detached_job(job_id, job)
-
-
-def _run_detached_job(job_id: str, job: dict[str, Any]) -> None:
-    base_dir = Path(__file__).resolve().parent.parent
-    log_path = base_dir / "tmp" / f"ua-{job_id}.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    with detached_jobs_lock:
-        if str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled":
-            return
-    started_at = datetime.now(UTC).isoformat()
-    _set_detached_job(
-        job_id,
-        status="running",
-        started_at=started_at,
-        log_path=str(log_path),
-        message="Running upload",
-        metadata_request=None,
-        release_metadata_request=None,
-        prompt_request=None,
-    )
-
-    process: subprocess.Popen[str] | None = None
-    try:
-        command = cast(list[str], job["command"])
-        process = subprocess.Popen(  # noqa: S603 - command is built from validated CLI arguments
-            command,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            cwd=str(base_dir),
-            env={**_webui_subprocess_env(), "UA_DETACHED_JOB_ID": job_id},
-        )
-        with active_processes_lock:
-            active_processes[job_id] = {"process": process, "mode": "detached", "path": job["source_path"]}
-        with detached_jobs_lock:
-            cancelled_before_read = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
-        if cancelled_before_read and process.poll() is None:
-            with contextlib.suppress(Exception):
-                process.kill()
-        _set_detached_job(job_id, process_active=True)
-
-        with log_path.open("a", encoding="utf-8", errors="replace") as log_file:
-            log_file.write(f"\n{'=' * 60}\n{started_at}  detached_job={job_id}\n{' '.join(command)}\n{'=' * 60}\n")
-            if process.stdout is not None:
-                for line in process.stdout:
-                    clean_line = strip_ansi(line)
-                    if progress := progress_from_log_line(clean_line):
-                        _set_detached_job(job_id, progress=progress)
-                    release_metadata_request = parse_detached_release_metadata_request(clean_line.rstrip("\r\n"))
-                    metadata_request = parse_detached_metadata_request(clean_line.rstrip("\r\n"))
-                    if release_metadata_request is not None:
-                        _set_detached_job(
-                            job_id,
-                            status="waiting_for_release_metadata",
-                            message="Waiting for release-name metadata in Operations",
-                            release_metadata_request=release_metadata_request,
-                            metadata_request=None,
-                            prompt_request=None,
-                        )
-                        log_file.write("Waiting for release-name metadata from Web UI\n")
-                    elif metadata_request is not None:
-                        _set_detached_job(
-                            job_id,
-                            status="waiting_for_metadata",
-                            message="Waiting for IMDb/TMDb IDs in Operations",
-                            metadata_request=metadata_request,
-                            release_metadata_request=None,
-                            prompt_request=None,
-                        )
-                        log_file.write("Waiting for metadata IDs from Web UI\n")
-                    else:
-                        log_file.write(clean_line)
-                        if _looks_like_subprocess_prompt(clean_line):
-                            prompt_type = "yes_no" if clean_line.rstrip().lower().endswith(("(y/n)", "(y/n):", "[y/n]", "[y/n]:")) else "text"
-                            _set_detached_job(
-                                job_id,
-                                status="waiting_for_input",
-                                message="Waiting for input in Operations",
-                                prompt_request={"text": clean_line.rstrip(), "input_type": prompt_type},
-                                metadata_request=None,
-                                release_metadata_request=None,
-                            )
-                    log_file.flush()
-
-        return_code = process.wait()
-        finished_at = datetime.now(UTC).isoformat()
-        with detached_jobs_lock:
-            was_cancelled = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
-        if not was_cancelled:
-            status = "completed" if return_code == 0 else "failed"
-            _set_detached_job(
-                job_id,
-                status=status,
-                finished_at=finished_at,
-                return_code=return_code,
-                message=f"Exited with code {return_code}",
-                metadata_request=None,
-                release_metadata_request=None,
-                prompt_request=None,
-            )
-    except Exception as error:
-        finished_at = datetime.now(UTC).isoformat()
-        with detached_jobs_lock:
-            was_cancelled = str((detached_jobs.get(job_id) or {}).get("status")) == "cancelled"
-        if not was_cancelled:
-            _set_detached_job(
-                job_id,
-                status="failed",
-                finished_at=finished_at,
-                error=str(error),
-                message="Detached upload failed",
-                metadata_request=None,
-                release_metadata_request=None,
-                prompt_request=None,
-            )
-        with contextlib.suppress(Exception), log_path.open("a", encoding="utf-8", errors="replace") as log_file:
-            log_file.write(f"\nDetached upload failed: {error}\n{traceback.format_exc()}\n")
-    finally:
-        with active_processes_lock:
-            active_processes.pop(job_id, None)
-        _set_detached_job(job_id, process_active=False)
-        if process and process.poll() is None:
-            with contextlib.suppress(Exception):
-                process.kill()
-
-
-_restore_detached_jobs()
-
-
 def _string_list_preview_values(value: object) -> list[str]:
     results: list[str] = []
     if isinstance(value, str):
@@ -1745,6 +1514,220 @@ def _string_list_preview_values(value: object) -> list[str]:
             if label:
                 results.append(label)
     return results
+
+
+def _format_preview_size(value: object) -> str:
+    """Return a compact binary size for a positive byte count."""
+    try:
+        size = int(value)
+    except TypeError, ValueError:
+        return ""
+    if size <= 0:
+        return ""
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    amount = float(size)
+    for unit in units:
+        if amount < 1024 or unit == units[-1]:
+            precision = 0 if unit == "B" else 1
+            return f"{amount:.{precision}f} {unit}"
+        amount /= 1024
+    return ""
+
+
+def _preview_mapping_values(value: object) -> str:
+    if not isinstance(value, Mapping):
+        return ""
+    return ", ".join(
+        f"{_stringify_preview_value(key)}: {_stringify_preview_value(item)}" for key, item in value.items() if _stringify_preview_value(key) and _stringify_preview_value(item)
+    )
+
+
+def _preview_detail_item(key: str, label: str, value: object) -> dict[str, str] | None:
+    if isinstance(value, Mapping):
+        text = _preview_mapping_values(value)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+        text = ", ".join(_string_list_preview_values(value))
+    else:
+        text = _stringify_preview_value(value)
+    if not text:
+        return None
+    return {"key": key, "label": label, "value": text}
+
+
+def _preview_detail_section(key: str, label: str, rows: Sequence[tuple[str, str, object]]) -> dict[str, object] | None:
+    items = [item for item_key, item_label, value in rows if (item := _preview_detail_item(item_key, item_label, value))]
+    if not items:
+        return None
+    return {"key": key, "label": label, "items": items}
+
+
+def _extract_preview_detail_sections(meta_data: Mapping[str, object], music: Mapping[str, object]) -> list[dict[str, object]]:
+    """Build ordered, display-safe detail groups for the execution preview."""
+    category = _stringify_preview_value(meta_data.get("category")).upper()
+    filelist = meta_data.get("filelist")
+    file_count = len(filelist) if isinstance(filelist, Sequence) and not isinstance(filelist, (str, bytes, bytearray)) else 0
+    video_codec = _stringify_preview_value(meta_data.get("video_codec")) or _stringify_preview_value(meta_data.get("video_encode"))
+
+    sections: list[dict[str, object]] = []
+    media_section = _preview_detail_section(
+        "media",
+        "Media",
+        (
+            ("type", "Type", meta_data.get("type")),
+            ("source", "Source", meta_data.get("source")),
+            ("resolution", "Resolution", meta_data.get("resolution")),
+            ("container", "Container", meta_data.get("container")),
+            ("video_codec", "Video", video_codec),
+            ("audio", "Audio", meta_data.get("audio")),
+            ("audio_languages", "Audio Languages", meta_data.get("audio_languages")),
+            ("subtitle_languages", "Subtitles", meta_data.get("subtitle_languages")),
+            ("size", "Size", _format_preview_size(meta_data.get("source_size"))),
+            ("files", "Files", file_count or ""),
+        ),
+    )
+    if media_section:
+        sections.append(media_section)
+
+    if category == "MOVIE":
+        category_section = _preview_detail_section(
+            "movie",
+            "Movie Details",
+            (
+                ("release_date", "Release Date", meta_data.get("release_date")),
+                ("edition", "Edition", meta_data.get("edition")),
+                ("directors", "Director", meta_data.get("directors")),
+                ("studios", "Studio", meta_data.get("studios")),
+                ("cast", "Cast", meta_data.get("cast")),
+                ("original_language", "Original Language", meta_data.get("original_language")),
+                ("country", "Country", meta_data.get("origin_country") or meta_data.get("origin_country_code")),
+            ),
+        )
+    elif category == "TV":
+        episode = _stringify_preview_value(meta_data.get("episode_title")) or _stringify_preview_value(meta_data.get("episode_name"))
+        episode_code = "".join(
+            value for value in (_stringify_preview_value(meta_data.get("season")), _stringify_preview_value(meta_data.get("episode"))) if value not in {"", "0"}
+        )
+        episode_display = " — ".join(value for value in (episode_code, episode) if value)
+        tv_pack_raw = _stringify_preview_value(meta_data.get("tv_pack")).lower()
+        package = "Season Pack" if tv_pack_raw not in ("", "0", "false", "none", "null") else "Single Episode"
+        category_section = _preview_detail_section(
+            "tv",
+            "TV Details",
+            (
+                ("episode", "Episode", episode_display),
+                ("package", "Package", package),
+                ("season_name", "Season", meta_data.get("season_name") or meta_data.get("tvdb_season_name")),
+                ("air_date", "Air Date", meta_data.get("episode_airdate")),
+                ("service", "Service", meta_data.get("service_longname")),
+                ("networks", "Network", meta_data.get("networks")),
+            ),
+        )
+    elif category == "BOOK":
+        series = _stringify_preview_value(meta_data.get("book_series"))
+        series_index = _stringify_preview_value(meta_data.get("book_series_index"))
+        series_display = f"{series} #{series_index}" if series and series_index else series
+        bitrate = _stringify_preview_value(meta_data.get("audiobook_bitrate"))
+        if bitrate.isdigit():
+            bitrate = f"{bitrate} kbps"
+        category_section = _preview_detail_section(
+            "book",
+            "Book Details",
+            (
+                ("author", "Author", meta_data.get("author") or meta_data.get("book_author")),
+                ("narrator", "Narrator", meta_data.get("narrator")),
+                ("translator", "Translator", meta_data.get("book_translator")),
+                ("series", "Series", series_display),
+                ("publisher", "Publisher", meta_data.get("publisher") or meta_data.get("book_publisher")),
+                ("language", "Language", meta_data.get("book_language")),
+                ("isbn", "ISBN", meta_data.get("isbn") or meta_data.get("book_isbn")),
+                ("asin", "ASIN", meta_data.get("asin") or meta_data.get("book_asin")),
+                ("format", "Format", "Audiobook" if bool(meta_data.get("audiobook")) else "Book"),
+                ("duration", "Duration", meta_data.get("audiobook_duration_formatted")),
+                ("bitrate", "Bitrate", bitrate),
+            ),
+        )
+    elif category == "MUSIC":
+
+        def music_value(name: str, source_name: str = "") -> str:
+            value = _stringify_preview_value(music.get(name))
+            source = _stringify_preview_value(music.get(source_name)) if source_name else ""
+            return f"{value} ({source})" if value and source else value
+
+        track_count = _stringify_preview_value(music.get("track_count"))
+        disc_count = _stringify_preview_value(music.get("disc_count"))
+        tracks_discs = f"{track_count or '?'} / {disc_count or '1'}" if track_count or disc_count else ""
+        release = " • ".join(
+            value
+            for value in (
+                _stringify_preview_value(music.get("release_year")),
+                _stringify_preview_value(music.get("retail_date")),
+                _stringify_preview_value(music.get("release_label")),
+                _stringify_preview_value(music.get("release_catalogue_number")),
+            )
+            if value
+        )
+        edition = " • ".join(value for value in (_stringify_preview_value(music.get("edition")), _stringify_preview_value(music.get("edition_year"))) if value)
+        category_section = _preview_detail_section(
+            "music",
+            "Music Details",
+            (
+                ("artist", "Artist", music_value("artist", "artist_source")),
+                ("album", "Album", music_value("album", "album_source")),
+                ("original_year", "Original Year", music_value("original_year", "year_source")),
+                ("release_type", "Release Type", music_value("release_type", "release_type_source")),
+                ("media", "Media", music_value("media", "media_source")),
+                ("technical", "Technical", music.get("technical")),
+                ("tracks_discs", "Tracks / Discs", tracks_discs),
+                ("release", "This Release", release),
+                ("edition", "Edition", edition),
+                ("auxiliary", "Auxiliary Files", music.get("auxiliary")),
+                ("conflicts", "Metadata Conflicts", music.get("conflicts")),
+            ),
+        )
+    elif category == "GAME":
+        edition = " • ".join(
+            value
+            for value in (
+                _stringify_preview_value(meta_data.get("game_release_edition")),
+                _stringify_preview_value(meta_data.get("game_release_edition_year")),
+            )
+            if value
+        )
+        category_section = _preview_detail_section(
+            "game",
+            "Game Details",
+            (
+                ("platform", "Platform", meta_data.get("platform")),
+                ("release_type", "Release Type", meta_data.get("game_subcategory") or meta_data.get("game_release_type")),
+                ("version", "Version", meta_data.get("game_version")),
+                ("edition", "Edition", edition),
+                ("developer", "Developer", meta_data.get("developer")),
+                ("publisher", "Publisher", meta_data.get("publisher")),
+                ("region", "Region", meta_data.get("game_region")),
+                ("system", "System", meta_data.get("game_system")),
+                ("release_date", "Release Date", meta_data.get("igdb_first_release_date")),
+                ("engines", "Engine", meta_data.get("game_engines")),
+                ("modes", "Modes", meta_data.get("game_modes")),
+                ("age_ratings", "Age Rating", meta_data.get("game_age_ratings")),
+            ),
+        )
+    elif category == "XXX":
+        category_section = _preview_detail_section(
+            "xxx",
+            "Release Details",
+            (
+                ("publisher", "Studio / Publisher", meta_data.get("publisher")),
+                ("studios", "Studio", meta_data.get("studios")),
+                ("release_date", "Release Date", meta_data.get("release_date")),
+                ("performers", "Performers", meta_data.get("cast")),
+            ),
+        )
+    else:
+        category_section = None
+
+    if category_section:
+        sections.append(category_section)
+    return sections
 
 
 def _book_cover_from_meta(meta_data: Mapping[str, object], preview_session_id: str) -> str:
@@ -1849,14 +1832,9 @@ def _subprocess_prompt_type(buffer: str) -> str | None:
         return None
     if re.search(r"\(\s*y\s*/\s*n\s*\)\s*:?$", lowered):
         return "yes_no"
-    if stripped.endswith("?") or " enter " in f" {lowered} " or " select " in f" {lowered} " or lowered.startswith("select "):
+    if stripped.endswith(":") or stripped.endswith("?") or " enter " in f" {lowered} " or " select " in f" {lowered} " or lowered.startswith("select "):
         return "text"
     return None
-
-
-def _looks_like_subprocess_prompt(buffer: str) -> bool:
-    """Keep the detached-job prompt predicate compatible with older callers."""
-    return _subprocess_prompt_type(buffer) is not None
 
 
 def _webui_subprocess_env() -> dict[str, str]:
@@ -1868,14 +1846,8 @@ def _webui_subprocess_env() -> dict[str, str]:
     # consumes ANSI itself, so its child must not inherit that CLI preference.
     env.pop("NO_COLOR", None)
     env["UA_WEBUI_FORCE_COLOR"] = "1"
-    # The detached child may be launched after a caller has changed its working
-    # directory. Keep the application package importable independently of cwd.
-    project_root = str(CODE_DIR.resolve())
-    python_path_entries = [entry for entry in env.get("PYTHONPATH", "").split(os.pathsep) if entry]
-    if project_root not in python_path_entries:
-        python_path_entries.insert(0, project_root)
-    env["PYTHONPATH"] = os.pathsep.join(python_path_entries)
     env["UA_WEBUI_PROGRESS_STDOUT"] = "1"
+    env["UA_WEBUI_PROMPT_SOUND_STDOUT"] = "1"
     return env
 
 
@@ -1937,6 +1909,8 @@ def _extract_metadata_sources(meta_data: Mapping[str, object]) -> list[MetadataS
         or _stringify_preview_value(meta_data.get("openlibrary_book_id"))
     )
     isbn_value = _stringify_preview_value(meta_data.get("isbn"))
+    asin_value = _stringify_preview_value(meta_data.get("asin")) or _stringify_preview_value(meta_data.get("book_asin"))
+    audible_url = _stringify_preview_value(meta_data.get("audible_url"))
 
     sources: list[MetadataSource] = []
     seen_keys: set[str] = set()
@@ -2044,6 +2018,16 @@ def _extract_metadata_sources(meta_data: Mapping[str, object]) -> list[MetadataS
             "google_books",
             "Google Books",
             isbn_value,
+        )
+
+    if category == "BOOK" and asin_value:
+        _append_metadata_source(
+            sources,
+            seen_keys,
+            "audible",
+            "Audible",
+            asin_value,
+            audible_url if _is_http_url(audible_url) else "",
         )
 
     if category == "MUSIC":
@@ -2207,23 +2191,13 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
     if not poster_url and tmdb_poster:
         poster_url = tmdb_poster if tmdb_poster.startswith("http") else f"https://image.tmdb.org/t/p/w500{tmdb_poster}"
     music = _music_preview_from_meta(meta_data)
+    detail_sections = _extract_preview_detail_sections(meta_data, music)
     genres = _string_list_preview_values(meta_data.get("genres")) or list(music.get("genres", []))
     networks = _string_list_preview_values(meta_data.get("networks"))
     audiobook_bitrate = _stringify_preview_value(meta_data.get("audiobook_bitrate"))
     if audiobook_bitrate.isdigit():
         audiobook_bitrate = f"{audiobook_bitrate} kbps"
     tv_pack_raw = _stringify_preview_value(meta_data.get("tv_pack")).lower()
-    tracker_uploads: list[dict[str, str]] = []
-    tracker_status = meta_data.get("tracker_status")
-    if isinstance(tracker_status, Mapping):
-        for tracker_name, raw_status in tracker_status.items():
-            if not isinstance(raw_status, Mapping) or raw_status.get("upload_success") is not True:
-                continue
-            upload_name = _stringify_preview_value(raw_status.get("upload_name"))
-            upload_url = _stringify_preview_value(raw_status.get("upload_url"))
-            if upload_name or upload_url:
-                tracker_uploads.append({"tracker": _stringify_preview_value(tracker_name), "name": upload_name, "url": upload_url})
-    tracker_uploads.sort(key=lambda item: item["tracker"].casefold())
 
     return {
         "media_id": _stringify_preview_value(meta_data.get("uuid")) or fallback_path,
@@ -2269,9 +2243,9 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
         "game_system": _stringify_preview_value(meta_data.get("game_system")),
         "developer": _stringify_preview_value(meta_data.get("developer")),
         "music": music,
+        "detail_sections": detail_sections,
         "awaiting_input": False,
         "input_type": None,
-        "tracker_uploads": tracker_uploads,
     }
 
 
@@ -2347,6 +2321,7 @@ def _find_execution_preview(session_id: str) -> ExecutionPreview | None:
         "game_system": "",
         "developer": "",
         "music": {},
+        "detail_sections": [],
         "awaiting_input": bool(process_info.get("awaiting_input")),
         "input_type": process_info.get("input_type"),
         "progress": _progress_items_for_process(process_info),
@@ -2447,7 +2422,7 @@ def _resolve_execution_description_review(session_id: str) -> tuple[Path, Path, 
 
 
 def _description_review_lock(temp_dir: Path) -> threading.Lock:
-    """Return the in-process mutation lock for one execution's description."""
+    """Return the process-local mutation lock for one execution's description."""
     key = str(temp_dir.resolve())
     with _description_review_locks_lock:
         return _description_review_locks.setdefault(key, threading.Lock())
@@ -2486,6 +2461,18 @@ class MetadataSource(TypedDict, total=False):
     label: str
     value: str
     url: str
+
+
+class PreviewDetailItem(TypedDict):
+    key: str
+    label: str
+    value: str
+
+
+class PreviewDetailSection(TypedDict):
+    key: str
+    label: str
+    items: list[PreviewDetailItem]
 
 
 class ProgressItem(TypedDict, total=False):
@@ -2546,19 +2533,21 @@ class ExecutionPreview(TypedDict, total=False):
     game_system: str
     developer: str
     music: dict[str, object]
+    detail_sections: list[PreviewDetailSection]
     awaiting_input: bool
     input_type: str | None
-    tracker_uploads: list[dict[str, str]]
     progress: list[ProgressItem]
 
 
 class ConfigItem(TypedDict, total=False):
     key: str
     value: object
+    example_value: object
     source: Literal["config", "example"]
     children: list[ConfigItem]
     help: list[str]
     subsection: str | bool
+    override_fields: list[ConfigItem]
 
 
 class ConfigSection(TypedDict, total=False):
@@ -3027,6 +3016,13 @@ def _format_config_tree(tree: ast.AST) -> str:
                     else:
                         lines.append(ast.unparse(node))
                     break
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "config":
+            if isinstance(node.value, ast.Dict):
+                lines.append(f"config: {ast.unparse(node.annotation)} = {{")
+                lines.extend(_format_dict(node.value, 1))
+                lines.append("}")
+            else:
+                lines.append(ast.unparse(node))
         else:
             # Keep other statements as-is
             lines.append(ast.unparse(node))
@@ -3055,13 +3051,15 @@ def _format_dict(dict_node: ast.Dict, indent_level: int) -> list[str]:
 
 def _replace_config_value_in_source(source: str, key_path: list[str], new_value: str) -> str:
     tree = ast.parse(source)
-    config_assign = None
+    config_assign: ast.Assign | ast.AnnAssign | None = None
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "config":
                     config_assign = node
                     break
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "config":
+            config_assign = node
         if config_assign:
             break
 
@@ -3131,13 +3129,15 @@ def _replace_config_value_in_source(source: str, key_path: list[str], new_value:
 def _remove_config_key_in_source(source: str, key_path: list[str]) -> str:
     """Remove a key from the config source if it exists"""
     tree = ast.parse(source)
-    config_assign = None
+    config_assign: ast.Assign | ast.AnnAssign | None = None
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "config":
                     config_assign = node
                     break
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "config":
+            config_assign = node
         if config_assign:
             break
 
@@ -3174,6 +3174,41 @@ def _remove_config_key_in_source(source: str, key_path: list[str]) -> str:
     return source  # Should not reach here
 
 
+_RELEASE_GROUP_OVERRIDE_FIELDS = (
+    "custom_description_header",
+    "screenshot_header",
+    "disc_menu_header",
+    "audio_spectrogram_header",
+    "dynamic_hdr_plot_header",
+    "tonemapped_header",
+    "custom_signature",
+)
+
+
+def _is_release_group_override_path(path: list[str]) -> bool:
+    """Identify the complete DEFAULT or tracker-specific release-group mapping."""
+    return path == ["DEFAULT", "tag_overrides"] or (len(path) == 3 and path[0] == "TRACKERS" and path[2] == "tag_overrides")
+
+
+def _validate_release_group_overrides(value: object) -> None:
+    """Reject malformed maps and names that collide under description matching."""
+    if not isinstance(value, dict):
+        raise ValueError("Release group overrides must be a dictionary.")
+    seen: set[str] = set()
+    for name, fields in value.items():
+        if not isinstance(name, str) or not name.strip().lstrip("-") or any(ord(char) < 32 for char in name):
+            raise ValueError("Each release group needs a non-empty name without control characters.")
+        normalized_name = name.strip().lstrip("-").casefold()
+        if normalized_name in seen:
+            raise ValueError(f"Duplicate release group: {name}. Names are matched without case or leading hyphens.")
+        seen.add(normalized_name)
+        if not isinstance(fields, dict):
+            raise ValueError(f"Overrides for {name} must be a dictionary.")
+        for field, text in fields.items():
+            if not isinstance(field, str) or not field or (text is not None and not isinstance(text, str)):
+                raise ValueError(f"Overrides for {name} must contain text fields or null values.")
+
+
 def _build_config_items(
     example_section: dict[str, Any],
     user_section: dict[str, Any],
@@ -3181,25 +3216,14 @@ def _build_config_items(
     subsection_map: dict[str, str],
     path: list[str],
 ) -> list[ConfigItem]:
-    # Keep service credentials together in the WebUI.  These keys historically
-    # appeared under whichever all-caps heading happened to precede them in
-    # example_config.py, which made credentials such as TVDB easy to miss.
-    default_credential_keys = {
-        "tmdb_api",
-        "tvdb_api",
-        "tvdb_token",
-        "google_books_api_key",
-        "twitch_client_id",
-        "twitch_client_secret",
-        "mam_api_key",
-        "btn_api",
-    }
     items: list[ConfigItem] = []
     user_dict: dict[str, Any] = _as_dict(user_section) or {}
 
     merged_keys: list[str] = [str(key) for key in example_section]
     if user_section:
         merged_keys.extend([str(key) for key in user_section if key not in example_section])
+    if len(path) == 2 and path[0] == "TRACKERS" and "tag_overrides" not in merged_keys:
+        merged_keys.append("tag_overrides")
 
     current_subsection: str | None = None
     subsection_items: list[ConfigItem] = []
@@ -3224,17 +3248,26 @@ def _build_config_items(
         key_path = [*path, key]
         help_text = comments_map.get("/".join(key_path), [])
         subsection_label = subsection_map.get("/".join(key_path))
-        if path == ["DEFAULT"] and key in default_credential_keys:
-            subsection_label = "API CREDENTIALS"
         if subsection_label != current_subsection:
             flush_subsection()
             current_subsection = subsection_label
-        if isinstance(example_value, Mapping) or isinstance(user_value, Mapping):
+        if _is_release_group_override_path(key_path):
+            # Example group names are documentation, not inherited user entries.
+            item: ConfigItem = {
+                "key": key,
+                "value": _json_safe(user_value if key in user_dict else {}),
+                "example_value": {},
+                "source": "config" if key in user_dict else "example",
+                "children": [],
+                "help": help_text or comments_map.get("DEFAULT/tag_overrides", []),
+                "override_fields": [{"key": field, "help": comments_map.get(f"DEFAULT/{field}", [])} for field in _RELEASE_GROUP_OVERRIDE_FIELDS],
+            }
+        elif isinstance(example_value, Mapping) or isinstance(user_value, Mapping):
             example_value = _as_dict(example_value) or {}
             user_value = _as_dict(user_value) or {}
             children = _build_config_items(example_value, user_value, comments_map, subsection_map, key_path)
             source: Literal["config", "example"] = "config" if key in user_dict else "example"
-            item: ConfigItem = {
+            item = {
                 "key": key,
                 "source": source,
                 "children": children,
@@ -3250,6 +3283,7 @@ def _build_config_items(
             item = {
                 "key": key,
                 "value": _json_safe(value),
+                "example_value": _json_safe(example_value),
                 "source": source,
                 "help": help_text,
             }
@@ -3264,6 +3298,131 @@ def _build_config_items(
     return items
 
 
+def _prepare_default_webui_section(
+    example_section: dict[str, Any],
+    comments_map: dict[str, list[str]],
+    subsection_map: dict[str, str],
+) -> dict[str, Any]:
+    client_list_defaults: tuple[tuple[str, list[str], list[str]], ...] = (
+        (
+            "injecting_client_list",
+            [],
+            [
+                "Clients used for injection (adding uploaded torrents for seeding).",
+                "If omitted or empty, injection uses default_torrent_client.",
+                'Example: ["qbittorrent", "rtorrent"]',
+            ],
+        ),
+        (
+            "searching_client_list",
+            [],
+            [
+                "Clients searched for existing torrents.",
+                "If omitted or empty, searching uses default_torrent_client.",
+                'Example: ["qbittorrent", "qbittorrent_searching"]',
+            ],
+        ),
+    )
+    arr_optional_fields: dict[str, tuple[tuple[str, list[str]], ...]] = {
+        "sonarr_api_key": tuple(
+            (
+                field_key,
+                [
+                    f"Settings for Sonarr instance {instance_number}.",
+                    "Optional; instances are queried in numeric order.",
+                ],
+            )
+            for instance_number in (2, 3, 4)
+            for field_key in (
+                f"sonarr_url_{instance_number - 1}",
+                f"sonarr_api_key_{instance_number - 1}",
+            )
+        ),
+        "radarr_api_key": tuple(
+            (
+                field_key,
+                [
+                    f"Settings for Radarr instance {instance_number}.",
+                    "Optional; instances are queried in numeric order.",
+                ],
+            )
+            for instance_number in (2, 3, 4)
+            for field_key in (
+                f"radarr_url_{instance_number - 1}",
+                f"radarr_api_key_{instance_number - 1}",
+            )
+        ),
+    }
+
+    prepared: dict[str, Any] = {}
+    inserted_client_lists = False
+    for key, value in example_section.items():
+        prepared[key] = value
+        if key == "default_torrent_client":
+            for client_key, default_value, help_text in client_list_defaults:
+                prepared[client_key] = default_value
+                comments_map.setdefault(f"DEFAULT/{client_key}", help_text)
+                subsection_map[f"DEFAULT/{client_key}"] = "CLIENT SELECTION"
+            inserted_client_lists = True
+        for field_key, help_text in arr_optional_fields.get(key, ()):
+            prepared[field_key] = ""
+            comments_map.setdefault(f"DEFAULT/{field_key}", help_text)
+            subsection_map[f"DEFAULT/{field_key}"] = "ARR INTEGRATION"
+
+    if not inserted_client_lists:
+        for client_key, default_value, help_text in client_list_defaults:
+            prepared[client_key] = default_value
+            comments_map.setdefault(f"DEFAULT/{client_key}", help_text)
+            subsection_map[f"DEFAULT/{client_key}"] = "CLIENT SELECTION"
+
+    return prepared
+
+
+def _torrent_client_template(
+    example_clients: Mapping[str, Any],
+    client_type: str,
+) -> tuple[str, dict[str, Any]] | None:
+    """Return the preferred example template for a torrent client type."""
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for template_name, template_value in example_clients.items():
+        template = _as_dict(template_value)
+        if template and str(template.get("torrent_client", "")).lower() == client_type.lower():
+            matches.append((str(template_name), template))
+    if not matches:
+        return None
+    matches.sort(key=lambda match: (match[0] != "qbittorrent", match[0]))
+    return matches[0]
+
+
+def _prepare_torrent_client_webui_section(
+    example_section: dict[str, Any],
+    user_section: Mapping[str, Any],
+    comments_map: dict[str, list[str]],
+) -> dict[str, Any]:
+    """Add example-backed metadata for custom-named torrent clients."""
+    prepared = dict(example_section)
+    for client_name, client_value in user_section.items():
+        if client_name in prepared:
+            continue
+        client_config = _as_dict(client_value)
+        if not client_config:
+            continue
+        match = _torrent_client_template(
+            example_section,
+            str(client_config.get("torrent_client", "")),
+        )
+        if match is None:
+            continue
+        template_name, template = match
+        prepared[str(client_name)] = dict(template)
+        for field_name in template:
+            source_path = f"TORRENT_CLIENTS/{template_name}/{field_name}"
+            target_path = f"TORRENT_CLIENTS/{client_name}/{field_name}"
+            if source_path in comments_map:
+                comments_map[target_path] = list(comments_map[source_path])
+    return prepared
+
+
 def _extract_example_metadata(example_path: Path) -> tuple[dict[str, list[str]], dict[str, str]]:
     if not example_path.exists():
         return {}, {}
@@ -3272,13 +3431,15 @@ def _extract_example_metadata(example_path: Path) -> tuple[dict[str, list[str]],
     lines = source.splitlines()
     tree = ast.parse(source)
 
-    config_assign: ast.Assign | None = None
+    config_assign: ast.Assign | ast.AnnAssign | None = None
     for node in tree.body:
         if isinstance(node, ast.Assign):
             for target in node.targets:
                 if isinstance(target, ast.Name) and target.id == "config":
                     config_assign = node
                     break
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "config":
+            config_assign = node
         if config_assign:
             break
 
@@ -3287,6 +3448,13 @@ def _extract_example_metadata(example_path: Path) -> tuple[dict[str, list[str]],
 
     comment_map: dict[str, list[str]] = {}
     subsection_map: dict[str, str] = {}
+
+    def delimited_header_title(line: str) -> str | None:
+        match = re.fullmatch(r"#\s*---\s*(.+?)\s*---\s*", line.strip())
+        if not match:
+            return None
+        title = match.group(1).strip()
+        return title if any(char.isalpha() for char in title) else None
 
     def collect_comments(lineno: int) -> list[str]:
         idx = lineno - 2
@@ -3299,6 +3467,8 @@ def _extract_example_metadata(example_path: Path) -> tuple[dict[str, list[str]],
                     break
                 idx -= 1
                 continue
+            if delimited_header_title(stripped):
+                break
             if stripped.startswith("#"):
                 comments.insert(0, stripped.lstrip("#").strip())
                 idx -= 1
@@ -3321,12 +3491,16 @@ def _extract_example_metadata(example_path: Path) -> tuple[dict[str, list[str]],
             title = stripped.lstrip("#").strip()
             if not title:
                 continue
-            if title != title.upper():
-                continue
-            if not any(char.isalpha() for char in title):
-                continue
-            if lines[idx - 1].strip() or lines[idx + 1].strip():
-                continue
+            delimited_title = delimited_header_title(stripped)
+            if delimited_title:
+                title = delimited_title
+            else:
+                if title != title.upper():
+                    continue
+                if not any(char.isalpha() for char in title):
+                    continue
+                if lines[idx - 1].strip() or lines[idx + 1].strip():
+                    continue
             line_no = idx + 1
             if any(start <= line_no <= end for start, end in child_ranges):
                 continue
@@ -3550,7 +3724,11 @@ def strip_ansi(text: str) -> str:
 def index():
     """Serve the main UI"""
     try:
-        return render_template("index.html")
+        return render_template(
+            "index.html",
+            app_version=APP_VERSION,
+            csrf_token=_ensure_csrf_token(),
+        )
     except Exception as e:
         console.print(f"Error loading template: {e}", markup=False)
         console.print(traceback.format_exc(), markup=False)
@@ -3584,7 +3762,7 @@ def login_page():
                     _session_set("csrf_token", secrets.token_urlsafe(32))
                 if remember:
                     session.permanent = True
-                resp = redirect(url_for("config_page"))
+                resp = redirect(url_for("index"))
                 if remember:
                     with contextlib.suppress(Exception):
                         token = _create_remember_token(username)
@@ -3703,10 +3881,10 @@ def login_recovery():
                 with contextlib.suppress(Exception):
                     token = _create_remember_token(username)
                     if token:
-                        resp = redirect(url_for("config_page"))
+                        resp = redirect(url_for("index"))
                         resp.set_cookie("ua_remember", token, max_age=30 * 86400, httponly=True, secure=True, samesite="Lax")
                         return resp
-            return redirect(url_for("config_page"))
+            return redirect(url_for("index"))
         # Failed recovery attempt -> record and show recovery page
         _handle_failed_auth(get_remote_address())
         return render_template("login_recovery.html", error="Recovery code invalid", show_2fa=_totp_enabled())
@@ -3805,16 +3983,126 @@ def config_page():
             )
 
     try:
-        # Ensure a session CSRF token exists and expose it to the template so
-        # client-side JS can read it without an extra round-trip if desired.
-        with contextlib.suppress(Exception):
-            if _is_authenticated() and not _session_get("csrf_token"):
-                _session_set("csrf_token", secrets.token_urlsafe(32))
-        return render_template("config.html", csrf_token=_session_get("csrf_token", ""))
+        return render_template(
+            "config.html",
+            app_version=APP_VERSION,
+            csrf_token=_ensure_csrf_token(),
+        )
     except Exception as e:
         console.print(f"Error loading config template: {e}", markup=False)
         console.print(traceback.format_exc(), markup=False)
         return "<pre>Internal server error</pre>", 500
+
+
+@app.route("/api/health")
+@limiter.exempt
+def health():
+    """Health check endpoint"""
+    return jsonify({"status": "healthy", "success": True, "message": "Upload-Assistant Web UI is running"})
+
+
+@app.route("/api/update_status")
+def update_status():
+    """Return the cached upstream release status for the shared application rail."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    user_config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+    example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
+    user_defaults = _as_dict(user_config.get("DEFAULT")) or {}
+    example_defaults = _as_dict(example_config.get("DEFAULT")) or {}
+    force = str(request.args.get("refresh", "")).strip().lower() in {"1", "true", "yes"}
+    enabled = bool(user_defaults.get("update_notification", example_defaults.get("update_notification", True)))
+    raw_cache_hours = user_defaults.get(
+        "update_notification_cache_hours",
+        example_defaults.get("update_notification_cache_hours", 4),
+    )
+    try:
+        cache_hours = max(0.0, float(raw_cache_hours))
+    except TypeError, ValueError:
+        cache_hours = 4.0
+
+    return jsonify(
+        get_update_status(
+            enabled=enabled or force,
+            cache_hours=cache_hours,
+            force=force,
+        )
+    )
+
+
+@app.route("/api/changelog")
+def changelog():
+    """Return cached upstream release history for the shared changelog viewer."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    user_config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+    example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
+    user_defaults = _as_dict(user_config.get("DEFAULT")) or {}
+    example_defaults = _as_dict(example_config.get("DEFAULT")) or {}
+    force = request.args.get("refresh", "").strip().lower() in {"1", "true", "yes"}
+    raw_cache_hours = user_defaults.get(
+        "update_notification_cache_hours",
+        example_defaults.get("update_notification_cache_hours", 4),
+    )
+    try:
+        cache_hours = max(0.0, float(raw_cache_hours))
+    except TypeError, ValueError:
+        cache_hours = 4.0
+
+    return jsonify(
+        get_changelog_history(
+            cache_hours=cache_hours,
+            force=force,
+        )
+    )
+
+
+@app.route("/api/external_tools_status", methods=["POST"])
+@limiter.limit("60 per hour", key_func=_rate_limit_key_func)
+def external_tools_status():
+    """Check configured, detected, and runtime-managed external tools."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    payload = request.get_json(silent=True)
+    payload_map = cast(Mapping[str, object], payload) if isinstance(payload, Mapping) else {}
+    raw_paths = payload_map.get("paths", {})
+    if not isinstance(raw_paths, Mapping):
+        return jsonify({"success": False, "error": "Invalid external tool paths"}), 400
+
+    user_config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+    example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
+    user_defaults = _as_dict(user_config.get("DEFAULT")) or {}
+    example_defaults = _as_dict(example_config.get("DEFAULT")) or {}
+    effective_defaults: dict[str, Any] = {}
+
+    for key in EXTERNAL_TOOL_KEYS:
+        value = raw_paths.get(key, user_defaults.get(key, example_defaults.get(key, "")))
+        if value is None:
+            value = ""
+        if not isinstance(value, str) or len(value) > 4096:
+            return jsonify({"success": False, "error": f"Invalid path value for {key}"}), 400
+        effective_defaults[key] = value
+
+    try:
+        statuses = check_external_tools(
+            effective_defaults,
+            state_dir=STATE_DIR,
+            code_dir=CODE_DIR,
+        )
+    except Exception as error:
+        console.print(f"External tool status check failed: {error}", markup=False)
+        return jsonify({"success": False, "error": "Unable to check external tools"}), 500
+
+    return jsonify({"success": True, "statuses": statuses})
 
 
 @app.route("/api/csrf_token")
@@ -3825,7 +4113,7 @@ def csrf_token():
         return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
 
     try:
-        token = _session_get("csrf_token") or ""
+        token = _ensure_csrf_token()
         return jsonify({"csrf_token": token, "success": True})
     except Exception:
         # Returning an empty CSRF token on error is an explicit non-secret
@@ -4189,44 +4477,22 @@ def config_options():
             continue
         example_section = cast(dict[str, Any], example_section_raw)
 
+        if section_name == "DEFAULT":
+            example_section = _prepare_default_webui_section(
+                example_section,
+                comments_map,
+                subsection_map,
+            )
+
         user_section_raw = user_config.get(section_name, {})
         user_section = cast(dict[str, Any], user_section_raw) if isinstance(user_section_raw, Mapping) else {}
+        if section_name == "TORRENT_CLIENTS":
+            example_section = _prepare_torrent_client_webui_section(
+                example_section,
+                user_section,
+                comments_map,
+            )
         items = _build_config_items(example_section, user_section, comments_map, subsection_map, [section_name])
-
-        # Add special client list items to DEFAULT section
-        if section_name == "DEFAULT":
-            # Check if they already exist in items
-            existing_keys = {str(item["key"]) for item in items if "key" in item}
-            if "injecting_client_list" not in existing_keys:
-                items.append(
-                    {
-                        "key": "injecting_client_list",
-                        "value": user_section.get("injecting_client_list", []),
-                        "source": "config" if "injecting_client_list" in user_section else "example",
-                        "help": [
-                            "A list of clients to use for injection (aka actually adding the torrent for uploading)",
-                            'eg: ["qbittorrent", "rtorrent"]',
-                        ],
-                        "subsection": "CLIENT SELECTION",
-                    }
-                )
-            if "searching_client_list" not in existing_keys:
-                items.append(
-                    {
-                        "key": "searching_client_list",
-                        "value": user_section.get("searching_client_list", []),
-                        "source": "config" if "searching_client_list" in user_section else "example",
-                        "help": [
-                            "A list of clients to search for torrents.",
-                            'eg: ["qbittorrent", "qbittorrent_searching"]',
-                            "will fallback to default_torrent_client if empty",
-                        ],
-                        "subsection": "CLIENT SELECTION",
-                    }
-                )
-            # Update subsection_map for these items
-            subsection_map["DEFAULT/injecting_client_list"] = "CLIENT SELECTION"
-            subsection_map["DEFAULT/searching_client_list"] = "CLIENT SELECTION"
 
         sections.append({"section": section_name, "items": items})
 
@@ -4246,9 +4512,39 @@ def config_options():
     return jsonify(result)
 
 
+def _configured_torrent_client_names(
+    user_config: Mapping[str, Any],
+    example_config: Mapping[str, Any],
+) -> list[str]:
+    """Return user-created, edited, or actively referenced torrent clients."""
+    user_clients = _as_dict(user_config.get("TORRENT_CLIENTS")) or {}
+    example_clients = _as_dict(example_config.get("TORRENT_CLIENTS")) or {}
+    example_by_name = {str(name).casefold(): _as_dict(value) or {} for name, value in example_clients.items()}
+
+    referenced: set[str] = set()
+    default_section = _as_dict(user_config.get("DEFAULT")) or {}
+    for key in ("default_torrent_client", "injecting_client_list", "searching_client_list"):
+        value = default_section.get(key)
+        if isinstance(value, str):
+            referenced.update(name.strip().casefold() for name in value.split(",") if name.strip())
+        elif isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            referenced.update(str(name).strip().casefold() for name in value if str(name).strip())
+
+    configured: list[str] = []
+    for name, value in user_clients.items():
+        client_name = str(name)
+        normalized_name = client_name.casefold()
+        client_config = _as_dict(value) or {}
+        example_client = example_by_name.get(normalized_name)
+        if example_client is None or client_config != example_client or normalized_name in referenced:
+            configured.append(client_name)
+
+    return sorted(configured, key=str.casefold)
+
+
 @app.route("/api/torrent_clients")
 def torrent_clients():
-    """Return list of available torrent client names from TORRENT_CLIENTS section"""
+    """Return torrent clients that are configured or actively referenced."""
     # Require web session for config listing (disallow bearer token access)
     if not _is_authenticated():
         return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
@@ -4262,14 +4558,10 @@ def torrent_clients():
 
     user_config = _load_config_from_file(config_path) or {}
 
-    # Get clients only from user config
-    user_clients_raw = user_config.get("TORRENT_CLIENTS", {})
-    user_clients = cast(dict[str, Any], user_clients_raw) if isinstance(user_clients_raw, Mapping) else {}
+    example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
+    client_names = _configured_torrent_client_names(user_config, example_config)
 
-    # Include all configured clients in the dropdown
-    client_names: list[str] = [str(key) for key in user_clients]
-
-    return jsonify({"success": True, "clients": sorted(client_names)})
+    return jsonify({"success": True, "clients": client_names})
 
 
 _TRACKER_CONFIGURATION_KEYS = frozenset(
@@ -4287,6 +4579,51 @@ _TRACKER_CONFIGURATION_KEYS = frozenset(
         "bioma_api_key",
         "ptgen_api",
     }
+)
+
+_TRACKER_REQUIRED_SETUP_KEYS = (
+    "ApiUser",
+    "api_key",
+    "announce_url",
+    "my_announce_url",
+    "username",
+    "password",
+    "passkey",
+)
+
+_TRACKER_SETUP_PLACEHOLDER_PATTERN = re.compile(
+    r"<[^>]+>|\b(?:your|custom|insert|replace|example)\b|\b(?:api[ _-]?user|username|password|passkey)\b",
+    re.IGNORECASE,
+)
+
+_TRACKER_DEFAULT_OVERRIDE_KEYS = (
+    "add_audio_spectrogram",
+    "add_bluray_link",
+    "add_dynamic_hdr_plot",
+    "add_logo",
+    "audio_spectrogram_header",
+    "bluray_image_size",
+    "charLimit",
+    "custom_description_header",
+    "custom_footer",
+    "custom_header",
+    "custom_signature",
+    "disc_menu_header",
+    "dynamic_hdr_plot_header",
+    "episode_overview",
+    "fileLimit",
+    "inject_delay",
+    "logo_size",
+    "mediainfo_header",
+    "multiScreens",
+    "pack_thumb_size",
+    "processLimit",
+    "screens_per_row",
+    "screenshot_header",
+    "thumbnail_size",
+    "tonemapped_header",
+    "use_bluray_images",
+    "user_description",
 )
 
 
@@ -4309,37 +4646,87 @@ def _has_configured_tracker_value(tracker_config: Mapping[str, Any], example_tra
     return False
 
 
+def _tracker_setup_value_is_complete(
+    key: str,
+    tracker_config: Mapping[str, Any],
+    example_tracker_config: Mapping[str, Any],
+) -> bool:
+    """Return whether a required tracker setup value is usable."""
+    value = tracker_config.get(key)
+    if value is None or value is False:
+        return False
+    if not isinstance(value, str):
+        return True
+
+    normalized = value.strip()
+    if not normalized:
+        return False
+
+    example_value = example_tracker_config.get(key)
+    normalized_example = example_value.strip() if isinstance(example_value, str) else ""
+    placeholder_example = normalized_example.replace("_", " ").replace("-", " ")
+    return not (normalized_example and normalized == normalized_example and _TRACKER_SETUP_PLACEHOLDER_PATTERN.search(placeholder_example))
+
+
+def _tracker_setup_is_complete(
+    tracker_config: Mapping[str, Any],
+    example_tracker_config: Mapping[str, Any],
+    *,
+    cookie_required: bool,
+    cookie_configured: bool,
+    optional_setup_keys: set[str] | frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether all detected authentication requirements are complete."""
+    if cookie_required and not cookie_configured:
+        return False
+
+    required_keys = [key for key in _TRACKER_REQUIRED_SETUP_KEYS if key in example_tracker_config and key not in optional_setup_keys]
+    if required_keys:
+        return all(_tracker_setup_value_is_complete(key, tracker_config, example_tracker_config) for key in required_keys)
+
+    if cookie_required:
+        return True
+    return _has_configured_tracker_value(tracker_config, example_tracker_config)
+
+
 def _configured_tracker_names(
     trackers_section: Mapping[str, Any],
     example_trackers: Mapping[str, Any],
-    default_trackers: Sequence[str],
     supported_trackers: Mapping[str, Any],
     cookie_trackers: set[str] | None = None,
     user_config: Mapping[str, Any] | None = None,
 ) -> set[str]:
-    """Return supported tracker names that have enough setup to show by default."""
+    """Return supported tracker names whose detected setup requirements are complete."""
     supported_names = {str(name).upper() for name in supported_trackers}
-    configured = {str(name).strip().upper() for name in default_trackers if str(name).strip()}
-    configured.update(str(name).upper() for name in (cookie_trackers or set()))
+    configured: set[str] = set()
+    cookie_tracker_names = {str(name).upper() for name in (cookie_trackers or set())}
 
     tracker_configs = {str(name).upper(): value for name, value in trackers_section.items() if isinstance(value, Mapping)}
     example_configs = {str(name).upper(): value for name, value in example_trackers.items() if isinstance(value, Mapping)}
-
-    for tracker_name in supported_names:
-        tracker_config = tracker_configs.get(tracker_name)
-        if tracker_config is None:
-            continue
-        example_tracker_config = example_configs.get(tracker_name, {})
-        if _has_configured_tracker_value(tracker_config, example_tracker_config):
-            configured.add(tracker_name)
 
     # Older configurations stored the BroadcasTheNet API key in DEFAULT.
     default_section = user_config.get("DEFAULT", {}) if user_config else {}
     legacy_btn_api = default_section.get("btn_api") if isinstance(default_section, Mapping) else None
     if isinstance(legacy_btn_api, str):
         legacy_btn_api = legacy_btn_api.strip()
-    if legacy_btn_api:
-        configured.add("BROADCASTHENET")
+
+    for tracker_name in supported_names:
+        tracker_config = dict(tracker_configs.get(tracker_name, {}))
+        example_tracker_config = example_configs.get(tracker_name, {})
+        if tracker_name == "BROADCASTHENET" and legacy_btn_api and not tracker_config.get("api_key"):
+            tracker_config["api_key"] = legacy_btn_api
+
+        tracker_class = supported_trackers.get(tracker_name)
+        cookie_required = str(getattr(tracker_class, "auth_type", "") or "").strip().lower() == "cookies"
+        optional_setup_keys = {str(key) for key in (getattr(tracker_class, "optional_setup_keys", ()) or ())}
+        if _tracker_setup_is_complete(
+            tracker_config,
+            example_tracker_config,
+            cookie_required=cookie_required,
+            cookie_configured=tracker_name in cookie_tracker_names,
+            optional_setup_keys=optional_setup_keys,
+        ):
+            configured.add(tracker_name)
 
     return configured & supported_names
 
@@ -4363,6 +4750,191 @@ def _configured_cookie_tracker_names(
     return configured
 
 
+def _tracker_codebase(tracker_class: Any) -> str | None:
+    """Expose known tracker families without guessing from ungrouped modules."""
+    module_parts = str(getattr(tracker_class, "__module__", "")).split(".")
+    if len(module_parts) < 4 or module_parts[:2] != ["src", "trackers"]:
+        return None
+    return {"UNIT3D": "UNIT3D", "GAZELLE": "Gazelle", "NEXUSPHP": "NexusPHP", "AVISTAZ": "AvistaZ"}.get(module_parts[2])
+
+
+def _tracker_destination_type(tracker_class: Any) -> str:
+    """Return the WebUI destination category without changing tracker IDs."""
+    return "usenet" if bool(getattr(tracker_class, "is_usenet", False)) else "torrent"
+
+
+def _tracker_supported_categories(tracker_class: Any) -> list[str]:
+    """Return normalized upload categories declared by a tracker class."""
+    categories = getattr(tracker_class, "supported_categories", ()) or ()
+    if isinstance(categories, str):
+        categories = (categories,)
+    if not isinstance(categories, (list, tuple, set)):
+        return []
+    return list(dict.fromkeys(str(category).strip().upper() for category in categories if str(category).strip()))
+
+
+def _tracker_status_from_http_code(status_code: int) -> tuple[str, str]:
+    """Map a tracker homepage response to a deliberately advisory state."""
+    if status_code == 429:
+        return "issue", "The tracker is reachable but is rate limiting requests (HTTP 429)."
+    if status_code >= 500:
+        return "issue", f"The tracker returned a server error (HTTP {status_code})."
+    if 100 <= status_code < 500:
+        return "available", "The tracker website responded."
+    return "issue", "The tracker returned an unexpected response."
+
+
+def _probe_tracker_url(tracker_name: str, base_url: str) -> dict[str, Any]:
+    """Perform a lightweight website reachability probe without using credentials."""
+    checked_at = datetime.now(UTC).isoformat()
+    parsed_url = urllib.parse.urlsplit(base_url)
+    if parsed_url.scheme not in {"http", "https"} or not parsed_url.hostname:
+        return {
+            "name": tracker_name,
+            "state": "not_checked",
+            "message": "No status URL is available for this tracker.",
+            "checked_at": checked_at,
+        }
+
+    httpx = None
+    try:
+        httpx = _dynamic_import("httpx")
+        with (
+            httpx.Client(
+                follow_redirects=True,
+                timeout=4.0,
+                headers={"User-Agent": f"Upload-Assistant-WebUI/{APP_VERSION}"},
+            ) as client,
+            client.stream("GET", base_url) as response,
+        ):
+            # Streaming avoids downloading tracker homepages just to confirm
+            # that the service can answer an HTTP request.
+            status_code = int(response.status_code)
+        state, message = _tracker_status_from_http_code(status_code)
+        result = {
+            "name": tracker_name,
+            "state": state,
+            "message": message,
+            "status_code": status_code,
+            "checked_at": checked_at,
+        }
+        if status_code == 429:
+            result["reason"] = "rate_limit"
+        elif status_code >= 500:
+            result["reason"] = "server_error"
+        return result
+    except Exception as error:
+        # Keep network and DNS exception details out of the browser response.
+        # A later check can distinguish a transient local-network problem from
+        # a tracker outage.
+        is_timeout = bool(httpx is not None and isinstance(error, getattr(httpx, "TimeoutException", ())))
+        return {
+            "name": tracker_name,
+            "state": "unavailable",
+            "reason": "timeout" if is_timeout else "connection",
+            "message": ("The tracker website did not respond before the status check timed out." if is_timeout else "The tracker website could not be reached."),
+            "checked_at": checked_at,
+        }
+
+
+def _tracker_status_cache_payload(tracker_names: Sequence[str]) -> dict[str, dict[str, Any]]:
+    """Return cached status entries, marking old results as stale."""
+    now = time.time()
+    payload: dict[str, dict[str, Any]] = {}
+    with _tracker_status_cache_lock:
+        for tracker_name in tracker_names:
+            cached = _tracker_status_cache.get(tracker_name)
+            if cached is None:
+                payload[tracker_name] = {
+                    "name": tracker_name,
+                    "state": "not_checked",
+                    "message": "Not checked yet.",
+                    "checked_at": None,
+                    "stale": False,
+                }
+                continue
+            entry = {key: value for key, value in cached.items() if key != "_checked_epoch"}
+            checked_epoch = float(cached.get("_checked_epoch", 0.0))
+            entry["stale"] = now - checked_epoch > _TRACKER_STATUS_CACHE_SECONDS
+            payload[tracker_name] = entry
+    return payload
+
+
+def _supported_tracker_status_targets() -> dict[str, str]:
+    """Return trusted tracker names and homepage URLs from the class catalogue."""
+    from src.trackersetup import tracker_class_map
+
+    return {str(tracker_name).upper(): str(getattr(tracker_class, "base_url", "") or "").strip() for tracker_name, tracker_class in tracker_class_map.items()}
+
+
+@app.route("/api/tracker_status")
+def get_tracker_status():
+    """Return cached, credential-free tracker reachability checks."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    with _tracker_status_cache_lock:
+        cached_names = sorted(_tracker_status_cache)
+
+    return jsonify(
+        {
+            "success": True,
+            "cache_seconds": _TRACKER_STATUS_CACHE_SECONDS,
+            "statuses": _tracker_status_cache_payload(cached_names),
+        }
+    )
+
+
+@app.route("/api/tracker_status", methods=["POST"])
+@limiter.limit("30 per hour", key_func=_rate_limit_key_func)
+def refresh_tracker_status():
+    """Refresh selected tracker reachability checks."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    try:
+        supported_targets = _supported_tracker_status_targets()
+    except Exception as error:
+        return jsonify({"success": False, "error": f"Failed to load trackers: {error}"}), 500
+
+    data = _request_json_dict()
+    requested = data.get("trackers")
+    if not isinstance(requested, list):
+        return jsonify({"success": False, "error": "Trackers must be provided as a list"}), 400
+
+    tracker_names = list(dict.fromkeys(str(name).strip().upper() for name in requested[:100] if str(name).strip()))
+    unknown = [name for name in tracker_names if name not in supported_targets]
+    if unknown:
+        return jsonify({"success": False, "error": "One or more trackers are not supported"}), 400
+    if not tracker_names:
+        return jsonify({"success": False, "error": "Select at least one tracker to check"}), 400
+
+    checked_results: list[dict[str, Any]] = []
+    with _tracker_status_check_lock:
+        worker_count = min(_TRACKER_STATUS_MAX_WORKERS, len(tracker_names))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = {executor.submit(_probe_tracker_url, name, supported_targets[name]): name for name in tracker_names}
+            checked_results.extend(future.result() for future in concurrent.futures.as_completed(futures))
+
+        checked_epoch = time.time()
+        with _tracker_status_cache_lock:
+            for result in checked_results:
+                name = str(result["name"])
+                _tracker_status_cache[name] = {**result, "_checked_epoch": checked_epoch}
+
+    return jsonify(
+        {
+            "success": True,
+            "cache_seconds": _TRACKER_STATUS_CACHE_SECONDS,
+            "statuses": _tracker_status_cache_payload(tracker_names),
+        }
+    )
+
+
 @app.route("/api/trackers")
 def get_trackers():
     """Return supported trackers, including their default/configured status."""
@@ -4376,15 +4948,6 @@ def get_trackers():
     config_path = base_dir / "data" / "config.py"
     user_config = _load_config_from_file(config_path) or {}
 
-    trackers_section_raw = user_config.get("TRACKERS", {})
-    trackers_section = cast(dict[str, Any], trackers_section_raw) if isinstance(trackers_section_raw, Mapping) else {}
-    default_trackers_val = trackers_section.get("default_trackers", "")
-    default_trackers_list = []
-    if isinstance(default_trackers_val, str):
-        default_trackers_list = [t.strip().upper() for t in default_trackers_val.split(",") if t.strip()]
-    elif isinstance(default_trackers_val, list):
-        default_trackers_list = [str(t).strip().upper() for t in default_trackers_val if str(t).strip()]
-
     # Load tracker_class_map from src.trackersetup
     try:
         from src.trackersetup import tracker_class_map
@@ -4394,6 +4957,34 @@ def get_trackers():
     example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
     example_trackers_raw = example_config.get("TRACKERS", {})
     example_trackers = cast(dict[str, Any], example_trackers_raw) if isinstance(example_trackers_raw, Mapping) else {}
+
+    from src.prowlarr import ProwlarrError, apply_prowlarr_credentials, configured_prowlarr, fetch_prowlarr_credentials
+
+    prowlarr_sources: set[str] = set()
+    prowlarr_cookie_trackers: set[str] = set()
+    try:
+        if prowlarr_connection := configured_prowlarr(user_config):
+            prowlarr_report = fetch_prowlarr_credentials(
+                prowlarr_connection[0],
+                prowlarr_connection[1],
+                set(tracker_class_map),
+            )
+            prowlarr_sources = apply_prowlarr_credentials(user_config, prowlarr_report)
+            prowlarr_cookie_trackers = {name for name, credential in prowlarr_report.credentials.items() if credential.cookie}
+    except ProwlarrError:
+        # The tracker catalogue remains usable with local configuration when
+        # the optional Prowlarr instance is unavailable.
+        prowlarr_sources = set()
+        prowlarr_cookie_trackers = set()
+
+    trackers_section_raw = user_config.get("TRACKERS", {})
+    trackers_section = cast(dict[str, Any], trackers_section_raw) if isinstance(trackers_section_raw, Mapping) else {}
+    default_trackers_val = trackers_section.get("default_trackers", "")
+    default_trackers_list = []
+    if isinstance(default_trackers_val, str):
+        default_trackers_list = [t.strip().upper() for t in default_trackers_val.split(",") if t.strip()]
+    elif isinstance(default_trackers_val, list):
+        default_trackers_list = [str(t).strip().upper() for t in default_trackers_val if str(t).strip()]
 
     cookie_trackers: set[str] = set()
     try:
@@ -4405,19 +4996,30 @@ def get_trackers():
     else:
         cookie_trackers = _configured_cookie_tracker_names(tracker_class_map, user_config, STATE_DIR, find_cookie_file)
 
+    prowlarr_sources -= cookie_trackers
+    cookie_trackers |= prowlarr_cookie_trackers
+
     configured_trackers = _configured_tracker_names(
         trackers_section,
         example_trackers,
-        default_trackers_list,
         tracker_class_map,
         cookie_trackers,
         user_config,
     )
 
     trackers_data = []
+    from src.api_key_expiry import get_api_key_expiry
+
     for tracker_name, tracker_class in tracker_class_map.items():
         display_name = getattr(tracker_class, "display_name", tracker_name)
         base_url = getattr(tracker_class, "base_url", "")
+        auth_type = str(getattr(tracker_class, "auth_type", "") or "").strip().lower()
+        optional_setup_keys = sorted(str(key) for key in (getattr(tracker_class, "optional_setup_keys", ()) or ()))
+        destination_type = _tracker_destination_type(tracker_class)
+        supported_categories = _tracker_supported_categories(tracker_class)
+        expiry_supported = bool(getattr(tracker_class, "api_key_expiry_supported", False))
+        tracker_config = trackers_section.get(tracker_name, {})
+        api_key = str(tracker_config.get("api_key") or "").strip() if isinstance(tracker_config, dict) else ""
         favicon_url = ""
         static_dir = Path(__file__).parent / "static"
         for ext in ["png", "svg", "ico"]:
@@ -4430,9 +5032,18 @@ def get_trackers():
             {
                 "name": tracker_name,
                 "display_name": display_name,
+                "codebase": _tracker_codebase(tracker_class),
                 "base_url": base_url,
                 "favicon": favicon_url,
                 "configured": tracker_name.upper() in configured_trackers,
+                "credential_source": ("prowlarr" if tracker_name.upper() in prowlarr_sources else "local" if tracker_name.upper() in configured_trackers else None),
+                "api_key_expiry_supported": expiry_supported,
+                "api_key_expiry": get_api_key_expiry(tracker_name, api_key, base_url, STATE_DIR) if expiry_supported else None,
+                "auth_type": auth_type,
+                "optional_setup_keys": optional_setup_keys,
+                "cookie_configured": tracker_name.upper() in cookie_trackers,
+                "destination_type": destination_type,
+                "supported_categories": supported_categories,
             }
         )
 
@@ -4441,320 +5052,211 @@ def get_trackers():
     return jsonify({"success": True, "default_trackers": default_trackers_list, "trackers": trackers_data})
 
 
-@app.route("/api/qui/submit", methods=["POST", "OPTIONS"])
-@limiter.limit("300 per hour", key_func=_rate_limit_key_func)
-def qui_submit():
-    """Submit one or more unattended uploads for detached FIFO processing."""
-    if request.method == "OPTIONS":
-        return "", 204
+@app.route("/api/tracker_api_key_status", methods=["POST"])
+@limiter.limit("120 per hour", key_func=_rate_limit_key_func)
+def tracker_api_key_status():
+    """Read cached expiry or explicitly check a saved/draft tracker API key."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
 
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
+    import httpx
 
-    data = _as_dict(request.get_json(silent=True)) or {}
-    raw_paths = data.get("paths")
-    if raw_paths is None:
-        raw_path = data.get("path")
-        raw_paths = [raw_path] if raw_path else []
-    if not isinstance(raw_paths, list):
-        return jsonify({"success": False, "error": "paths must be a list"}), 400
+    from src.api_key_expiry import get_api_key_expiry, record_api_key_expiry
+    from src.prowlarr import ProwlarrError, configured_prowlarr, fetch_prowlarr_credentials
+    from src.trackersetup import tracker_class_map
 
-    args = str(data.get("args", "") or "")
-    append_unattended = str(data.get("append_unattended", True)).strip().lower() not in {"0", "false", "no", "off"}
-    try:
-        parsed_args = shlex.split(args)
-        if append_unattended and "-ua" not in parsed_args and "--unattended" not in parsed_args:
-            parsed_args.append("-ua")
-        validated_args = _validate_upload_assistant_args(parsed_args)
-    except (ValueError, TypeError):
-        return jsonify({"success": False, "error": "Invalid upload arguments"}), 400
-
-    base_dir = Path(__file__).resolve().parent.parent
-    upload_script = str(base_dir / "upload.py")
-    created: list[dict[str, Any]] = []
-    errors: list[dict[str, Any]] = []
-    prefix = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(data.get("session_prefix") or "qui")).strip("-") or "qui"
-
-    for raw_path in raw_paths:
-        try:
-            path_text = str(raw_path or "").strip()
-            if not path_text:
-                raise ValueError("empty path")
-            validated_path = _resolve_user_path(path_text, require_exists=True, require_dir=False)
-            _assert_safe_resolved_path(validated_path)
-            job_id = f"{prefix}-{secrets.token_hex(8)}"
-            command = [sys.executable, "-u", upload_script, validated_path, *validated_args]
-            now = datetime.now(UTC).isoformat()
-            job = {
-                "id": job_id,
-                "source_path": validated_path,
-                "args": " ".join(validated_args),
-                "command": command,
-                "status": "queued",
-                "message": "Queued",
-                "created_at": now,
-                "started_at": None,
-                "finished_at": None,
-                "return_code": None,
-                "log_path": str(base_dir / "tmp" / f"ua-{job_id}.log"),
-                "recovery_available": False,
-                "process_active": False,
-                "metadata_request": None,
-                "release_metadata_request": None,
-                "prompt_request": None,
-            }
-            with detached_jobs_lock:
-                detached_jobs[job_id] = job
-                detached_job_queue.append(job_id)
-                _persist_detached_jobs_locked()
-            QUI_EVENT_BROKER.publish("job.queued", job_id, job)
-            with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
-                RELEASE_HISTORY.record_job(job)
-            created.append({key: value for key, value in job.items() if key != "command"})
-        except Exception as error:
-            errors.append({"path": str(raw_path), "error": str(error)})
-
-    if created:
-        _start_detached_worker()
-    status_code = 202 if created else 400
-    return jsonify({"success": bool(created), "jobs": _json_safe(created), "errors": _json_safe(errors), "queued_count": len(created)}), status_code
-
-
-@app.route("/api/qui/status")
-@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
-def qui_status():
-    """Return detached Qui/API job status."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    try:
-        limit = int(request.args.get("limit", "100"))
-    except (TypeError, ValueError):
-        limit = 100
-    return jsonify({"success": True, "jobs": _detached_job_snapshot(limit=max(1, min(limit, 500)))})
-
-
-@app.route("/api/qui/log/<job_id>")
-@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
-def qui_log(job_id: str):
-    """Return a detached job log tail."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
-        return jsonify({"success": False, "error": "Invalid job id"}), 400
-    log_path = Path(__file__).resolve().parent.parent / "tmp" / f"ua-{job_id}.log"
-    if not log_path.exists():
-        return jsonify({"success": False, "error": "Log not found"}), 404
-    try:
-        max_bytes = min(max(int(request.args.get("bytes", "50000")), 1000), 500000)
-    except (TypeError, ValueError):
-        max_bytes = 50000
-    data = log_path.read_bytes()
-    return jsonify({"success": True, "job_id": job_id, "log": data[-max_bytes:].decode("utf-8", errors="replace"), "bytes": len(data)})
-
-
-@app.route("/api/qui/retry/<job_id>", methods=["POST"])
-def qui_retry(job_id: str):
-    """Explicitly retry an interrupted or failed detached job."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
-        return jsonify({"success": False, "error": "Invalid job id"}), 400
-    if not _retry_detached_job(job_id):
-        return jsonify({"success": False, "error": "Job is not retryable"}), 409
-    return jsonify({"success": True, "job_id": job_id, "status": "queued"}), 202
-
-
-def _detached_job_by_id(job_id: str) -> dict[str, Any] | None:
-    if not re.fullmatch(r"[A-Za-z0-9_.-]+", job_id):
-        return None
-    with detached_jobs_lock:
-        job = detached_jobs.get(job_id)
-        return dict(job) if job else None
-
-
-def _validated_detached_args(raw_args: object, append_unattended: object = True) -> tuple[list[str], str]:
-    return validate_detached_args(raw_args, append_unattended, _validate_upload_assistant_args)
-
-
-@app.route("/api/qui/update/<job_id>", methods=["POST"])
-def qui_update(job_id: str):
-    """Update arguments for a detached job before it starts or after a failure."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    job = _detached_job_by_id(job_id)
-    if job is None:
-        return jsonify({"success": False, "error": "Job not found"}), 404
-    if str(job.get("status")) not in {"queued", "failed", "interrupted"}:
-        return jsonify({"success": False, "error": "Only queued, failed, or interrupted jobs can be edited"}), 409
-    data = _as_dict(request.get_json(silent=True)) or {}
-    try:
-        validated_args, args_text = _validated_detached_args(data.get("args", ""), data.get("append_unattended", True))
-    except (ValueError, TypeError):
-        return jsonify({"success": False, "error": "Invalid upload arguments"}), 400
-
-    base_dir = Path(__file__).resolve().parent.parent
-    command = [sys.executable, "-u", str(base_dir / "upload.py"), str(job["source_path"]), *validated_args]
-    updates: dict[str, Any] = {"args": args_text, "command": command, "error": None, "message": "Arguments updated"}
-    if str(job.get("status")) in {"failed", "interrupted"}:
-        updates.update({"status": "queued", "started_at": None, "finished_at": None, "return_code": None, "recovery_available": False})
-        with detached_jobs_lock:
-            current = detached_jobs.get(job_id)
-            if current is None:
-                return jsonify({"success": False, "error": "Job not found"}), 404
-            current.update(updates)
-            detached_job_queue.append(job_id)
-            _persist_detached_jobs_locked()
-        _start_detached_worker()
+    data = _request_json_dict()
+    tracker = str(data.get("tracker") or "").strip().upper()
+    tracker_class = tracker_class_map.get(tracker)
+    if not tracker_class or not getattr(tracker_class, "api_key_expiry_supported", False):
+        return jsonify({"success": False, "error": "API key expiry checks are not supported for this tracker"}), 400
+    config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+    if "api_key" in data:
+        api_key = data["api_key"]
     else:
-        with detached_jobs_lock:
-            current = detached_jobs.get(job_id)
-            if current is None:
-                return jsonify({"success": False, "error": "Job not found"}), 404
-            current.update(updates)
-            _persist_detached_jobs_locked()
-    snapshot = dict(current)
-    QUI_EVENT_BROKER.publish("job.arguments_updated", job_id, snapshot)
-    with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
-        RELEASE_HISTORY.record_job(snapshot)
-    return jsonify({"success": True, "job_id": job_id, "args": args_text, "status": "queued" if str(job.get("status")) in {"failed", "interrupted"} else str(job.get("status"))})
+        trackers_config = config.get("TRACKERS")
+        tracker_config = trackers_config.get(tracker) if isinstance(trackers_config, Mapping) else None
+        api_key = tracker_config.get("api_key", "") if isinstance(tracker_config, Mapping) else ""
+    if not isinstance(api_key, str) or "\r" in api_key or "\n" in api_key:
+        return jsonify({"success": False, "error": "Enter a valid API key"}), 400
+    api_key = api_key.strip()
+    source = "local"
+    refresh = data.get("refresh") is True
+    if not api_key and refresh:
+        try:
+            if connection := configured_prowlarr(config):
+                report = fetch_prowlarr_credentials(*connection, {tracker})
+                credential = report.credentials.get(tracker)
+                api_key = credential.api_key if credential else ""
+                source = "prowlarr"
+        except ProwlarrError as error:
+            return jsonify({"success": False, "error": str(error)}), 400
+    base_url = tracker_class.base_url
+    if not refresh:
+        return jsonify({"success": True, "expiry": get_api_key_expiry(tracker, api_key, base_url, STATE_DIR)})
+    if not api_key:
+        return jsonify({"success": False, "error": "Enter an API key or configure a Prowlarr credential source"}), 400
 
-
-@app.route("/api/qui/cancel/<job_id>", methods=["POST"])
-def qui_cancel(job_id: str):
-    """Cancel a queued job or terminate its active detached subprocess."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    if _detached_job_by_id(job_id) is None:
-        return jsonify({"success": False, "error": "Job not found"}), 404
-    with detached_jobs_lock:
-        job = detached_jobs.get(job_id)
-        if job is None:
-            return jsonify({"success": False, "error": "Job not found"}), 404
-        status = str(job.get("status"))
-        if status == "queued":
-            detached_job_queue[:] = [queued_id for queued_id in detached_job_queue if queued_id != job_id]
-            job.update({"status": "cancelled", "message": "Cancelled before execution", "finished_at": datetime.now(UTC).isoformat(), "recovery_available": False})
-            _persist_detached_jobs_locked()
-            snapshot = dict(job)
-        elif status not in {"starting", "running", "waiting_for_input", "waiting_for_metadata", "waiting_for_release_metadata"}:
-            return jsonify({"success": False, "error": "Job is not active"}), 409
-
-    if status == "queued":
-        QUI_EVENT_BROKER.publish("job.cancelled", job_id, snapshot)
-        with contextlib.suppress(OSError, sqlite3.Error, TypeError, ValueError):
-            RELEASE_HISTORY.record_job(snapshot)
-        return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
-
-    with active_processes_lock:
-        process_info = active_processes.get(job_id, {})
-        process = process_info.get("process")
-    if isinstance(process, subprocess.Popen) and process.poll() is None:
-        with contextlib.suppress(Exception):
-            process.kill()
-    _set_detached_job(job_id, status="cancelled", message="Cancelled by user", finished_at=datetime.now(UTC).isoformat(), recovery_available=False, prompt_request=None, metadata_request=None, release_metadata_request=None)
-    return jsonify({"success": True, "job_id": job_id, "status": "cancelled"})
-
-
-@app.route("/api/qui/input/<job_id>", methods=["POST"])
-def qui_input(job_id: str):
-    """Answer a detached job's currently blocked stdin prompt."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    job = _detached_job_by_id(job_id)
-    if job is None:
-        return jsonify({"success": False, "error": "Job not found"}), 404
-    if str(job.get("status")) not in {"waiting_for_input", "waiting_for_metadata"}:
-        return jsonify({"success": False, "error": "Job is not waiting for input"}), 409
-    data = _as_dict(request.get_json(silent=True)) or {}
-    raw_input = data.get("input", data.get("value", ""))
-    answer = ("y" if raw_input else "n") if isinstance(raw_input, bool) else str(raw_input or "").strip()
-    if not answer or len(answer) > 4000 or "\n" in answer or "\r" in answer:
-        return jsonify({"success": False, "error": "Input must be a non-empty single line"}), 400
-    with active_processes_lock:
-        process_info = active_processes.get(job_id)
-        process = process_info.get("process") if process_info else None
-    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
-        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    # Use the existing search endpoint/permissions, not /user's additional
+    # account-information permission. The destination comes from UA's tracker
+    # definition; draft config cannot redirect a credential to another host.
     try:
-        process.stdin.write(answer + "\n")
-        process.stdin.flush()
-    except (BrokenPipeError, OSError) as error:
-        return jsonify({"success": False, "error": f"Unable to send input: {error}"}), 409
-    _set_detached_job(job_id, status="running", message="Input received; upload resumed", prompt_request=None, metadata_request=None, release_metadata_request=None)
-    return jsonify({"success": True, "job_id": job_id})
+        with httpx.Client(timeout=10.0, follow_redirects=False) as client:
+            response = client.get(
+                tracker_class.search_url,
+                headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
+                params={"perPage": 1},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        if not isinstance(payload, dict) or payload.get("success") is False:
+            return jsonify({"success": False, "error": "The tracker returned an unsuccessful API response"}), 400
+        observed = record_api_key_expiry(tracker, api_key, base_url, response, STATE_DIR, payload=payload)
+    except httpx.HTTPStatusError as error:
+        code = error.response.status_code
+        message = (
+            "The tracker rejected the API key. It may be invalid, revoked or expired."
+            if code == 401
+            else "The tracker denied the API request. Check the key's search/download permissions and account access."
+            if code == 403
+            else f"The tracker returned HTTP {code}. Try again later."
+        )
+        return jsonify({"success": False, "error": message}), 400
+    except httpx.RequestError:
+        return jsonify({"success": False, "error": "The tracker could not be reached. Try again later."}), 400
+    except ValueError:
+        return jsonify({"success": False, "error": "The tracker did not return a valid JSON API response"}), 400
 
-
-@app.route("/api/qui/metadata/<job_id>", methods=["POST"])
-def qui_metadata(job_id: str):
-    """Submit metadata IDs to resume a detached upload checkpoint."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    request_data = _waiting_metadata_request(job_id)
-    if request_data is None:
-        return jsonify({"success": False, "error": "Job is not waiting for metadata"}), 409
-    raw_payload = _as_dict(request.get_json(silent=True)) or {}
-    if "input" in raw_payload and not ("tmdb_id" in raw_payload or "imdb_id" in raw_payload):
-        input_text = str(raw_payload.get("input") or "")
-        tokens = [token.strip() for token in re.split(r"[,;\s]+", input_text) if token.strip()]
-        raw_payload = {
-            "tmdb_id": next((token for token in tokens if re.fullmatch(r"(?i)(?:movie|tv)/\d+", token)), ""),
-            "imdb_id": next((token for token in tokens if re.fullmatch(r"(?i)tt\d+", token)), ""),
-            "category": request_data.get("category", ""),
+    expiry = observed or get_api_key_expiry(tracker, api_key, base_url, STATE_DIR)
+    return jsonify(
+        {
+            "success": True,
+            "expiry": expiry,
+            "credential_source": source,
+            "message": "API key accepted." if observed else "API key accepted, but expiry was not reported. Any date shown is the last observed expiry.",
         }
+    )
+
+
+@app.route("/api/config_test_prowlarr", methods=["POST"])
+@limiter.limit("30 per hour", key_func=_rate_limit_key_func)
+def config_test_prowlarr():
+    """Test draft Prowlarr settings and return credential-free metadata."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    data = _request_json_dict()
+    base_url = str(data.get("url") or "").strip()
+    api_key = str(data.get("api_key") or "").strip()
+    if not base_url or not api_key:
+        return jsonify({"success": False, "error": "Prowlarr URL and API key are required"}), 400
+
+    from src.prowlarr import ProwlarrError, fetch_prowlarr_credentials
+    from src.trackersetup import tracker_class_map
+
     try:
-        payload = parse_metadata_submission(raw_payload, request_data.get("category"))
-    except ValueError as error:
+        report = fetch_prowlarr_credentials(base_url, api_key, set(tracker_class_map), include_status=True)
+    except ProwlarrError as error:
         return jsonify({"success": False, "error": str(error)}), 400
+    except Exception:
+        return jsonify({"success": False, "error": "Unable to test the Prowlarr connection"}), 500
 
-    with active_processes_lock:
-        process_info = active_processes.get(job_id)
-        process = process_info.get("process") if process_info else None
-    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
-        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
+    api_key_trackers = sorted(name for name, credential in report.credentials.items() if credential.api_key)
+    cookie_trackers = sorted(name for name, credential in report.credentials.items() if credential.cookie)
+    return jsonify(
+        {
+            "success": True,
+            "message": f"Connected to Prowlarr {report.version or '(version unavailable)'}. Found credentials for {len(report.credentials)} supported tracker(s).",
+            "version": report.version,
+            "enabled_indexers": report.enabled_indexers,
+            "matched_indexers": report.matched_indexers,
+            "credential_trackers": sorted(report.credentials),
+            "api_key_trackers": api_key_trackers,
+            "cookie_trackers": cookie_trackers,
+            "masked_credentials": report.masked_credentials,
+            "unsupported_indexers": report.unsupported_indexers,
+        }
+    )
+
+
+@app.route("/api/config_set_tracker_overrides", methods=["POST"])
+def config_set_tracker_overrides():
+    """Enable or remove the example-backed DEFAULT override block for a tracker."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    data = _request_json_dict()
+    tracker_name = str(data.get("tracker", "")).strip().upper()
+    enabled = data.get("enabled")
+    if not tracker_name or not isinstance(enabled, bool):
+        return jsonify({"success": False, "error": "Invalid tracker override request"}), 400
+
+    example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
+    example_trackers = _as_dict(example_config.get("TRACKERS")) or {}
+    actual_example_name = next(
+        (str(name) for name in example_trackers if str(name).upper() == tracker_name),
+        None,
+    )
+    if actual_example_name is None:
+        return jsonify({"success": False, "error": "Unknown tracker"}), 404
+    example_tracker = _as_dict(example_trackers.get(actual_example_name)) or {}
+    override_keys = [key for key in _TRACKER_DEFAULT_OVERRIDE_KEYS if key in example_tracker]
+    if not override_keys:
+        return jsonify({"success": False, "error": "This tracker has no DEFAULT override block"}), 400
+
+    config_path = STATE_DIR / "data" / "config.py"
+    user_config = _load_config_from_file(config_path) or {}
+    user_trackers = _as_dict(user_config.get("TRACKERS")) or {}
+    actual_user_name = next(
+        (str(name) for name in user_trackers if str(name).upper() == tracker_name),
+        actual_example_name,
+    )
+
     try:
-        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
-        process.stdin.flush()
-    except (BrokenPipeError, OSError) as error:
-        return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
-    _set_detached_job(job_id, status="running", message="Metadata received; resuming upload", metadata_request=None, release_metadata_request=None)
-    return jsonify({"success": True, "job_id": job_id, "metadata": payload})
+        source = config_path.read_text(encoding="utf-8")
+        if enabled:
+            if not isinstance(user_config.get("TRACKERS"), Mapping):
+                source = _replace_config_value_in_source(source, ["TRACKERS"], "{}")
+            if not isinstance(user_trackers.get(actual_user_name), Mapping):
+                source = _replace_config_value_in_source(source, ["TRACKERS", actual_user_name], "{}")
+            for key in override_keys:
+                source = _replace_config_value_in_source(
+                    source,
+                    ["TRACKERS", actual_user_name, key],
+                    _python_literal(example_tracker[key]),
+                )
+        else:
+            for key in override_keys:
+                source = _remove_config_key_in_source(source, ["TRACKERS", actual_user_name, key])
+        config_path.write_text(source, encoding="utf-8")
+        try:
+            _write_audit_log(
+                "set_tracker_default_overrides",
+                ["TRACKERS", actual_user_name],
+                None,
+                {"enabled": enabled, "keys": override_keys},
+                True,
+            )
+        except Exception as audit_error:
+            console.print(f"Failed to write config audit record: {audit_error}", markup=False)
+    except Exception as error:
+        console.print(f"Failed to update tracker DEFAULT overrides: {error}", markup=False)
+        return jsonify({"success": False, "error": "An error occurred while updating tracker overrides"}), 500
 
-
-@app.route("/api/qui/release_metadata/<job_id>", methods=["POST"])
-def qui_release_metadata(job_id: str):
-    """Submit release-name fields and resume an unattended upload checkpoint."""
-    ok, response = _submit_auth_ok()
-    if not ok:
-        return response
-    request_data = _waiting_release_metadata_request(job_id)
-    if request_data is None:
-        return jsonify({"success": False, "error": "Job is not waiting for release metadata"}), 409
-    raw_payload = _as_dict(request.get_json(silent=True)) or {}
-    try:
-        payload = parse_release_metadata_submission(raw_payload, request_data.get("fields", []))
-    except ValueError as error:
-        return jsonify({"success": False, "error": str(error)}), 400
-
-    with active_processes_lock:
-        process_info = active_processes.get(job_id)
-        process = process_info.get("process") if process_info else None
-    if not isinstance(process, subprocess.Popen) or process.poll() is not None or process.stdin is None:
-        return jsonify({"success": False, "error": "Detached process is no longer available"}), 409
-    try:
-        process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
-        process.stdin.flush()
-    except (BrokenPipeError, OSError) as error:
-        return jsonify({"success": False, "error": f"Unable to resume detached job: {error}"}), 409
-    _set_detached_job(job_id, status="running", message="Release metadata received; rebuilding title", release_metadata_request=None, metadata_request=None, prompt_request=None)
-    return jsonify({"success": True, "job_id": job_id, "release_metadata": payload})
+    return jsonify(
+        {
+            "success": True,
+            "tracker": actual_user_name,
+            "enabled": enabled,
+            "keys": override_keys,
+        }
+    )
 
 
 @app.route("/api/config_update", methods=["POST"])
@@ -4784,19 +5286,64 @@ def config_update():
     example_config = _load_config_from_file(example_path) or {}
     example_value = _get_nested_value(example_config, path)
 
-    # Special handling for client lists that don't exist in example config
+    if example_value is None and len(path) >= 3 and path[0] == "TORRENT_CLIENTS":
+        user_config_for_template = _load_config_from_file(config_path) or {}
+        user_client = _get_nested_value(user_config_for_template, path[:2])
+        example_clients = _as_dict(example_config.get("TORRENT_CLIENTS")) or {}
+        user_client_config = _as_dict(user_client)
+        if user_client_config:
+            match = _torrent_client_template(
+                example_clients,
+                str(user_client_config.get("torrent_client", "")),
+            )
+            if match is not None:
+                _template_name, template = match
+                example_value = _get_nested_value(template, path[2:])
+
+    # Special handling for WebUI-managed fields that don't exist in example config.
     key = path[-1] if path else ""
-    if key in ["injecting_client_list", "searching_client_list"]:
+    is_optional_arr_field = len(path) == 2 and path[0] == "DEFAULT" and re.fullmatch(r"(?:sonarr|radarr)_(?:url|api_key)_[1-3]", key) is not None
+    force_remove_optional_arr_field = is_optional_arr_field and data.get("remove") is True
+    is_tracker_default_override = len(path) == 3 and path[0] == "TRACKERS" and key in _TRACKER_DEFAULT_OVERRIDE_KEYS
+    force_remove_tracker_override = is_tracker_default_override and data.get("remove") is True
+    if is_tracker_default_override and example_value is None and isinstance(_get_nested_value(example_config, path[:2]), Mapping):
+        # Existing overrides may outlive a field's entry in the tracker template.
+        # Keep those displayed fields editable/removable without adding new ones.
+        saved_config = _load_config_from_file(config_path) or {}
+        saved_tracker = _as_dict(_get_nested_value(saved_config, path[:2])) or {}
+        if key in saved_tracker:
+            example_value = _get_nested_value(example_config, ["DEFAULT", key])
+            if example_value is None:
+                example_value = saved_tracker[key] if saved_tracker[key] is not None else ""
+    is_release_group_override = _is_release_group_override_path(path)
+    if is_release_group_override:
+        if not isinstance(_get_nested_value(example_config, path[:-1]), Mapping):
+            return jsonify({"success": False, "error": "Unknown release group override scope"}), 400
+        example_value = {}
+    elif key in ["injecting_client_list", "searching_client_list"]:
         example_value = []  # Default to empty list
+    elif is_optional_arr_field:
+        example_value = ""
     elif example_value is None:
         return jsonify({"success": False, "error": "Path not found in example config"}), 400
 
     coerced_value = _coerce_config_value(raw_value, example_value)
+    if is_release_group_override:
+        try:
+            _validate_release_group_overrides(coerced_value)
+        except ValueError as error:
+            return jsonify({"success": False, "error": str(error)}), 400
     new_value_literal = _python_literal(coerced_value)
 
-    # Special handling for client lists that should remain commented unless user provides values
+    # Remove unchecked tracker overrides so subsequent DEFAULT changes are inherited.
+    # Also keep optional WebUI-managed values out of config.py when they are unused.
     key = path[-1] if path else ""
-    if key in ["injecting_client_list", "searching_client_list"] and coerced_value == []:
+    should_remove_empty_value = (
+        (key in ["injecting_client_list", "searching_client_list"] and coerced_value == [])
+        or (is_optional_arr_field and (coerced_value == "" or force_remove_optional_arr_field))
+        or force_remove_tracker_override
+    )
+    if should_remove_empty_value:
         # Remove the key from config if it exists
         try:
             # Load prior value for audit
@@ -4875,6 +5422,301 @@ def config_remove_subsection():
         return jsonify({"success": True})
     except Exception:
         return jsonify({"success": False, "error": "An error occurred while removing the configuration subsection"}), 500
+
+
+@app.route("/api/config_add_torrent_client", methods=["POST"])
+def config_add_torrent_client():
+    """Create a custom-named torrent client from an example template."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    data = _request_json_dict()
+    client_name = str(data.get("name", "")).strip()
+    template_name = str(data.get("template", "")).strip()
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", client_name):
+        return jsonify(
+            {
+                "success": False,
+                "error": "Client names may contain letters, numbers, hyphens, and underscores.",
+            }
+        ), 400
+
+    example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}
+    example_clients = _as_dict(example_config.get("TORRENT_CLIENTS")) or {}
+    template = _as_dict(example_clients.get(template_name))
+    if not template:
+        return jsonify({"success": False, "error": "Unknown torrent client template"}), 400
+
+    config_path = STATE_DIR / "data" / "config.py"
+    user_config = _load_config_from_file(config_path) or {}
+    user_clients = _as_dict(user_config.get("TORRENT_CLIENTS")) or {}
+    if client_name.casefold() in {str(name).casefold() for name in user_clients}:
+        return jsonify({"success": False, "error": "A client with that name already exists"}), 409
+
+    try:
+        source = config_path.read_text(encoding="utf-8")
+        if not isinstance(user_config.get("TORRENT_CLIENTS"), Mapping):
+            source = _replace_config_value_in_source(source, ["TORRENT_CLIENTS"], "{}")
+        updated = _replace_config_value_in_source(
+            source,
+            ["TORRENT_CLIENTS", client_name],
+            _python_literal(dict(template)),
+        )
+        config_path.write_text(updated, encoding="utf-8")
+        try:
+            _write_audit_log(
+                "add_subsection",
+                ["TORRENT_CLIENTS", client_name],
+                None,
+                {"template": template_name},
+                True,
+            )
+        except Exception as audit_error:
+            console.print(f"Failed to write config audit record: {audit_error}", markup=False)
+    except Exception as error:
+        console.print(f"Failed to add torrent client: {error}", markup=False)
+        return jsonify({"success": False, "error": "An error occurred while adding the torrent client"}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "name": client_name,
+            "torrent_client": template.get("torrent_client", ""),
+        }
+    )
+
+
+@app.route("/api/config_rename_torrent_client", methods=["POST"])
+def config_rename_torrent_client():
+    """Rename a torrent-client block and its DEFAULT client references."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    data = _request_json_dict()
+    old_name = str(data.get("old_name", "")).strip()
+    new_name = str(data.get("new_name", "")).strip()
+    if not old_name or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,63}", new_name):
+        return jsonify(
+            {
+                "success": False,
+                "error": "Client names may contain letters, numbers, hyphens, and underscores.",
+            }
+        ), 400
+    if old_name.casefold() == new_name.casefold():
+        return jsonify({"success": False, "error": "Choose a different client name"}), 400
+
+    config_path = STATE_DIR / "data" / "config.py"
+    user_config = _load_config_from_file(config_path) or {}
+    user_clients = _as_dict(user_config.get("TORRENT_CLIENTS")) or {}
+    actual_old_name = next(
+        (str(name) for name in user_clients if str(name).casefold() == old_name.casefold()),
+        None,
+    )
+    existing_new_name = next(
+        (str(name) for name in user_clients if str(name).casefold() == new_name.casefold()),
+        None,
+    )
+
+    # Treat a completed earlier attempt as success so Save Config can be retried.
+    if actual_old_name is None and existing_new_name is not None:
+        return jsonify({"success": True, "old_name": old_name, "new_name": existing_new_name})
+    if actual_old_name is None:
+        return jsonify({"success": False, "error": "Torrent client not found"}), 404
+    if existing_new_name is not None:
+        return jsonify({"success": False, "error": "A client with that name already exists"}), 409
+
+    client_config = _as_dict(user_clients.get(actual_old_name))
+    if client_config is None:
+        return jsonify({"success": False, "error": "Torrent client configuration is invalid"}), 400
+
+    try:
+        source = config_path.read_text(encoding="utf-8")
+        updated = _replace_config_value_in_source(
+            source,
+            ["TORRENT_CLIENTS", new_name],
+            _python_literal(dict(client_config)),
+        )
+        updated = _remove_config_key_in_source(updated, ["TORRENT_CLIENTS", actual_old_name])
+
+        default_config = _as_dict(user_config.get("DEFAULT")) or {}
+        reference_keys = (
+            "default_torrent_client",
+            "injecting_client_list",
+            "searching_client_list",
+        )
+        updated_references: list[str] = []
+        for key in reference_keys:
+            current_value = default_config.get(key)
+            next_value: object = current_value
+            if isinstance(current_value, str) and current_value.casefold() == actual_old_name.casefold():
+                next_value = new_name
+            elif isinstance(current_value, list):
+                next_value = [new_name if isinstance(value, str) and value.casefold() == actual_old_name.casefold() else value for value in current_value]
+            if next_value != current_value:
+                updated = _replace_config_value_in_source(updated, ["DEFAULT", key], _python_literal(next_value))
+                updated_references.append(key)
+
+        config_path.write_text(updated, encoding="utf-8")
+        try:
+            _write_audit_log(
+                "rename_subsection",
+                ["TORRENT_CLIENTS", actual_old_name],
+                {"name": actual_old_name},
+                {"name": new_name},
+                True,
+            )
+        except Exception as audit_error:
+            console.print(f"Failed to write config audit record: {audit_error}", markup=False)
+    except Exception as error:
+        console.print(f"Failed to rename torrent client: {error}", markup=False)
+        return jsonify({"success": False, "error": "An error occurred while renaming the torrent client"}), 500
+
+    return jsonify(
+        {
+            "success": True,
+            "old_name": actual_old_name,
+            "new_name": new_name,
+            "updated_references": updated_references,
+        }
+    )
+
+
+@app.route("/api/config_test_torrent_client", methods=["POST"])
+@limiter.limit("30 per hour", key_func=_rate_limit_key_func)
+def config_test_torrent_client():
+    """Test a torrent-client draft without saving or mutating it."""
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+
+    data = _request_json_dict()
+    client_name = str(data.get("name", "")).strip()
+    client_config = _as_dict(data.get("config"))
+    if not client_name or client_config is None:
+        return jsonify({"success": False, "error": "Invalid torrent client configuration"}), 400
+
+    client_type = str(client_config.get("torrent_client", "")).strip().lower()
+    if client_type not in {"qbit", "rtorrent", "deluge", "transmission", "watch"}:
+        return jsonify({"success": False, "error": "Unsupported torrent client type"}), 400
+
+    try:
+        message = "Connection successful"
+        if client_type == "qbit":
+            proxy_url = str(client_config.get("qui_proxy_url", "")).strip()
+            verify_certificate = bool(client_config.get("VERIFY_WEBUI_CERTIFICATE", True))
+            if proxy_url:
+                httpx = _dynamic_import("httpx")
+                response = httpx.get(
+                    f"{proxy_url.rstrip('/')}/api/v2/app/version",
+                    timeout=10.0,
+                    verify=verify_certificate,
+                )
+                response.raise_for_status()
+                version = str(response.text).strip().strip('"')
+            else:
+                qbittorrentapi = _dynamic_import("qbittorrentapi")
+                qbit_kwargs: dict[str, object] = {
+                    "host": str(client_config.get("qbit_url", "")),
+                    "port": str(client_config.get("qbit_port", "")),
+                    "VERIFY_WEBUI_CERTIFICATE": verify_certificate,
+                    "REQUESTS_ARGS": {"timeout": 10},
+                }
+                api_key = str(client_config.get("qbit_api_key", "")).strip()
+                if api_key:
+                    qbit_kwargs["api_key"] = api_key
+                else:
+                    qbit_kwargs["username"] = str(client_config.get("qbit_user", ""))
+                    qbit_kwargs["password"] = str(client_config.get("qbit_pass", ""))
+                qbit_client = qbittorrentapi.Client(**qbit_kwargs)
+                if not api_key:
+                    qbit_client.auth_log_in()
+                version_value = qbit_client.app_version
+                if callable(version_value):
+                    version_value = version_value()
+                version = str(version_value)
+            message = f"Connected to qBittorrent {version}" if version else "Connected to qBittorrent"
+        elif client_type == "rtorrent":
+            httpx = _dynamic_import("httpx")
+            xmlrpc_client = _dynamic_import("xmlrpc.client")
+            rtorrent_url = str(client_config.get("rtorrent_url", "")).strip()
+            if not rtorrent_url:
+                raise ValueError("Missing rTorrent URL")
+            payload = xmlrpc_client.dumps((), methodname="system.client_version")
+            response = httpx.post(
+                rtorrent_url,
+                content=payload,
+                headers={"Content-Type": "text/xml"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            values, _method = xmlrpc_client.loads(response.content)
+            version = str(values[0]) if values else ""
+            message = f"Connected to rTorrent {version}" if version else "Connected to rTorrent"
+        elif client_type == "deluge":
+            deluge_client_module = _dynamic_import("deluge_client")
+            deluge_client = deluge_client_module.DelugeRPCClient(
+                str(client_config.get("deluge_url", "")),
+                int(client_config.get("deluge_port", 0)),
+                str(client_config.get("deluge_user", "")),
+                str(client_config.get("deluge_pass", "")),
+            )
+            deluge_client.connect()
+            if not deluge_client.connected:
+                raise ConnectionError("Deluge did not accept the connection")
+            if hasattr(deluge_client, "disconnect"):
+                deluge_client.disconnect()
+            message = "Connected to Deluge"
+        elif client_type == "transmission":
+            transmission_rpc = _dynamic_import("transmission_rpc")
+            transmission_client = transmission_rpc.Client(
+                protocol=str(client_config.get("transmission_protocol", "http")),
+                host=str(client_config.get("transmission_host", "")),
+                port=int(client_config.get("transmission_port", 0)),
+                username=str(client_config.get("transmission_username", "")),
+                password=str(client_config.get("transmission_password", "")),
+                path=str(client_config.get("transmission_path", "/transmission/rpc")),
+                timeout=10,
+            )
+            transmission_client.get_session()
+            message = "Connected to Transmission"
+        else:
+            watch_folder = Path(str(client_config.get("watch_folder", ""))).expanduser()
+            if not watch_folder.is_dir():
+                return jsonify({"success": False, "error": "Watch folder does not exist or is not a directory"}), 400
+            if not os.access(watch_folder, os.W_OK):
+                return jsonify({"success": False, "error": "Watch folder is not writable"}), 400
+            message = "Watch folder is available and writable"
+    except Exception as error:
+        error_type = type(error).__name__
+        console.print(
+            f"Torrent client connection test failed for {client_name} ({client_type}): {error_type}",
+            markup=False,
+        )
+        normalized_error = error_type.casefold()
+        if "login" in normalized_error or "auth" in normalized_error:
+            error_message = "Authentication failed. Check the configured credentials."
+        elif "timeout" in normalized_error:
+            error_message = "Connection timed out. Check the address, port, and network access."
+        elif "connect" in normalized_error or "connection" in normalized_error:
+            error_message = "Unable to reach the client. Check the address, port, and network access."
+        elif error_type == "HTTPStatusError":
+            status_code = getattr(getattr(error, "response", None), "status_code", None)
+            if status_code in {401, 403}:
+                error_message = "Authentication failed. Check the configured credentials."
+            elif status_code == 404:
+                error_message = "The client endpoint was not found. Check the configured URL or path."
+            else:
+                error_message = f"The client rejected the connection (HTTP {status_code or 'error'})."
+        else:
+            error_message = f"Connection failed ({error_type})."
+        return jsonify({"success": False, "error": error_message}), 400
+
+    return jsonify({"success": True, "message": message})
 
 
 @app.route("/api/tokens", methods=["GET", "POST", "DELETE"])
@@ -5134,53 +5976,99 @@ def browse_search():
                 return False
         return True
 
+    items: list[BrowseItem] = []
+
     try:
-        indexed_items, indexing = _browse_index.search(roots, query, file_filter, max_results)
-        items: list[BrowseItem] = []
-        for indexed_item in indexed_items:
-            name = str(indexed_item["name"])
-            item_type = str(indexed_item["type"])
-            if not name_matches(name):
-                continue
-            if item_type == "file" and file_filter == "desc" and Path(name.lower()).suffix not in SUPPORTED_DESC_EXTS:
-                continue
-            full_path = Path(str(indexed_item["path"]))
-            try:
-                _assert_safe_resolved_path(full_path)
-            except ValueError:
+        for root in roots:
+            root_abs = str(Path(root).resolve())
+            if not Path(root_abs).is_dir():
                 continue
             try:
-                stat_res = full_path.stat()
-                mtime = stat_res.st_mtime
-                size = stat_res.st_size if item_type == "file" else 0
-            except (FileNotFoundError, PermissionError, OSError):
-                # The index may briefly contain a path removed since the last
-                # refresh. Ignore it without forcing another disk-wide scan.
+                for dirpath, dirnames, filenames in os.walk(root_abs):
+                    # Skip hidden dirs
+                    dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+
+                    # Check dirs
+                    for dirname in dirnames:
+                        if name_matches(dirname):
+                            full_path = Path(dirpath) / dirname
+                            try:
+                                _assert_safe_resolved_path(full_path)
+                            except ValueError:
+                                continue
+                            try:
+                                stat_res = Path(full_path).stat()
+                                mtime = stat_res.st_mtime
+                                size = 0
+                            except Exception:
+                                mtime = 0.0
+                                size = 0
+                            items.append(
+                                {
+                                    "name": dirname,
+                                    "path": str(full_path),
+                                    "type": "folder",
+                                    "children": [],
+                                    "mtime": mtime,
+                                    "size": size,
+                                }
+                            )
+                            if len(items) >= max_results:
+                                break
+
+                    if len(items) >= max_results:
+                        break
+
+                    # Check files
+                    for filename in filenames:
+                        if filename.startswith("."):
+                            continue
+                        if not name_matches(filename):
+                            continue
+                        if file_filter == "desc":
+                            ext = Path(filename.lower()).suffix
+                            if ext not in SUPPORTED_DESC_EXTS:
+                                continue
+                        full_path = Path(dirpath) / filename
+                        try:
+                            _assert_safe_resolved_path(full_path)
+                        except ValueError:
+                            continue
+                        try:
+                            stat_res = Path(full_path).stat()
+                            mtime = stat_res.st_mtime
+                            size = stat_res.st_size
+                        except Exception:
+                            mtime = 0.0
+                            size = 0
+                        items.append(
+                            {
+                                "name": filename,
+                                "path": str(full_path),
+                                "type": "file",
+                                "children": None,
+                                "mtime": mtime,
+                                "size": size,
+                            }
+                        )
+                        if len(items) >= max_results:
+                            break
+
+                    if len(items) >= max_results:
+                        break
+            except PermissionError:
                 continue
-            items.append(
-                {
-                    "name": name,
-                    "path": str(full_path),
-                    "type": "folder" if item_type == "folder" else "file",
-                    "children": [] if item_type == "folder" else None,
-                    "mtime": mtime,
-                    "size": size,
-                }
-            )
+            except Exception as e:
+                console.print(f"Error searching in {root}: {e}", markup=False)
+                continue
+
+            if len(items) >= max_results:
+                break
 
         # Sort by folders first and then alphabetically
         items.sort(key=lambda x: (0 if x.get("type") == "folder" else 1, (x.get("name") or "").lower()))
 
-        return jsonify(
-            {
-                "success": True,
-                "items": items,
-                "query": query,
-                "count": len(items),
-                "truncated": len(items) >= max_results,
-                "indexing": indexing,
-            }
-        )
+        return jsonify({"success": True, "items": items, "query": query, "count": len(items), "truncated": len(items) >= max_results})
 
     except Exception as e:
         console.print(f"Error in browse_search: {e}", markup=False)
@@ -5342,7 +6230,6 @@ def execution_screenshots():
                     ),
                     "can_replace": can_capture and item.source != "addition",
                     "can_delete": item.source in {"local", "addition"},
-                    "can_refill": can_capture and item.source in {"local", "addition"},
                 }
                 for item in items
             ],
@@ -5362,27 +6249,12 @@ def execution_description():
 
     temp_dir, _meta_file, meta_data = resolved
     content, version = draft(meta_data, temp_dir)
-    tracker_descriptions: list[dict[str, str]] = []
-    for description_file in sorted(temp_dir.glob("*DESCRIPTION.txt")):
-        if not description_file.name.startswith("[") or "]DESCRIPTION.txt" not in description_file.name:
-            continue
-        try:
-            description_content = description_file.read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if description_content.strip():
-            tracker_descriptions.append({
-                "tracker": description_file.name.removeprefix("[").removesuffix("]DESCRIPTION.txt"),
-                "filename": description_file.name,
-                "content": description_content,
-            })
     return jsonify(
         {
             "success": True,
             "content": content,
             "version": version,
             "sources": source_items(meta_data),
-            "tracker_descriptions": tracker_descriptions,
         }
     )
 
@@ -5422,7 +6294,7 @@ def save_execution_description():
             return jsonify({"success": False, "error": "Description changed in another browser tab", "version": current_version}), 409
 
         next_version = current_version + 1
-        save_review(temp_dir, content, next_version, str(meta_data.get("path") or ""))
+        save_review(temp_dir, content, next_version)
     return jsonify({"success": True, "content": content, "version": next_version})
 
 
@@ -5458,7 +6330,7 @@ def reset_execution_description():
             return jsonify({"success": False, "error": "Description changed in another browser tab", "version": current_version}), 409
 
         next_version = current_version + 1
-        save_review(temp_dir, content, next_version, str(meta_data.get("path") or ""))
+        save_review(temp_dir, content, next_version)
     return jsonify({"success": True, "content": content, "version": next_version})
 
 
@@ -5507,35 +6379,10 @@ def add_execution_screenshot():
     return jsonify({"success": True})
 
 
-@app.route("/api/execution_screenshots/regenerate", methods=["POST"])
-def regenerate_execution_screenshots():
-    """Regenerate all screenshots for one reviewed file/group in place."""
-    if not _verify_csrf_header() or not _verify_same_origin():
-        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
-    payload = _request_json_dict()
-    session_id = _stringify_preview_value(payload.get("session_id"))
-    group = _stringify_preview_value(payload.get("group")) or "main"
-    resolved = _resolve_execution_screenshot_review(session_id)
-    if resolved is None:
-        return jsonify({"success": False, "error": "Screenshots are not available yet"}), 404
-    temp_dir, meta_data = resolved
-    meta_data = _screenshot_review_meta(temp_dir, meta_data)
-    try:
-        from src.screenshot_review import regenerate_screenshot_group
-
-        asyncio.run(regenerate_screenshot_group(temp_dir, meta_data, group))
-    except (FileNotFoundError, ValueError) as error:
-        return jsonify({"success": False, "error": str(error)}), 404
-    except Exception as error:
-        console.print(f"Screenshot regeneration failed for {session_id}: {error}", markup=False)
-        return jsonify({"success": False, "error": "Could not regenerate screenshots"}), 500
-    return jsonify({"success": True, "group": group})
-
-
 @app.route("/api/execution_screenshots/<screenshot_id>/<action>", methods=["POST"])
 def mutate_execution_screenshot(screenshot_id: str, action: str):
     """Delete or replace a reviewed frame with CSRF and same-origin protection."""
-    if action not in {"delete", "refill", "replace", "undo"}:
+    if action not in {"delete", "replace", "undo"}:
         return jsonify({"success": False, "error": "Unsupported screenshot action"}), 404
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
@@ -5548,12 +6395,10 @@ def mutate_execution_screenshot(screenshot_id: str, action: str):
     meta_data = _screenshot_review_meta(temp_dir, meta_data)
 
     try:
-        from src.screenshot_review import delete_screenshot, refill_screenshot_slot, replace_screenshot, undo_remote_replacement
+        from src.screenshot_review import delete_screenshot, replace_screenshot, undo_remote_replacement
 
         if action == "delete":
             delete_screenshot(temp_dir, meta_data, screenshot_id)
-        elif action == "refill":
-            asyncio.run(refill_screenshot_slot(temp_dir, meta_data, screenshot_id))
         elif action == "undo":
             undo_remote_replacement(temp_dir, screenshot_id)
         else:
@@ -5776,734 +6621,234 @@ def execute_command():
 
                 yield f"data: {json.dumps({'type': 'system', 'data': f'Executing: {command_str}'})}\n\n"
 
-                # The upload controller must be isolated so Kill can terminate its
-                # external workers as one process tree. Subprocess stdin already
-                # supports the WebUI prompt flow.
-                use_subprocess = True
+                # Run the upload controller in an isolated subprocess so Kill can
+                # terminate its external workers as one process tree. Subprocess
+                # stdin supports the WebUI prompt flow.
+                env = _webui_subprocess_env()
 
-                if not use_subprocess:
-                    # In-process execution path
-                    _cli_ui: Any = importlib.import_module("cli_ui")
+                # Sanity-check the working directory used for the subprocess.
+                # `base_dir` is computed from the application `__file__`, but
+                # perform lightweight validation to satisfy static analysis
+                # tools and ensure we do not pass uncontrolled input here.
+                if "\x00" in str(base_dir) or not str(base_dir):
+                    raise ValueError("Invalid execution directory")
+                if not Path(str(base_dir)).is_absolute():
+                    base_dir = str(Path(str(base_dir)).resolve())
 
-                    src_console: Any = importlib.import_module("src.console")
+                # Extra validation for the constructed command to guard
+                # against command-injection and to make validation explicit
+                # for static analysis tools.
+                try:
+                    # Ensure command is a list of strings
+                    command = _validate_upload_assistant_args(command)
 
-                    console.print("Running in-process (rich-captured) mode", markup=False)
-
-                    # Prepare input queue for prompts
-                    input_queue: queue.Queue[str] = queue.Queue()
-
-                    # Import upload.main on the main thread to avoid thread-unsafe imports
-                    # inside the worker thread. Importing here ensures any module-level
-                    # side-effects run on the request/main thread rather than inside
-                    # the worker thread.
+                    # Re-assert the execution path is safe
                     try:
-                        import upload as _upload
-
-                        upload_main = _upload.main
-                    except Exception as _e:
-                        upload_main = None
-
-                    # Prepare a recording Console to capture rich output
-                    import io
-
-                    rich_console_mod: Any = importlib.import_module("rich.console")
-                    rich_console_class = rich_console_mod.Console
-
-                    # Use an in-memory file for the recorder to avoid duplicating
-                    # output to the real stdout. record=True still records renderables.
-                    record_console = rich_console_class(record=True, force_terminal=True, width=120, file=io.StringIO())
-
-                    # Queue to serialize print actions from the worker thread
-                    render_queue: queue.Queue[tuple[Any, dict[str, Any]]] = queue.Queue()
-                    progress_event_queue: queue.Queue[None] = queue.Queue(maxsize=64)
-                    queued_progress_events: dict[str, dict[str, object]] = {}
-                    progress_queue_lock = threading.Lock()
-
-                    # Cancellation event for cooperative shutdown
-                    cancel_event = threading.Event()
-
-                    # Acquire lock BEFORE any global mutation to prevent concurrent runs
-                    # from corrupting each other's sys.argv and console patches.
-                    try:
-                        acquired = inproc_lock.acquire(timeout=2)
-                    except TypeError:
-                        acquired = inproc_lock.acquire(blocking=False)
-
-                    if not acquired:
-                        console.print(f"Failed to acquire inproc lock for session {session_id}; another inproc run may be active", markup=False)
-                        _discard_session_state(session_id, process_state)
-                        yield f"data: {json.dumps({'type': 'error', 'data': 'Another in-process run is active'})}\n\n"
-                        return
-
-                    if not _session_state_is_current(session_id, process_state):
-                        with contextlib.suppress(Exception):
-                            inproc_lock.release()
-                        _discard_session_state(session_id, process_state)
-                        yield f"data: {json.dumps({'type': 'error', 'data': 'Execution session was replaced'})}\n\n"
-                        return
-
-                    # Monkeypatch the existing shared console to record prints and intercept input
-                    orig_console: Any = src_console.console
-
-                    # Avoid double-wrapping the console if already patched by a previous run
-                    console_key = id(orig_console)
-                    if console_key not in _ua_console_store:
-                        # Store originals so we can restore later
-                        _ua_console_store[console_key] = {
-                            "orig_print": orig_console.print,
-                            "orig_input": getattr(orig_console, "input", None),
-                            "orig_ask_yes_no": None,
-                            "orig_ask_string": None,
-                            "orig_ask_choice": None,
-                        }
-
-                        # Wrap print to duplicate into the recorder
-                        orig_print = orig_console.print
-
-                        def wrapped_print(*p_args: Any, **p_kwargs: Any) -> Any:
-                            # Enqueue print calls to be applied from the SSE thread
-                            with contextlib.suppress(Exception):
-                                render_queue.put((p_args, p_kwargs))
-                            return orig_print(*p_args, **p_kwargs)
-
-                        orig_console.print = cast(Any, wrapped_print)
-
-                        # Intercept console.input to send prompt to client and wait for queue
-                        orig_input = getattr(orig_console, "input", None)
-
-                        def wrapped_input(prompt: str = "") -> str:
-                            # Print the prompt so it appears in the recorded output
-                            with contextlib.suppress(Exception):
-                                wrapped_print(prompt)
-                            # Wait for input while respecting cancellation
-                            _set_process_awaiting_input_if_current(session_id, process_state, True)
-                            while True:
-                                if cancel_event.is_set():
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    raise EOFError()
-                                try:
-                                    result = input_queue.get(timeout=0.5)
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    return result
-                                except queue.Empty:
-                                    continue
-                                except Exception:
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    raise
-
-                        orig_console.input = cast(Any, wrapped_input)
-                    else:
-                        # Already wrapped; retrieve stored originals so restoration works
-                        stored = _ua_console_store.get(console_key, {})
-                        orig_print = stored.get("orig_print", orig_console.print)
-                        orig_input = stored.get("orig_input", getattr(orig_console, "input", None))
-
-                    # Monkeypatch cli_ui.ask_yes_no and ask_string similarly
-                    orig_ask_yes_no = None
-                    orig_ask_string = None
-                    orig_ask_choice = None
-                    try:
-                        orig_ask_yes_no = _cli_ui.ask_yes_no
-
-                        def wrapped_ask_yes_no(*args: Any, default: bool = False, **kwargs: Any) -> bool:
-                            # Support both signatures used across the codebase:
-                            #   ask_yes_no(question, default=...)
-                            #   ask_yes_no(color, question, default=...)
-                            # Extract the question and default value from args/kwargs.
-                            if len(args) >= 2:
-                                question = args[1]
-                            elif len(args) == 1:
-                                question = args[0]
-                            else:
-                                question = kwargs.get("question", "")
-
-                            with contextlib.suppress(Exception):
-                                wrapped_print(str(question))
-                            # Wait for a response or cancellation
-                            _set_process_awaiting_input_if_current(session_id, process_state, True, "yes_no")
-                            while True:
-                                if cancel_event.is_set():
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    raise EOFError()
-                                try:
-                                    resp = input_queue.get(timeout=0.5)
-                                except queue.Empty:
-                                    continue
-                                except Exception:
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    raise
-                                resp = (resp or "").strip().lower()
-                                if not resp:
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    return default
-                                if resp in ("y", "yes"):
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    return True
-                                if resp in ("n", "no"):
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    return False
-                                with contextlib.suppress(Exception):
-                                    wrapped_print("Please answer y or n.")
-                                _set_process_awaiting_input_if_current(session_id, process_state, True, "yes_no")
-
-                        _cli_ui.ask_yes_no = wrapped_ask_yes_no
-                        # Save original ask_yes_no so external cleaners (eg. /api/kill)
-                        # can restore it if the inproc run is terminated early.
-                        with contextlib.suppress(Exception):
-                            if console_key in _ua_console_store:
-                                _ua_console_store[console_key]["orig_ask_yes_no"] = orig_ask_yes_no
-
-                        # ask_string: prompt user for an arbitrary string
-                        try:
-                            orig_ask_string = _cli_ui.ask_string
-
-                            def wrapped_ask_string(*question: Any, **_kwargs: Any) -> str | None:
-                                prompt = " ".join(str(q) for q in question)
-                                with contextlib.suppress(Exception):
-                                    wrapped_print(prompt)
-                                # Wait for input or cancellation
-                                _set_process_awaiting_input_if_current(session_id, process_state, True)
-                                while True:
-                                    if cancel_event.is_set():
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                        raise EOFError()
-                                    try:
-                                        result = input_queue.get(timeout=0.5)
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                        return result
-                                    except queue.Empty:
-                                        continue
-                                    except Exception:
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                        raise
-
-                            _cli_ui.ask_string = wrapped_ask_string
-                            # Save original ask_string for external cleanup
-                            with contextlib.suppress(Exception):
-                                if console_key in _ua_console_store:
-                                    _ua_console_store[console_key]["orig_ask_string"] = orig_ask_string
-                        except Exception:
-                            orig_ask_string = None
-
-                        # ask_choice: prompt user to select one option from a list
-                        try:
-                            orig_ask_choice = _cli_ui.ask_choice
-
-                            def wrapped_ask_choice(question: object, choices: Sequence[object] | None = None, **_kwargs: Any) -> str:
-                                prompt = str(question)
-                                rendered_choices = [str(choice) for choice in (choices or [])]
-                                with contextlib.suppress(Exception):
-                                    wrapped_print(prompt)
-                                    for index, choice_text in enumerate(rendered_choices, start=1):
-                                        wrapped_print(f"{index}. {choice_text}")
-                                _set_process_awaiting_input_if_current(session_id, process_state, True)
-                                while True:
-                                    if cancel_event.is_set():
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                        raise EOFError()
-                                    try:
-                                        resp = (input_queue.get(timeout=0.5) or "").strip()
-                                    except queue.Empty:
-                                        continue
-                                    except Exception:
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                        raise
-
-                                    if not rendered_choices:
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                        return resp
-                                    if resp.isdigit():
-                                        selected_index = int(resp) - 1
-                                        if 0 <= selected_index < len(rendered_choices):
-                                            _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                            return rendered_choices[selected_index]
-                                    for choice_text in rendered_choices:
-                                        if resp.lower() == choice_text.lower():
-                                            _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                            return choice_text
-
-                            _cli_ui.ask_choice = wrapped_ask_choice
-                            with contextlib.suppress(Exception):
-                                if console_key in _ua_console_store:
-                                    _ua_console_store[console_key]["orig_ask_choice"] = orig_ask_choice
-                        except Exception:
-                            orig_ask_choice = None
+                        _assert_safe_resolved_path(command[3] if len(command) > 3 else command[-1])
                     except Exception:
-                        orig_ask_yes_no = None
+                        # Fallback: validated_path is expected at position 3 for subprocess
+                        try:
+                            _assert_safe_resolved_path(validated_path)
+                        except Exception as err:
+                            raise ValueError("Invalid execution path") from err
 
-                    # Prepare sys.argv for upload.py to parse
-                    old_argv = list(sys.argv)
+                    # Ensure the upload_script is the expected script under the repo
                     try:
-                        import shlex
+                        expected_script = os.path.realpath(str(CODE_DIR / "upload.py"))
+                        script_real = os.path.realpath(command[2])
+                        if script_real != expected_script:
+                            raise ValueError("Invalid script path")
+                    except IndexError as err:
+                        raise ValueError("Invalid command structure") from err
 
-                        parsed_args = []
-                        if args:
-                            parsed_args = shlex.split(args)
-                            parsed_args = _validate_upload_assistant_args(parsed_args)
-
-                        sys.argv = [upload_script, validated_path, *parsed_args]
-
-                        # Store in active_processes so /api/input can post into the queue
-                        process_state.update(
-                            {
-                                "mode": "inproc",
-                                "input_queue": input_queue,
-                                "record_console": record_console,
-                                "cancel_event": cancel_event,
-                                "progress_event_queue": progress_event_queue,
-                            }
-                        )
-                        if not _session_state_is_current(session_id, process_state):
-                            raise RuntimeError("Execution session was replaced before in-process startup completed")
-
-                        # Run the upload main loop in a separate thread to avoid blocking SSE generator
-                        def run_upload():
-                            previous_webui_active = os.environ.get("UA_WEBUI_ACTIVE")
-                            os.environ["UA_WEBUI_ACTIVE"] = "1"
-
-                            def emit_progress(event: ProgressEvent) -> None:
-                                event_copy = dict(event)
-                                if not _session_state_is_current(session_id, process_state):
-                                    return
-                                _set_process_progress_if_current(session_id, process_state, event_copy)
-                                with contextlib.suppress(Exception):
-                                    progress_id = str(event_copy.get("id", "")).strip()
-                                    queue_key = progress_id or f"__event__:{event_copy.get('op', 'upsert')}"
-                                    with progress_queue_lock:
-                                        queued_progress_events[queue_key] = event_copy
-                                        while len(queued_progress_events) > 64:
-                                            oldest_key = next(iter(queued_progress_events))
-                                            queued_progress_events.pop(oldest_key, None)
-                                        with contextlib.suppress(queue.Full):
-                                            progress_event_queue.put_nowait(None)
-
-                            try:
-                                # Run the async main() entry point of upload.py
-                                import asyncio
-
-                                # Use the pre-imported upload_main from the outer scope.
-                                # If it wasn't available, attempt a safe import here as fallback.
-                                nonlocal_upload = upload_main
-                                if nonlocal_upload is None:
-                                    try:
-                                        import upload as _upload_fallback
-
-                                        nonlocal_upload = _upload_fallback.main
-                                    except Exception:
-                                        nonlocal_upload = None
-
-                                # Ensure Windows event loop policy when needed
-                                if sys.platform == "win32" and sys.version_info < (3, 14):
-                                    policy_class = getattr(asyncio, "WindowsProactorEventLoopPolicy", None)
-                                    if policy_class is not None:
-                                        with contextlib.suppress(Exception):
-                                            asyncio.set_event_loop_policy(policy_class())
-                                if nonlocal_upload is None:
-                                    raise RuntimeError("upload.main not available for in-process execution")
-                                set_webui_session_id = getattr(sys.modules.get("upload"), "set_webui_session_id", None)
-                                if callable(set_webui_session_id):
-                                    with contextlib.suppress(Exception):
-                                        set_webui_session_id(session_id, str(process_state.get("run_token") or ""))
-                                set_progress_callback(emit_progress)
-                                reset_progress()
-                                asyncio.run(nonlocal_upload())
-                            except Exception as e:
-                                # If the exception is the cooperative cancellation marker,
-                                # print a short, non-alarming message and avoid printing
-                                # the full traceback which can confuse the operator.
-                                try:
-                                    if isinstance(e, EOFError):
-                                        console.print("In-process run cancelled (Ctrl+C)", markup=False)
-                                    else:
-                                        console.print(f"In-process execution error: {e}", markup=False)
-                                        console.print(traceback.format_exc(), markup=False)
-                                except Exception:
-                                    with contextlib.suppress(Exception):
-                                        console.print("In-process run ended", markup=False)
-                            finally:
-                                clear_progress_callback(emit_progress)
-                                if previous_webui_active is None:
-                                    os.environ.pop("UA_WEBUI_ACTIVE", None)
-                                else:
-                                    os.environ["UA_WEBUI_ACTIVE"] = previous_webui_active
-                                # Restore sys.argv in finally block
-                                # Restore patched console
-                                console_key = id(src_console.console)
-                                if console_key in _ua_console_store:
-                                    origs = _ua_console_store[console_key]
-                                    src_console.console.print = origs["orig_print"]
-                                    if "orig_input" in origs and origs["orig_input"] is not None:
-                                        src_console.console.input = origs["orig_input"]
-                                    # Restore cli_ui patched functions if present
-                                    with contextlib.suppress(Exception):
-                                        if "orig_ask_yes_no" in origs and origs["orig_ask_yes_no"] is not None:
-                                            _cli_ui.ask_yes_no = origs["orig_ask_yes_no"]
-                                    with contextlib.suppress(Exception):
-                                        if "orig_ask_string" in origs and origs["orig_ask_string"] is not None:
-                                            _cli_ui.ask_string = origs["orig_ask_string"]
-                                        if "orig_ask_choice" in origs and origs["orig_ask_choice"] is not None:
-                                            _cli_ui.ask_choice = origs["orig_ask_choice"]
-                                    del _ua_console_store[console_key]
-                                with contextlib.suppress(Exception):
-                                    set_webui_session_id = getattr(sys.modules.get("upload"), "set_webui_session_id", None)
-                                    if callable(set_webui_session_id):
-                                        set_webui_session_id(None)
-                                # Release lock to allow next inproc run
-                                inproc_lock.release()
-
-                        worker = threading.Thread(target=run_upload, daemon=True)
-                        worker.start()
-
-                        # Record worker thread for debugging/cleanup
-                        with contextlib.suppress(Exception):
-                            if _session_state_is_current(session_id, process_state):
-                                process_state["worker"] = worker
-
-                        console.print(f"Started inproc worker for session {session_id}: {worker.name}", markup=False)
-
-                        # Stream full HTML snapshots from the recorder while the worker runs.
-                        # To avoid spinning the SSE thread and growing the server task queue
-                        # when the uploader prints heavily, block waiting for print events
-                        # with a short timeout and coalesce multiple prints into a
-                        # single exported snapshot.
-                        last_body = ""
-                        try:
-
-                            def _drain_progress_events() -> Iterator[str]:
-                                while True:
-                                    try:
-                                        progress_event_queue.get_nowait()
-                                    except queue.Empty:
-                                        break
-                                with progress_queue_lock:
-                                    pending_events = list(queued_progress_events.values())
-                                    queued_progress_events.clear()
-                                for progress_event in pending_events:
-                                    yield f"data: {json.dumps({'type': 'progress', 'data': progress_event})}\n\n"
-
-                            while worker.is_alive():
-                                sent_progress = False
-                                for progress_sse in _drain_progress_events():
-                                    sent_progress = True
-                                    yield progress_sse
-                                try:
-                                    # Wait for the next print event (blocks briefly). This
-                                    # prevents the generator from busy-waiting and tying up
-                                    # Waitress worker threads.
-                                    r_args, r_kwargs = render_queue.get(timeout=0.5)
-                                    with contextlib.suppress(Exception):
-                                        record_console.print(*r_args, **r_kwargs)
-
-                                    # Drain any additional queued prints so we can coalesce
-                                    # them into a single exported snapshot.
-                                    while not render_queue.empty():
-                                        try:
-                                            r_args, r_kwargs = render_queue.get_nowait()
-                                        except queue.Empty:
-                                            break
-                                        with contextlib.suppress(Exception):
-                                            record_console.print(*r_args, **r_kwargs)
-
-                                    # Export and yield a full HTML snapshot only when the
-                                    # rendered body has changed.
-                                    html_doc = record_console.export_html(inline_styles=True)
-                                    m = re.search(r"<body[^>]*>(.*?)</body>", html_doc, re.S | re.I)
-                                    body = m.group(1).strip() if m else html_doc
-                                    if body != last_body:
-                                        last_body = body
-                                        yield f"data: {json.dumps({'type': 'html_full', 'data': body})}\n\n"
-                                except queue.Empty:
-                                    if sent_progress:
-                                        continue
-                                    # No print activity within the timeout — send a keepalive
-                                    # to keep the SSE connection alive without busy-waiting.
-                                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-                                except Exception:
-                                    # Swallow per-iteration errors to keep the stream alive.
-                                    yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-
-                            # Worker finished; drain any remaining prints and send final snapshot
-                            while not render_queue.empty():
-                                try:
-                                    r_args, r_kwargs = render_queue.get_nowait()
-                                except queue.Empty:
-                                    break
-                                with contextlib.suppress(Exception):
-                                    record_console.print(*r_args, **r_kwargs)
-
-                            for progress_sse in _drain_progress_events():
-                                yield progress_sse
-
-                            with contextlib.suppress(Exception):
-                                html_doc = record_console.export_html(inline_styles=True)
-                                m = re.search(r"<body[^>]*>(.*?)</body>", html_doc, re.S | re.I)
-                                body = m.group(1).strip() if m else html_doc
-                                if body != last_body:
-                                    yield f"data: {json.dumps({'type': 'html_full', 'data': body})}\n\n"
-                        except Exception:
-                            # Ensure generator continues and yields a final keepalive on error
-                            yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
-
-                    finally:
-                        # restore patched functions and argv
-                        try:
-                            # Prefer restoring originals from the module-level store
-                            console_key = id(orig_console)
-                            if console_key in _ua_console_store:
-                                stored = _ua_console_store.pop(console_key, {})
-                                with contextlib.suppress(Exception):
-                                    orig_console.print = stored.get("orig_print", orig_console.print)
-                                with contextlib.suppress(Exception):
-                                    orig_in = stored.get("orig_input", None)
-                                    if orig_in is not None:
-                                        orig_console.input = orig_in
-                        except Exception:
-                            # best-effort restore using locals
-                            with contextlib.suppress(Exception):
-                                orig_console.print = orig_print
-                            with contextlib.suppress(Exception):
-                                if orig_input is not None:
-                                    orig_console.input = orig_input
-
-                        with contextlib.suppress(Exception):
-                            if orig_ask_yes_no is not None:
-                                _cli_ui.ask_yes_no = orig_ask_yes_no
-                        with contextlib.suppress(Exception):
-                            if orig_ask_string is not None:
-                                _cli_ui.ask_string = orig_ask_string
-                            if orig_ask_choice is not None:
-                                _cli_ui.ask_choice = orig_ask_choice
-
-                        sys.argv = old_argv
-
-                        # Remove process tracking for this session
-                        with contextlib.suppress(Exception):
-                            _discard_session_state(session_id, process_state)
-
+                    # Disallow shell metacharacters in any argument
+                    forbidden = set(";&|$`><*?~!\n\r\x00")
+                    for a in command:
+                        if any(ch in a for ch in forbidden):
+                            raise ValueError("Invalid characters in command argument")
+                except Exception as err:
+                    console.print(f"Refusing to run unsafe command: {err}", markup=False)
+                    _discard_session_state(session_id, process_state)
+                    yield f"data: {json.dumps({'type': 'error', 'data': 'Unsafe execution request'})}\n\n"
                     return
 
-                else:
-                    env = _webui_subprocess_env()
+                # codeql[py/command-line-injection]
+                process = None
+                # Wrap subprocess handling in try/finally to guarantee cleanup
+                try:
+                    process, process_mode = _spawn_webui_upload_process(command, Path(base_dir), env)
 
-                    # Sanity-check the working directory used for the subprocess.
-                    # `base_dir` is computed from the application `__file__`, but
-                    # perform lightweight validation to satisfy static analysis
-                    # tools and ensure we do not pass uncontrolled input here.
-                    if "\x00" in str(base_dir) or not str(base_dir):
-                        raise ValueError("Invalid execution directory")
-                    if not Path(str(base_dir)).is_absolute():
-                        base_dir = str(Path(str(base_dir)).resolve())
+                    process_state.update(
+                        {
+                            "mode": process_mode,
+                            "process": process,
+                        }
+                    )
+                    if not _session_state_is_current(session_id, process_state):
+                        _terminate_process_tree(process)
+                        raise RuntimeError("Execution session was replaced before subprocess startup completed")
 
-                    # Extra validation for the constructed command to guard
-                    # against command-injection and to make validation explicit
-                    # for static analysis tools.
-                    try:
-                        # Ensure command is a list of strings
-                        command = _validate_upload_assistant_args(command)
+                    output_queue: queue.Queue[tuple[str, str]] = queue.Queue()
 
-                        # Re-assert the execution path is safe
-                        try:
-                            _assert_safe_resolved_path(command[3] if len(command) > 3 else command[-1])
-                        except Exception:
-                            # Fallback: validated_path is expected at position 3 for subprocess
+                    if isinstance(process, _ConPtyProcess):
+                        # A pseudo terminal combines stdout and stderr into one ANSI stream.
+                        def read_stdout():
                             try:
-                                _assert_safe_resolved_path(validated_path)
+                                while True:
+                                    # Keep the same incremental prompt detection semantics as
+                                    # the pipe reader. ConPTY can return a whole prompt plus
+                                    # its trailing input marker in one read.
+                                    for char in process.read(1024):
+                                        output_queue.put(("stdout", char))
+                            except EOFError:
+                                pass
                             except Exception as err:
-                                raise ValueError("Invalid execution path") from err
+                                console.print(f"ConPTY read error: {err}", markup=False)
 
-                        # Ensure the upload_script is the expected script under the repo
-                        try:
-                            expected_script = os.path.realpath(str(CODE_DIR / "upload.py"))
-                            script_real = os.path.realpath(command[2])
-                            if script_real != expected_script:
-                                raise ValueError("Invalid script path")
-                        except IndexError as err:
-                            raise ValueError("Invalid command structure") from err
-
-                        # Disallow shell metacharacters in any argument
-                        forbidden = set(";&|$`><*?~!\n\r\x00")
-                        for a in command:
-                            if any(ch in a for ch in forbidden):
-                                raise ValueError("Invalid characters in command argument")
-                    except Exception as err:
-                        console.print(f"Refusing to run unsafe command: {err}", markup=False)
-                        _discard_session_state(session_id, process_state)
-                        yield f"data: {json.dumps({'type': 'error', 'data': 'Unsafe execution request'})}\n\n"
-                        return
-
-                    # codeql[py/command-line-injection]
-                    process = None
-                    # Wrap subprocess handling in try/finally to guarantee cleanup
-                    try:
-                        process, process_mode = _spawn_webui_upload_process(command, Path(base_dir), env)
-
-                        process_state.update(
-                            {
-                                "mode": process_mode,
-                                "process": process,
-                            }
-                        )
-                        if not _session_state_is_current(session_id, process_state):
-                            _terminate_process_tree(process)
-                            raise RuntimeError("Execution session was replaced before subprocess startup completed")
-
-                        output_queue: queue.Queue[tuple[str, str]] = queue.Queue()
-
-                        if isinstance(process, _ConPtyProcess):
-                            # A pseudo terminal combines stdout and stderr into one ANSI stream.
-                            def read_stdout():
-                                try:
-                                    while True:
-                                        # Keep the same incremental prompt detection semantics as
-                                        # the pipe reader. ConPTY can return a whole prompt plus
-                                        # its trailing input marker in one read.
-                                        for char in process.read(1024):
-                                            output_queue.put(("stdout", char))
-                                except EOFError:
-                                    pass
-                                except Exception as err:
-                                    console.print(f"ConPTY read error: {err}", markup=False)
-
-                            stdout_thread = threading.Thread(target=read_stdout, daemon=True)
-                            stderr_thread = None
-                        else:
-                            # Thread to read stdout - stream raw output with ANSI codes
-                            def read_stdout():
-                                try:
-                                    stdout = getattr(process, "stdout", None)
-                                    if stdout is None:
-                                        return
-                                    while True:
-                                        chunk = stdout.read(1)
-                                        if not chunk:
-                                            break
-                                        output_queue.put(("stdout", chunk))
-                                except Exception as err:
-                                    console.print(f"stdout read error: {err}", markup=False)
-
-                            # Thread to read stderr - stream raw output
-                            def read_stderr():
-                                try:
-                                    stderr = getattr(process, "stderr", None)
-                                    if stderr is None:
-                                        return
-                                    while True:
-                                        chunk = stderr.read(1)
-                                        if not chunk:
-                                            break
-                                        output_queue.put(("stderr", chunk))
-                                except Exception as err:
-                                    console.print(f"stderr read error: {err}", markup=False)
-
-                            stdout_thread = threading.Thread(target=read_stdout, daemon=True)
-                            stderr_thread = threading.Thread(target=read_stderr, daemon=True)
-
-                        stdout_thread.start()
-                        if stderr_thread is not None:
-                            stderr_thread.start()
-
-                        # Record threads and output queue for debugging/cleanup
-                        with contextlib.suppress(Exception):
-                            if _session_state_is_current(session_id, process_state):
-                                process_state["stdout_thread"] = stdout_thread
-                                process_state["stderr_thread"] = stderr_thread
-                                process_state["output_queue"] = output_queue
-
-                        console.print(
-                            f"Started {process_mode} reader threads for session {session_id}: stdout={stdout_thread.name}, stderr={getattr(stderr_thread, 'name', 'merged')}",
-                            markup=False,
-                        )
-
-                        def _read_output(q: queue.Queue[tuple[str, str]]) -> tuple[bool, tuple[str, str] | None]:
+                        stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+                        stderr_thread = None
+                    else:
+                        # Thread to read stdout - stream raw output with ANSI codes
+                        def read_stdout():
                             try:
-                                return True, q.get(timeout=0.1)
-                            except queue.Empty:
-                                return False, None
+                                stdout = getattr(process, "stdout", None)
+                                if stdout is None:
+                                    return
+                                while True:
+                                    chunk = stdout.read(1)
+                                    if not chunk:
+                                        break
+                                    output_queue.put(("stdout", chunk))
+                            except Exception as err:
+                                console.print(f"stdout read error: {err}", markup=False)
 
-                        # Stream output as buffered chunks and always emit HTML fragments
-                        # If we are running the upload as a subprocess, stream ANSI->HTML as before.
-                        buffers: dict[str, str] = {"stdout": "", "stderr": ""}
+                        # Thread to read stderr - stream raw output
+                        def read_stderr():
+                            try:
+                                stderr = getattr(process, "stderr", None)
+                                if stderr is None:
+                                    return
+                                while True:
+                                    chunk = stderr.read(1)
+                                    if not chunk:
+                                        break
+                                    output_queue.put(("stderr", chunk))
+                            except Exception as err:
+                                console.print(f"stderr read error: {err}", markup=False)
 
-                        while process.poll() is None or not output_queue.empty():
-                            has_output, output = _read_output(output_queue)
-                            if has_output and output is not None:
-                                output_type, char = output
-                                if output_type not in buffers:
+                        stdout_thread = threading.Thread(target=read_stdout, daemon=True)
+                        stderr_thread = threading.Thread(target=read_stderr, daemon=True)
+
+                    stdout_thread.start()
+                    if stderr_thread is not None:
+                        stderr_thread.start()
+
+                    # Record threads and output queue for debugging/cleanup
+                    with contextlib.suppress(Exception):
+                        if _session_state_is_current(session_id, process_state):
+                            process_state["stdout_thread"] = stdout_thread
+                            process_state["stderr_thread"] = stderr_thread
+                            process_state["output_queue"] = output_queue
+
+                    console.print(
+                        f"Started {process_mode} reader threads for session {session_id}: stdout={stdout_thread.name}, stderr={getattr(stderr_thread, 'name', 'merged')}",
+                        markup=False,
+                    )
+
+                    def _read_output(q: queue.Queue[tuple[str, str]]) -> tuple[bool, tuple[str, str] | None]:
+                        try:
+                            return True, q.get(timeout=0.1)
+                        except queue.Empty:
+                            return False, None
+
+                    # Stream output as buffered chunks and always emit HTML fragments
+                    # If we are running the upload as a subprocess, stream ANSI->HTML as before.
+                    buffers: dict[str, str] = {"stdout": "", "stderr": ""}
+
+                    while process.poll() is None or not output_queue.empty():
+                        has_output, output = _read_output(output_queue)
+                        if has_output and output is not None:
+                            output_type, char = output
+                            if output_type not in buffers:
+                                buffers[output_type] = ""
+                            buffers[output_type] += char
+                            prompt_type = _subprocess_prompt_type(buffers[output_type])
+                            if prompt_type:
+                                _set_process_awaiting_input_if_current(session_id, process_state, True, prompt_type)
+
+                            # Flush on newline or when buffer grows large
+                            if _should_flush_subprocess_output(buffers[output_type], char):
+                                if buffers[output_type].strip() == PROMPT_SOUND_STDOUT_MARKER:
                                     buffers[output_type] = ""
-                                buffers[output_type] += char
-                                prompt_type = _subprocess_prompt_type(buffers[output_type])
-                                if prompt_type:
-                                    _set_process_awaiting_input_if_current(session_id, process_state, True, prompt_type)
+                                    yield f"data: {json.dumps({'type': 'prompt_sound'})}\n\n"
+                                    continue
+                                if not prompt_type:
+                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
+                                chunk = buffers[output_type]
+                                buffers[output_type] = ""
 
-                                # Flush on newline or when buffer grows large
-                                if _should_flush_subprocess_output(buffers[output_type], char):
-                                    if not prompt_type:
-                                        _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                    chunk = buffers[output_type]
-                                    buffers[output_type] = ""
+                                progress_event = _subprocess_progress_event(chunk)
+                                if progress_event is not None:
+                                    _set_process_progress_if_current(session_id, process_state, progress_event)
+                                    yield f"data: {json.dumps({'type': 'progress', 'data': progress_event})}\n\n"
+                                    continue
 
-                                    progress_event = _subprocess_progress_event(chunk)
-                                    if progress_event is not None:
-                                        _set_process_progress_if_current(session_id, process_state, progress_event)
-                                        yield f"data: {json.dumps({'type': 'progress', 'data': progress_event})}\n\n"
-                                        continue
-
-                                    # Convert to HTML fragment. If helper missing, escape and wrap in <pre>
-                                    try:
-                                        if ansi_to_html:
-                                            html_fragment = ansi_to_html(chunk)
-                                        else:
-                                            import html as _html
-
-                                            html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
-
-                                        yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
-                                    except Exception as e:
-                                        console.print(f"HTML conversion error: {e}", markup=False)
+                                # Convert to HTML fragment. If helper missing, escape and wrap in <pre>
+                                try:
+                                    if ansi_to_html:
+                                        html_fragment = ansi_to_html(chunk)
+                                    else:
                                         import html as _html
 
                                         html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
-                                        yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
-                            else:
-                                # keepalive to keep the SSE connection alive
-                                yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
 
-                        # Flush remaining buffers as HTML
-                        for t, remaining in list(buffers.items()):
-                            if remaining:
-                                try:
-                                    if ansi_to_html:
-                                        html_fragment = ansi_to_html(remaining)
-                                    else:
-                                        import html as _html
-
-                                        html_fragment = f"<pre>{_html.escape(remaining)}</pre>"
-
-                                    yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': t})}\n\n"
-
+                                    yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
                                 except Exception as e:
-                                    console.print(f"HTML flush error: {e}", markup=False)
+                                    console.print(f"HTML conversion error: {e}", markup=False)
+                                    import html as _html
+
+                                    html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
+                                    yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
+                        else:
+                            # keepalive to keep the SSE connection alive
+                            yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+
+                    # Flush remaining buffers as HTML
+                    for t, remaining in list(buffers.items()):
+                        if remaining:
+                            try:
+                                if ansi_to_html:
+                                    html_fragment = ansi_to_html(remaining)
+                                else:
                                     import html as _html
 
                                     html_fragment = f"<pre>{_html.escape(remaining)}</pre>"
-                                    yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': t})}\n\n"
 
-                        # Wait for process to finish
-                        exit_code = process.wait()
+                                yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': t})}\n\n"
 
-                        # Clean up (normal path)
+                            except Exception as e:
+                                console.print(f"HTML flush error: {e}", markup=False)
+                                import html as _html
+
+                                html_fragment = f"<pre>{_html.escape(remaining)}</pre>"
+                                yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': t})}\n\n"
+
+                    # Wait for process to finish
+                    exit_code = process.wait()
+
+                    # Clean up (normal path)
+                    _discard_session_state(session_id, process_state)
+
+                    yield f"data: {json.dumps({'type': 'exit', 'code': exit_code})}\n\n"
+                finally:
+                    with contextlib.suppress(Exception):
+                        if process is not None and process.poll() is None:
+                            _terminate_process_tree(process)
+                    if process is not None:
+                        _close_webui_process_io(process)
+                    # Ensure we remove tracking entry if still present
+                    with contextlib.suppress(Exception):
                         _discard_session_state(session_id, process_state)
-
-                        yield f"data: {json.dumps({'type': 'exit', 'code': exit_code})}\n\n"
-                    finally:
-                        with contextlib.suppress(Exception):
-                            if process is not None and process.poll() is None:
-                                _terminate_process_tree(process)
-                        if process is not None:
-                            _close_webui_process_io(process)
-                        # Ensure we remove tracking entry if still present
-                        with contextlib.suppress(Exception):
-                            _discard_session_state(session_id, process_state)
 
             except Exception as e:
                 console.print(f"Execution error for session {session_id}: {e}", markup=False)
@@ -6562,18 +6907,8 @@ def send_input():
         if session_id not in active_processes:
             return jsonify({"error": "No active process", "success": False}), 404
 
-        # If this session is an in-process run, push to its input queue
         try:
             process_info = active_processes[session_id]
-            if process_info.get("mode") == "inproc":
-                raw_q = process_info.get("input_queue")
-                if raw_q is None:
-                    return jsonify({"error": "No input queue", "success": False}), 500
-                q = raw_q
-                _set_process_awaiting_input(session_id, False)
-                q.put(user_input)
-                return jsonify({"success": True})
-
             process = process_info.get("process")
             if process is None:
                 return jsonify({"error": "No process found", "success": False}), 500
@@ -6624,81 +6959,6 @@ def kill_process():
             return jsonify({"error": "No active process", "success": False}), 404
 
         process_info = active_processes[session_id]
-        mode = process_info.get("mode")
-
-        # If this is an in-process run, perform best-effort cleanup of patched
-        # console state and release the inproc lock so future inproc runs can start.
-        if mode == "inproc":
-            # Signal cancellation to the inproc worker and attempt to join it
-            with contextlib.suppress(Exception):
-                cancel_event = process_info.get("cancel_event")
-                if isinstance(cancel_event, threading.Event):
-                    cancel_event.set()
-                worker = process_info.get("worker")
-                if isinstance(worker, threading.Thread):
-                    worker.join(timeout=2)
-
-            # Attempt to restore any patched console/cli state from the
-            # module-level store so future runs have working print/input.
-            with contextlib.suppress(Exception), contextlib.suppress(Exception):
-                # Prefer restoring originals tied to the current src.console
-                try:
-                    _src_console: Any = importlib.import_module("src.console")
-
-                    console_obj: Any = _src_console.console
-                    ck = id(console_obj)
-                    if ck in _ua_console_store:
-                        origs = _ua_console_store.pop(ck)
-                        with contextlib.suppress(Exception):
-                            console_obj.print = origs.get("orig_print", console_obj.print)
-                        with contextlib.suppress(Exception):
-                            orig_in = origs.get("orig_input", None)
-                            if orig_in is not None:
-                                console_obj.input = orig_in
-                        # Restore any cli_ui wrappers if we have originals
-                        with contextlib.suppress(Exception):
-                            _cli_ui: Any = importlib.import_module("cli_ui")
-
-                            with contextlib.suppress(Exception):
-                                if "orig_ask_yes_no" in origs and origs["orig_ask_yes_no"] is not None:
-                                    _cli_ui.ask_yes_no = origs["orig_ask_yes_no"]
-                            with contextlib.suppress(Exception):
-                                if "orig_ask_string" in origs and origs["orig_ask_string"] is not None:
-                                    _cli_ui.ask_string = origs["orig_ask_string"]
-                                if "orig_ask_choice" in origs and origs["orig_ask_choice"] is not None:
-                                    _cli_ui.ask_choice = origs["orig_ask_choice"]
-                except Exception:
-                    # Best-effort: if we can't import src.console, fall back to
-                    # restoring any stored callables into the module-level
-                    # `console` we imported at module import time.
-                    with contextlib.suppress(Exception):
-                        ck = id(console)
-                        if ck in _ua_console_store:
-                            origs = _ua_console_store.pop(ck)
-                            with contextlib.suppress(Exception):
-                                console.print = origs.get("orig_print", console.print)
-                            with contextlib.suppress(Exception):
-                                orig_in = origs.get("orig_input", None)
-                                if orig_in is not None:
-                                    console.input = orig_in
-
-                # If any other entries remain in the store, drop them to avoid
-                # leaking references — they are unlikely to be useful now.
-                _ua_console_store.clear()
-
-            # Release inproc lock if held; best-effort only.
-            with contextlib.suppress(Exception):
-                if inproc_lock.locked():
-                    inproc_lock.release()
-
-            # Remove tracking entry
-            with contextlib.suppress(Exception):
-                active_processes.pop(session_id, None)
-
-            console.print(f"In-process run terminated for session {session_id}", markup=False)
-            return jsonify({"success": True, "message": "In-process run terminated and console state wiped"})
-
-        # Otherwise assume subprocess.Popen case
         # Retrieve subprocess handle
         process = process_info.get("process")
         if process is None:
@@ -6758,12 +7018,8 @@ def internal_error(e: Exception):
     return jsonify({"error": "Internal server error", "success": False}), 500
 
 
-app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, broker=QUI_EVENT_BROKER, snapshots=_detached_job_snapshot, retry_job=_retry_detached_job))
-app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=Path(__file__).resolve().parent.parent))
-app.register_blueprint(create_history_api_blueprint(auth_check=_submit_auth_ok, history=RELEASE_HISTORY, json_safe=_json_safe))
-_config_source_operations = ConfigSourceOperations(_load_config_from_file, _remove_config_key_in_source, _replace_config_value_in_source, _python_literal, _get_nested_value, _write_audit_log)
-app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=Path(__file__).resolve().parent.parent, operations=_config_source_operations))
-
-
 # Keep these helpers referenced so static analysis does not flag them as unused.
-_ = (_cfg_delete, _json_load_list, _maybe_log_api_access, _rate_limit_exceeded)
+_ = _cfg_delete
+_ = _json_load_list
+_ = _maybe_log_api_access
+_ = _rate_limit_exceeded

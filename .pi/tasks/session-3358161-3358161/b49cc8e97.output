@@ -1,0 +1,37 @@
+a6f91add1a7ceb25469bcd16162277f3060082773f36da97c3d6c071f29942f1
+Trying to pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest...
+Getting image source signatures
+Copying blob sha256:8a77165df7df7cb276b1225f89321034385d94a9de91512deb2de6e62e9f5333
+Copying blob sha256:6310eb16bf4251731feab01e8f633bf5e2d75a657ccad97f420b1f83cce457be
+Copying blob sha256:d4a378e57055fa2c97715602c4073a0d034e89b0dc29ef17bcc30f9692233049
+Copying blob sha256:ec1701980ddb9adb5e5866c04f0b0c8cdf8f2c61fe239fc7be476030a74f42ed
+Copying blob sha256:3d2c3ff37d4c435d5db82ae37f1d8be56f8feb24320349f5c8c62df7624a5ee2
+Copying blob sha256:6bd54ebeb5af95e8f880bffc616ee55c0f3eb181b194388a2c9fd92be54a5048
+Copying blob sha256:695a169a0bf595edb39f69c69ff9443f4e37994e8916b87b88f1e645c6e4b1d6
+Copying blob sha256:0857c829b0d089052b3e9fb21f1023ebe99c7829ad88dbb7bee6c5e3f91e0595
+Copying blob sha256:efe31dbd865310686a15d97d3871d13fc65a98925bb88a5e72753b26a25aee38
+Copying blob sha256:d4e3f89232a73d2cf2a7b410a54cca179249a5c7769e432f559d15a9a8db8f25
+Copying blob sha256:1221ef66dd2c9a36b190d295b16126e1a5b34c63817b5f12b505621ddee86a3c
+Copying blob sha256:88af5dda1ea2e032f259b110799f03f5a19c6d98a78c4d9963c184f2fd132cc7
+Copying blob sha256:9f704d8ad5adfc720946242c4acf1adcffdbcbdbe32d2b4d19f22eb896089468
+Copying blob sha256:8ebbbd56f2aeb6a079951787767bff324372a001bef919fb34b33da85708e81e
+Copying blob sha256:408be5c080585332cd2dabea5164e48ef13b1c12f85b2f32767935fd0cdd094c
+Copying blob sha256:7cb5ffecf24322d799657464f0525abc0b022fe949639b7464ceb2ec081c3a8c
+Copying blob sha256:89811ba07d490f76ef3332ebb0dad2d155c97830bb89e202cea28929adfc5b8c
+Copying blob sha256:24acd7346fb08e8bad16b0f44f4b3263ec253697d33961a1fa86fc0be72890d0
+Copying config sha256:a6f91add1a7ceb25469bcd16162277f3060082773f36da97c3d6c071f29942f1
+Writing manifest to image destination
+upload-assistant-wastaken
+c920d4910c370640163ed1278c116adf5745b60016aa09af8efe86a738cc6c74
+8fe24594f66cf4bb8dc6a28ea79b58fe8bc3863edf3202f137c63f45a9cf0723
+21fb2464a3b1cd1b4072604de135590c7034f2ad65dafe9ad3ee0f06fccaf179
+['podman', '--version', '']
+using podman version: 6.1.0
+** excluding:  set()
+podman pod create --name=upload-assistant-wastaken --share net --add-host=upload-assistant-wastaken:127.0.0.1 --add-host=upload-assistant-wastaken:127.0.0.1 --add-host=apps.richmayfly.box.ca:169.254.1.2 --add-host=files.richmayfly.box.ca:169.254.1.2 --add-host=autobrr.richmayfly.box.ca:169.254.1.2 --add-host=qui.richmayfly.box.ca:169.254.1.2 --add-host=qbittorrent.richmayfly.box.ca:169.254.1.2 --add-host=race.richmayfly.box.ca:169.254.1.2 --add-host=upload-assistant.richmayfly.box.ca:169.254.1.2 --add-host=upload.richmayfly.box.ca:169.254.1.2 --infra-name=upload-assistant-wastaken_infra
+exit code: 0
+podman run --name=upload-assistant-wastaken -d --pod=upload-assistant-wastaken --label io.podman.compose.config-hash=123 --label io.podman.compose.project=upload-assistant-wastaken --label io.podman.compose.version=0.0.1 --label com.docker.compose.project=upload-assistant-wastaken --label com.docker.compose.project.working_dir=/mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken --label com.docker.compose.project.config_files=docker-compose.local.yml --label com.docker.compose.container-number=1 --label com.docker.compose.service=upload-assistant-wastaken --network host -e PUID=0 -e PGID=0 -e UA_DATA_DIR=/Upload-Assistant -e UA_BROWSE_ROOTS=/mnt/seeding,/mnt/mpathr-downloads -e TMPDIR=/Upload-Assistant/tmp -e MPLCONFIGDIR=/Upload-Assistant/tmp/matplotlib -e XDG_CACHE_HOME=/Upload-Assistant/tmp/.cache -v /mnt/nvme11n1/artemisprime:/mnt/seeding:rw -v /mnt/nvme11n1/artemisprime:/mnt/mpathr-downloads:rw -v /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/docker-data/data:/Upload-Assistant/data:rw -v /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/docker-data/tmp:/Upload-Assistant/tmp:rw -v /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/docker-data/webui-auth:/root/.config/upload-assistant:rw --restart unless-stopped ghcr.io/darkvader-cell/upload-assistant-wastaken:latest --webui 0.0.0.0:12346
+exit code: 0
+CONTAINER ID  IMAGE                                                    COMMAND               CREATED       STATUS       PORTS       NAMES
+21fb2464a3b1  ghcr.io/darkvader-cell/upload-assistant-wastaken:latest  --webui 0.0.0.0:1...  1 second ago  Up 1 second  5000/tcp    upload-assistant-wastaken
+curl: (7) Failed to connect to 127.0.0.1 port 12346 after 0 ms: Could not connect to server

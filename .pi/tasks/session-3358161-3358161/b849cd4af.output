@@ -1,0 +1,18 @@
+state:
+status=running pid=846742 exit=0 error= restart=0
+auth:
+user_present=True username=admin
+logs:
+                                                                                
+[32mWeb UI server started[0m                                                           
+[1mAccess at: [0m]8;id=653271;http://localhost:12347\[4;94mhttp://localhost:12347[0m]8;;\                                               
+[2mPress Ctrl+C to stop the server[0m                                                 
+                                                                                
+                                                                                
+[33mReceived SIGTERM, shutting down gracefully[0m[33m...[0m                                   
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h[0m[?25h[32mShutdown complete[0m                                                               
+ports:
+curl: (7) Failed to connect to 127.0.0.1 port 12347 after 0 ms: Could not connect to server
+12347=000
+12345=401

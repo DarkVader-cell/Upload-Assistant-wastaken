@@ -1,0 +1,5 @@
+status=running pid=884586 started=2026-09-09 15:26:17.81819215 +0000 UTC
+entrypoint_wchan:
+do_waitdata_size:
+1.7G	/Upload-Assistant/data
+logs:

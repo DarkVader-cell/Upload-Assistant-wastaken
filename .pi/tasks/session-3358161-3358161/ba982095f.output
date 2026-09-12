@@ -1,0 +1,13 @@
+dns:
+185.203.56.3    STREAM destiny.whatbox.ca
+185.203.56.3    DGRAM  
+185.203.56.3    RAW    
+2a0a:e340:1001:200::3:1 STREAM 
+2a0a:e340:1001:200::3:1 DGRAM  
+2a0a:e340:1001:200::3:1 RAW    
+http4:
+curl: (7) Failed to connect to destiny.whatbox.ca port 12345 after 260 ms: Could not connect to server
+000
+https:
+curl: (7) Failed to connect to destiny.whatbox.ca port 12345 after 273 ms: Could not connect to server
+000

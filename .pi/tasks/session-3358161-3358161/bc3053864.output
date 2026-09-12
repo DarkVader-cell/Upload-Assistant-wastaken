@@ -1,0 +1,9 @@
+default_torrent_client='qbittorrent'
+injecting_client_list=['qbittorrent']
+searching_client_list=['deluge']
+client.qbittorrent={'torrent_client': 'qbit', 'qbit_url': 'http://127.0.0.1', 'qbit_port': '17416', 'local_path': ['/mnt/seeding'], 'remote_path': ['/home/artemisprime'], 'torrent_storage_dir': '/mnt/seeding/.local/share/qBittorrent/BT_backup', 'qbit_cat': 'Uploads'}
+client.qbittorrent_searching={'torrent_client': 'qbit', 'qbit_url': 'http://127.0.0.1', 'qbit_port': '17416'}
+client.rtorrent={'torrent_client': 'rtorrent', 'local_path': [''], 'remote_path': [''], 'torrent_storage_dir': ''}
+client.deluge={'torrent_client': 'deluge', 'deluge_url': '127.0.0.1', 'deluge_port': '10860', 'local_path': ['/mnt/seeding/files'], 'remote_path': ['/home/artemisprime/files'], 'torrent_storage_dir': '/mnt/seeding/.config/deluge/state'}
+client.transmission={'torrent_client': 'transmission', 'local_path': [''], 'remote_path': [''], 'torrent_storage_dir': ''}
+client.watch={'torrent_client': 'watch'}

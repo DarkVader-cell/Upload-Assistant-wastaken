@@ -1,0 +1,20 @@
+{
+  "id": "b73d25bf7",
+  "name": "Stop failed Destiny loop",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca 'podman stop -t 15 upload-assistant-wastaken 2>/dev/null || true; podman ps -a --filter name=upload-assistant-wastaken --format \"{{.Names}}\\t{{.Status}}\"'",
+  "description": "Stop Destiny’s failing Upload Assistant restart loop while preserving all mounted data.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b73d25bf7.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788964060804,
+  "endTime": 1788964071785,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 269218,
+  "bytesWritten": 127,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 90
+}

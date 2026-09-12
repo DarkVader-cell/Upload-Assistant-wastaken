@@ -1,0 +1,22 @@
+status=running pid=100843 image=a6f91add1a7ceb25469bcd16162277f3060082773f36da97c3d6c071f29942f1
+health-route:
+2609-@app.before_request
+2610-def _require_auth_for_webui():  # pyright: ignore[reportUnusedFunction]
+2611:    # Health endpoint can be used for orchestration checks.
+2612-    if request.path == "/api/health":
+2613-        return None
+2614-
+2615-    # Check IP access control
+command:
+["--webui","0.0.0.0:12345"]
+logs-head:
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               

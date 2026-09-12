@@ -1,0 +1,20 @@
+{
+  "id": "be51db9eb",
+  "name": "Check HTTPS service link",
+  "command": "set -u; for url in https://upload-assistant.destinyhdd.box.ca/api/health https://destiny.whatbox.ca/api/health http://upload-assistant.destinyhdd.box.ca/api/health; do echo \"$url\"; curl -4 -k -sS -o /dev/null -w '%{http_code}\\n' --connect-timeout 8 --max-time 15 \"$url\" || true; done",
+  "description": "Test the likely migrated HTTPS reverse-proxy links without exposing any credentials.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/be51db9eb.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788962825686,
+  "endTime": 1788962828364,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 130864,
+  "bytesWritten": 157,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 60
+}

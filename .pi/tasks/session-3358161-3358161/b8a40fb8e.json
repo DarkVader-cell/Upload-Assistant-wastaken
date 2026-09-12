@@ -1,0 +1,21 @@
+{
+  "id": "b8a40fb8e",
+  "name": "Inspect SSD service",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@clementine.whatbox.ca 'set -e; cd /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken; printf \"checkout=\"; pwd; find . -maxdepth 1 -type f -printf \"%f\\n\" | sort | head -40; podman ps --format \"{{.Names}}\\t{{.Image}}\\t{{.Status}}\"; podman compose -f docker-compose.local.yml config --services'",
+  "description": "Inspect Clementine SSD files and running Podman service after checkout check failed.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b8a40fb8e.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788920359364,
+  "endTime": 1788920374059,
+  "exitCode": 2,
+  "signal": null,
+  "pid": 3832928,
+  "bytesWritten": 1467,
+  "isAgent": false,
+  "error": "Exited with code 2",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 120
+}

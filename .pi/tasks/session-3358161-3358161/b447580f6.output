@@ -1,0 +1,18 @@
+backup=docker-data/data/config.py.bak.20260909T134204Z
+remaining_blank=0
+upload-assistant-wastaken
+upload-assistant-wastaken
+344f049baf96484a9a5d13f44bde948baa20ccce8d614ff23f3ed99e84426310
+9781544fa2f13757ba26e5bc97a40a67168aea8352472503323d94d3d959a417
+e71f69091d94159c300c98947630514bdd8ed5e832d672713ef41af422598a67
+['podman', '--version', '']
+using podman version: 6.1.0
+** excluding:  set()
+['podman', 'inspect', '-t', 'image', '-f', '{{.Id}}', 'ghcr.io/darkvader-cell/upload-assistant-wastaken:latest']
+podman pod create --name=upload-assistant-wastaken --share net --add-host=upload-assistant-wastaken:127.0.0.1 --add-host=upload-assistant-wastaken:127.0.0.1 --add-host=apps.destinyhdd.box.ca:169.254.1.2 --add-host=syncthing.destinyhdd.box.ca:169.254.1.2 --add-host=radarr.destinyhdd.box.ca:169.254.1.2 --add-host=deluge.destinyhdd.box.ca:169.254.1.2 --add-host=upload-assistant.destinyhdd.box.ca:169.254.1.2 --add-host=sonarr.noin.fyi:169.254.1.2 --add-host=qbittorrent.destinyhdd.box.ca:169.254.1.2 --add-host=jellyfin.destinyhdd.box.ca:169.254.1.2 --add-host=files.destinyhdd.box.ca:169.254.1.2 --infra-name=upload-assistant-wastaken_infra
+exit code: 0
+podman run --name=upload-assistant-wastaken -d --pod=upload-assistant-wastaken --label io.podman.compose.config-hash=123 --label io.podman.compose.project=upload-assistant-wastaken --label io.podman.compose.version=0.0.1 --label com.docker.compose.project=upload-assistant-wastaken --label com.docker.compose.project.working_dir=/mnt/mpathf/artemisprime/Upload-Assistant-wastaken --label com.docker.compose.project.config_files=docker-compose.local.yml --label com.docker.compose.container-number=1 --label com.docker.compose.service=upload-assistant-wastaken --network host -e PUID=0 -e PGID=0 -e UA_DATA_DIR=/Upload-Assistant -e PYTHONPATH=/Upload-Assistant -e UA_BROWSE_ROOTS=/mnt/seeding -e TMPDIR=/Upload-Assistant/tmp -e MPLCONFIGDIR=/Upload-Assistant/tmp/matplotlib -e XDG_CACHE_HOME=/Upload-Assistant/tmp/.cache -v /mnt/mpathf/artemisprime:/mnt/seeding:rw -v /mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/data:/Upload-Assistant/data:rw -v /mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/tmp:/Upload-Assistant/tmp:rw -v /mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/webui-auth:/root/.config/upload-assistant:rw --restart unless-stopped --healthcheck-command /bin/sh -c 'curl -sS -o /dev/null -w '"'"'%{http_code}'"'"' http://localhost:12345/api/health | grep -qE '"'"'^[2-4][0-9][0-9]$'"'"'' --healthcheck-interval 30s --healthcheck-timeout 5s --healthcheck-start-period 10s --healthcheck-retries 3 ghcr.io/darkvader-cell/upload-assistant-wastaken:latest --webui 0.0.0.0:12345
+exit code: 0
+upload-assistant-wastaken	ghcr.io/darkvader-cell/upload-assistant-wastaken:latest	Up 16 seconds (starting)
+health_http=401
+status=running health=starting

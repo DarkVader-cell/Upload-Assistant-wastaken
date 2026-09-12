@@ -10,7 +10,8 @@ config: dict[str, Any] = {
         "verbose_notification": False,
         # Number of hours to reuse a successful update check. Set to 0 to check every run.
         "update_notification_cache_hours": 4,
-        # Set to True to play a bell sound when prompting for confirmation.
+        # Set to True to play a bell sound before release confirmation (CLI and WebUI).
+        # WebUI sound plays in the browser; allow site audio and keep the tab unmuted.
         "sfx_on_prompt": True,
         # Set to True to apply argument overrides from data/templates/user-args.json.
         "user_overrides": False,
@@ -78,26 +79,26 @@ config: dict[str, Any] = {
         "use_sonarr": False,
         "sonarr_url": "http://localhost:8989",
         "sonarr_api_key": "",
-        # Settings for a second Sonarr instance.
-        # Add additional Sonarr instances by adding more sonarr_url_x and sonarr_api_key_x entries.
-        "sonarr_url_1": "http://my-second-instance:8989",
-        "sonarr_api_key_1": "",
         # Set to True to use Radarr when searching for movies.
         "use_radarr": False,
         "radarr_url": "http://localhost:7878",
         "radarr_api_key": "",
-        # Settings for a second Radarr instance.
-        # Add additional Radarr instances by adding more radarr_url_x and radarr_api_key_x entries.
-        "radarr_url_1": "http://my-second-instance:7878",
-        "radarr_api_key_1": "",
+        # Optional second Sonarr instance. Uncomment these entries and repeat
+        # with suffixes _2 and _3 to configure up to four instances in total.
+        # "sonarr_url_1": "http://my-second-instance:8989",
+        # "sonarr_api_key_1": "",
+        # Optional second Radarr instance. Uncomment these entries and repeat
+        # with suffixes _2 and _3 to configure up to four instances in total.
+        # "radarr_url_1": "http://my-second-instance:7878",
+        # "radarr_api_key_1": "",
         # --- EXTERNAL TOOL PATHS ---
         # Optional paths to external media tools. Leave blank to use the bundled
         # tool when available, or the corresponding executable on the system PATH.
-        # The DVD-specific MediaInfo executable must remain on version 23.04 because
-        # newer releases do not preserve its DVD parsing behavior.
         "ffmpeg_path": "",
         "ffprobe_path": "",
         "mediainfo_path": "",
+        # The DVD-specific MediaInfo executable must remain on version 23.04 because
+        # newer releases do not preserve its DVD parsing behavior.
         "dvd_mediainfo_path": "",
         "bdinfo_path": "",
         "mkbrr_path": "",
@@ -241,6 +242,12 @@ config: dict[str, Any] = {
         # Set to True to also search PreDB for a matching scene release.
         # PreDB can be inconsistent or time out, but it may find releases absent from SRRDB.
         "check_predb": False,
+        # --- PROWLARR CREDENTIAL FALLBACK ---
+        # Optional Prowlarr base URL and API key. When both are set, Upload
+        # Assistant fills missing supported tracker API keys and cookies in
+        # memory at the start of each run. Local credentials always take precedence.
+        "prowlarr_url": "",
+        "prowlarr_api_key": "",
         # --- IMAGE HOSTING ---
         # Order of image hosts, with the primary host first and backups after it.
         # Available image hosts: dalexni, imgbb, imgbox, lensdump, lostimg, midnightscene, onlyimage, passtheimage, pixhost, ptscreens, seedpool_cdn, sharex, utppm, zipline
@@ -417,15 +424,16 @@ config: dict[str, Any] = {
         # case-insensitively, with or without their leading hyphen.
         # Per-tracker tag_overrides take precedence over these DEFAULT overrides.
         "tag_overrides": {
-            "MyAwesomeGroupTag": {
-                "custom_description_header": "[center]MyAwesomeGroupTag release[/center]",
-                "screenshot_header": "[h2]MyAwesomeGroupTag Screenshots[/h2]",
-                "disc_menu_header": "[h2]MyAwesomeGroupTag Disc Menu Screenshots[/h2]",
-                "audio_spectrogram_header": "[h2]MyAwesomeGroupTag Audio Spectrogram[/h2]",
-                "dynamic_hdr_plot_header": "[h2]MyAwesomeGroupTag Dynamic HDR Metadata[/h2]",
-                "tonemapped_header": "[center]MyAwesomeGroupTag SDR reference screenshots[/center]",
-                "custom_signature": "[center]MyAwesomeGroupTag signature[/center]",
-            },
+            # Uncomment and rename this example group to configure your own overrides.
+            # "MyAwesomeGroupTag": {
+            #     "custom_description_header": "[center]MyAwesomeGroupTag release[/center]",
+            #     "screenshot_header": "[h2]MyAwesomeGroupTag Screenshots[/h2]",
+            #     "disc_menu_header": "[h2]MyAwesomeGroupTag Disc Menu Screenshots[/h2]",
+            #     "audio_spectrogram_header": "[h2]MyAwesomeGroupTag Audio Spectrogram[/h2]",
+            #     "dynamic_hdr_plot_header": "[h2]MyAwesomeGroupTag Dynamic HDR Metadata[/h2]",
+            #     "tonemapped_header": "[center]MyAwesomeGroupTag SDR reference screenshots[/center]",
+            #     "custom_signature": "[center]MyAwesomeGroupTag signature[/center]",
+            # },
         },
         # --- BLU-RAY SETTINGS ---
         # Set to True to use the largest Blu-ray playlist without a selection prompt.
@@ -3456,10 +3464,10 @@ config: dict[str, Any] = {
         # See https://github.com/wastaken7/Upload-Assistant/blob/development/docs/configuration.md#torrent-clients
         "qbittorrent": {
             "torrent_client": "qbit",
-            # QUI reverse proxy: https://getqui.com/docs/features/reverse-proxy
-            # Create a Client Proxy API Key in QUI (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
+            # qui reverse proxy: https://getqui.com/docs/features/reverse-proxy
+            # Create a Client Proxy API Key in qui (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
             # Example: "http://localhost:7476/proxy/<your-client-api-key>".
-            # QUI is not used for bandwidth measurements; see docs/upload-order-and-bandwidth-control.md.
+            # qui is not used for bandwidth measurements; see docs/upload-order-and-bandwidth-control.md.
             "qui_proxy_url": "",
             # Optional native Qui API integration. These settings are not needed
             # for the qBittorrent-compatible proxy above.
@@ -3478,7 +3486,7 @@ config: dict[str, Any] = {
             "qbit_pass": "",
             # API Key authentication (stateless, qBittorrent v5.2.0+). When set, qbit_user and qbit_pass are ignored.
             "qbit_api_key": "",
-            # Optional qBittorrent BT_backup directory. Used together with QUI/API search;
+            # Optional qBittorrent BT_backup directory. Used together with qui/API search;
             # reading .torrent files locally can substantially speed up candidate validation.
             # Use double-backslashes on Windows, e.g. "C:\\Users\\<YOUR_USER>\\AppData\\Local\\qBittorrent\\BT_backup".
             # WARNING: this should not be used when using SQLite Mode for qBittorrent.
@@ -3492,9 +3500,11 @@ config: dict[str, Any] = {
             "use_tracker_as_tag": False,
             "qbit_tag": "",
             "qbit_cat": "",
-            # If using cross seeding, add cross seed tag/category here
+            # If using cross-seeding, add its qBittorrent tag/category here.
             "qbit_cross_tag": "",
             "qbit_cross_cat": "",
+            # qBittorrent content layout for all torrents added through this client.
+            # Use "Original", "Subfolder", or "NoSubfolder".
             "content_layout": "Original",
             # Choose symbolic links, hard links, or an empty value to use the original path.
             # This will disable any automatic torrent management if set.
@@ -3520,10 +3530,10 @@ config: dict[str, Any] = {
         "qbittorrent_searching": {
             # an example of using a qBitTorrent client just for searching, when using another client for injection
             "torrent_client": "qbit",
-            # QUI reverse proxy: https://getqui.com/docs/features/reverse-proxy
-            # Create a Client Proxy API Key in QUI (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
+            # qui reverse proxy: https://getqui.com/docs/features/reverse-proxy
+            # Create a Client Proxy API Key in qui (Settings → Client Proxy Keys), pick the instance, paste the full proxy URL here.
             # Example: "http://localhost:7476/proxy/<your-client-api-key>".
-            # QUI is not used for bandwidth measurements; see docs/upload-order-and-bandwidth-control.md.
+            # qui is not used for bandwidth measurements; see docs/upload-order-and-bandwidth-control.md.
             "qui_proxy_url": "",
             "qui_api_url": "",
             "qui_api_key": "",

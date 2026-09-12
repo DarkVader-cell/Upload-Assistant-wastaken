@@ -1,0 +1,20 @@
+{
+  "id": "b6843244f",
+  "name": "Check Destiny SSH",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; timeout 30 sshpass -e ssh -4 -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca 'echo ssh_ok; date -u'",
+  "description": "Test whether Destiny still accepts a responsive SSH session after the container runtime timeout.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b6843244f.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788967543722,
+  "endTime": 1788967547143,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 685361,
+  "bytesWritten": 39,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 45
+}

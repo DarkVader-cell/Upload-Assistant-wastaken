@@ -1,0 +1,20 @@
+{
+  "id": "b2fd14def",
+  "name": "Verify qBittorrent auth",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -euo pipefail\ncd ~/Upload-Assistant-wastaken\npython3 - <<'PY'\nimport ast\nimport http.cookiejar\nimport urllib.parse\nimport urllib.request\nfrom pathlib import Path\nmodule=ast.parse(Path('docker-data/data/config.py').read_text())\nassignment=next(node for node in module.body if isinstance(node, ast.AnnAssign) and getattr(node.target, 'id', None) == 'config')\nconfig=ast.literal_eval(assignment.value)\nclient=config['TORRENT_CLIENTS']['qbittorrent']\nbase=f\"{client['qbit_url']}:{client['qbit_port']}\"\njar=http.cookiejar.CookieJar()\nopener=urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar))\nlogin=urllib.request.Request(base + '/api/v2/auth/login', data=urllib.parse.urlencode({'username': client.get('qbit_user',''), 'password': client.get('qbit_pass','')}).encode(), method='POST')\ntry:\n    with opener.open(login, timeout=10) as response:\n        login_status=response.status\n        login_body=response.read().decode(errors='replace').strip()\n    authenticated = login_status in (200, 204) and login_body in ('', 'Ok.')\n    version_status=None\n    version_present=False\n    if authenticated:\n        with opener.open(base + '/api/v2/app/version', timeout=10) as response:\n            version_status=response.status\n            version_present=bool(response.read().decode(errors='replace').strip())\n    print(f'login_status={login_status} login_ok={authenticated} version_status={version_status} version_present={version_present}')\nexcept Exception as exc:\n    print(f'qbit_check_error={type(exc).__name__}: {exc}')\nPY\nREMOTE",
+  "description": "Confirm Destiny’s qBittorrent authentication and API availability, accepting the server’s 204 login response.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b2fd14def.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788962977125,
+  "endTime": 1788962981042,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 148123,
+  "bytesWritten": 71,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 120
+}

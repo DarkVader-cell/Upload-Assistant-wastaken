@@ -1,0 +1,723 @@
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  * Checkout repository
+  * Set up Docker Buildx
+  * Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  * Checkout repository
+  * Set up Docker Buildx
+  * Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  * Set up Docker Buildx
+  * Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  * Set up Docker Buildx
+  * Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  * Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  * Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push less than a minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / arm64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / arm64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+* build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / arm64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / arm64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  * Post Checkout repository
+* build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  * Build and push Docker image (webui / amd64)
+  * Export digest
+  * Upload digest
+  * Post Build and push Docker image (webui / amd64)
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+  * Post Checkout repository
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm): .github#2
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) in 1m4s (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / arm64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / arm64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) in 1m12s (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / amd64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / amd64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+* merge (ID 102310446746)
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04): .github#2
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) in 1m4s (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / arm64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / arm64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) in 1m12s (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / amd64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / amd64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+* merge (ID 102310446746)
+  ✓ Set up job
+  ✓ Download digests
+  * Set up Docker Buildx
+  * Log in to the Container registry
+  * Create manifest list and push
+  * Output build information
+  * Post Set up Docker Buildx
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04): .github#2
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) in 1m4s (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / arm64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / arm64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) in 1m12s (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / amd64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / amd64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+* merge (ID 102310446746)
+  ✓ Set up job
+  ✓ Download digests
+  ✓ Set up Docker Buildx
+  * Log in to the Container registry
+  * Create manifest list and push
+  * Output build information
+  * Post Log in to the Container registry
+  * Post Set up Docker Buildx
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04): .github#2
+
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+* main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) in 1m4s (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / arm64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / arm64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) in 1m12s (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / amd64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / amd64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ merge in 13s (ID 102310446746)
+  ✓ Set up job
+  ✓ Download digests
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Create manifest list and push
+  ✓ Output build information
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04): .github#2
+
+✓ main Create and publish Docker images · 34301834458
+Triggered via push about 1 minute ago
+
+JOBS
+✓ prepare in 4s (ID 102310170657)
+  ✓ Set up job
+  ✓ Compute lowercase image name
+  ✓ Extract metadata (tags, labels) for Docker
+  ✓ Select preferred amd64 self-hosted runner
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm) in 1m4s (ID 102310190232)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / arm64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / arm64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04) in 1m12s (ID 102310190246)
+  ✓ Set up job
+  ✓ Checkout repository
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Build and push Docker image (webui / amd64)
+  ✓ Export digest
+  ✓ Upload digest
+  ✓ Post Build and push Docker image (webui / amd64)
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Post Checkout repository
+  ✓ Complete job
+✓ merge in 13s (ID 102310446746)
+  ✓ Set up job
+  ✓ Download digests
+  ✓ Set up Docker Buildx
+  ✓ Log in to the Container registry
+  ✓ Create manifest list and push
+  ✓ Output build information
+  ✓ Post Log in to the Container registry
+  ✓ Post Set up Docker Buildx
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: docker/metadata-action@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+prepare: .github#7
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, arm64, linux/arm64, ubuntu-24.04-arm): .github#2
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4, docker/build-push-action@v6, docker/login-action@v3, docker/setup-buildx-action@v3. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+build (webui, ./Dockerfile, amd64, linux/amd64, ubuntu-24.04): .github#2
+

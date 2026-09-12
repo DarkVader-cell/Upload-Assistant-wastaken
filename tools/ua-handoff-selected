@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Launch the normal Clementine -> Grape handoff for the tracker hardlinks
+# belonging to one qBittorrent selection.  This script runs on the homelab.
+set -euo pipefail
+
+if [ "$#" -ne 1 ]; then
+    echo "usage: ua-handoff-selected CONTENT_PATH_OR_INFOHASH" >&2
+    exit 2
+fi
+
+selected="$1"
+set -a
+. /home/artemis/.config/upload-assistant/whatbox.env
+set +a
+export SSHPASS="$UA_WHATBOX_PASSWORD"
+
+encoded_selection="$(printf '%s' "$selected" | base64 -w 0)"
+selection="$(sshpass -e ssh -o BatchMode=no -o ConnectTimeout=20 artemisprime@clementine.whatbox.ca \
+  /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/bin/handoff-select-torrents.py --base64 "$encoded_selection")"
+mapfile -t hashes < <(printf '%s' "$selection" | python3 -c 'import json, re, sys; data=json.load(sys.stdin); [print(h) for h in data["handoff_hashes"] if re.fullmatch(r"[0-9a-fA-F]{40}", h)]')
+if [ "${#hashes[@]}" -eq 0 ]; then
+    echo "no eligible tracker hardlinks were resolved" >&2
+    exit 3
+fi
+
+arguments=(--password-stdin)
+for hash in "${hashes[@]}"; do arguments+=("--release=$hash"); done
+printf '%s\n' "$UA_WHATBOX_PASSWORD" | sshpass -e ssh -o BatchMode=no -o ConnectTimeout=20 artemisprime@clementine.whatbox.ca \
+  /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/bin/handoff-to-grape.py "${arguments[@]}"

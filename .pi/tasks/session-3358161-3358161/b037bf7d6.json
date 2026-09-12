@@ -1,0 +1,20 @@
+{
+  "id": "b037bf7d6",
+  "name": "Reset Destiny listener",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -euo pipefail\ncd ~/Upload-Assistant-wastaken\npodman stop -t 15 upload-assistant-wastaken 2>/dev/null || true\npodman rm upload-assistant-wastaken 2>/dev/null || true\npodman pod rm -f upload-assistant-wastaken 2>/dev/null || true\nsleep 2\ncode=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:12345/api/health || true)\necho \"after_stop_http=$code\"\nps -eo pid,user,args | grep -E 'upload.py|webui' | grep -v grep || true\npodman compose -f docker-compose.local.yml up -d upload-assistant-wastaken\nsleep 15\ncode=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:12345/api/health || true)\necho \"after_start_http=$code\"\npodman ps -a --filter name=upload-assistant-wastaken --format '{{.Names}}\\t{{.Status}}'\npodman logs --since 20s upload-assistant-wastaken 2>&1 | tail -30 || true\nREMOTE",
+  "description": "Prove whether Destiny’s port survives container removal, then recreate the service and capture fresh startup output.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b037bf7d6.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788963882425,
+  "endTime": 1788963912048,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 249266,
+  "bytesWritten": 2722,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 180
+}

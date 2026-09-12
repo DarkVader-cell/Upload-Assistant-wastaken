@@ -1,0 +1,2 @@
+bash: -c: line 1: syntax error near unexpected token `('
+bash: -c: line 1: `set -e; cd /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken; cfg=docker-data/data/config.py; echo "config=$cfg"; grep -n -A28 -B2 AITHER "$cfg" | head -40; echo "nonzero overrides:"; grep -nE (multiScreens|charLimit|processLimit): [^0]+ "$cfg" | head -60; echo "container env:"; podman inspect upload-assistant-wastaken --format "{{range .Config.Env}}{{println .}}{{end}}" | grep -E "UA_DATA_DIR|PYTHONPATH"'

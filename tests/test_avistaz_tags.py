@@ -27,6 +27,7 @@ def test_personal_release_tag_is_added_without_keywords(tracker_class, tracker_n
     meta = SimpleNamespace(keywords=[], personalrelease=True)
 
     tags = asyncio.run(get_tags(tracker, meta))
+
     assert tags == [personal_tag]  # noqa: S101
 
 
@@ -36,4 +37,5 @@ def test_internal_release_tag_is_added_without_keywords(tracker_class, tracker_n
     meta = SimpleNamespace(keywords=[], personalrelease=False)
 
     tags = asyncio.run(get_tags(tracker, meta))
+
     assert tags == [internal_tag]  # noqa: S101

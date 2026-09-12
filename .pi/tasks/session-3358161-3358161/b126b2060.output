@@ -1,0 +1,157 @@
+compose-settings:
+5:    image: ghcr.io/darkvader-cell/upload-assistant-wastaken:latest
+9:    container_name: upload-assistant-wastaken
+14:    command: ["--webui", "0.0.0.0:12345"]
+15:    environment:
+21:      UA_DATA_DIR: "/Upload-Assistant"
+23:      UA_BROWSE_ROOTS: "/mnt/seeding"
+27:    volumes:
+31:      - ./docker-data/webui-auth:/root/.config/upload-assistant:rw
+mounted-config:
+155:        "multiScreens": "2",
+157:        "charLimit": "14000",
+159:        "processLimit": "9",
+174:        "qbit_bandwidth_control": False,
+175:        "qbit_bandwidth_threshold": 0,
+176:        "qbit_bandwidth_time": 0,
+179:        "sonarr_url": "http://172.60.0.13:8989",
+180:        "sonarr_api_key": "c2e7a0203ef24cb49abdb8e1d56c789f",
+181:        "sonarr_url_1": "http://my-second-instance:8989",
+182:        "sonarr_api_key_1": "",
+184:        "radarr_url": "http://172.60.0.14:7878",
+185:        "radarr_api_key": "757af19cbf9c4ba5888b1c63b8b69009",
+186:        "radarr_url_1": "http://my-second-instance:7878",
+187:        "radarr_api_key_1": "",
+234:        "default_trackers": "AITHER, ANTHELION, BLUTOPIA, LST, ONLYENCODES, REELFLIX, NEBULANCE, LUMINARR, ULCX, YUSCENE, BEYONDHD, SKIPTHECOMMERCIALS, MORETHANTV, DESITORRENTS, HAWKEUNO, ZENITH",
+247:            "multiScreens": "",
+249:            "charLimit": "",
+251:            "processLimit": "",
+281:            "multiScreens": "",
+283:            "charLimit": "",
+285:            "processLimit": "",
+306:            "multiScreens": "",
+308:            "charLimit": "",
+310:            "processLimit": "",
+333:            "multiScreens": "",
+335:            "charLimit": "",
+337:            "processLimit": "",
+361:            "multiScreens": "",
+363:            "charLimit": "",
+365:            "processLimit": "",
+399:            "multiScreens": "",
+401:            "charLimit": "",
+403:            "processLimit": "",
+434:            "multiScreens": "",
+436:            "charLimit": "",
+438:            "processLimit": "",
+460:            "multiScreens": "",
+462:            "charLimit": "",
+464:            "processLimit": "",
+486:            "multiScreens": "",
+488:            "charLimit": "",
+490:            "processLimit": "",
+511:            "multiScreens": "",
+513:            "charLimit": "",
+515:            "processLimit": "",
+538:            "multiScreens": "",
+540:            "charLimit": "",
+542:            "processLimit": "",
+581:            "multiScreens": "",
+583:            "charLimit": "",
+585:            "processLimit": "",
+608:            "multiScreens": "",
+610:            "charLimit": "",
+612:            "processLimit": "",
+634:            "multiScreens": "",
+636:            "charLimit": "",
+638:            "processLimit": "",
+668:            "multiScreens": "",
+670:            "charLimit": "",
+672:            "processLimit": "",
+703:            "multiScreens": "",
+705:            "charLimit": "",
+707:            "processLimit": "",
+728:            "multiScreens": "",
+730:            "charLimit": "",
+732:            "processLimit": "",
+756:            "multiScreens": "",
+758:            "charLimit": "",
+760:            "processLimit": "",
+790:            "multiScreens": "",
+792:            "charLimit": "",
+794:            "processLimit": "",
+816:            "multiScreens": "",
+818:            "charLimit": "",
+820:            "processLimit": "",
+842:            "multiScreens": "",
+844:            "charLimit": "",
+846:            "processLimit": "",
+867:            "multiScreens": "",
+869:            "charLimit": "",
+871:            "processLimit": "",
+894:            "multiScreens": "",
+896:            "charLimit": "",
+898:            "processLimit": "",
+920:            "multiScreens": "",
+922:            "charLimit": "",
+924:            "processLimit": "",
+947:            "multiScreens": "",
+949:            "charLimit": "",
+951:            "processLimit": "",
+972:            "multiScreens": "",
+974:            "charLimit": "",
+976:            "processLimit": "",
+999:            "multiScreens": "",
+1001:            "charLimit": "",
+1003:            "processLimit": "",
+1027:            "multiScreens": "",
+1029:            "charLimit": "",
+1031:            "processLimit": "",
+1055:            "multiScreens": "",
+recent-logs:
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+[31mWeb UI server error: [0m[1;31m[[0m[31mErrno [0m[1;36m98[0m[1;31m][0m[31m Address already in use[0m                          
+[33mWeb UI server stopped[0m                                                           
+[0m[?25h                                                                                
+[33mUpload-Assistant stopped before completion.[0m                                     
+[0m[?25h[32mShutdown complete[0m                                                               
+mounts:
+/mnt/mpathf/artemisprime  ->  /mnt/seeding
+/mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/data  ->  /Upload-Assistant/data
+/mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/tmp  ->  /Upload-Assistant/tmp
+/mnt/mpathf/artemisprime/Upload-Assistant-wastaken/docker-data/webui-auth  ->  /root/.config/upload-assistant
+

@@ -1,0 +1,21 @@
+{
+  "id": "b9c1c7c7a",
+  "name": "Recreate Destiny login service",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -euo pipefail\ncd ~/Upload-Assistant-wastaken\npodman stop -t 20 upload-assistant-wastaken 2>/dev/null || true\npodman rm upload-assistant-wastaken 2>/dev/null || true\npodman pod rm -f upload-assistant-wastaken 2>/dev/null || true\npodman compose -f docker-compose.local.yml up -d upload-assistant-wastaken\nsleep 30\ncode=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 10 http://127.0.0.1:12347/api/health || true)\necho \"health_http=$code\"\npodman ps -a --filter name=upload-assistant-wastaken --format '{{.Names}}\\t{{.Status}}'\necho logs:\npodman logs --since 35s upload-assistant-wastaken 2>&1 | tail -30 || true\nREMOTE",
+  "description": "Cleanly recreate Destiny’s container after the credential reset so the WebUI process starts fresh.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b9c1c7c7a.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788967286420,
+  "endTime": 1788967466427,
+  "exitCode": null,
+  "signal": "SIGTERM",
+  "pid": 654585,
+  "bytesWritten": 49,
+  "isAgent": false,
+  "error": "Timed out after 180s",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 180
+}

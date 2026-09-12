@@ -22,7 +22,7 @@ from src.bbcode import BBCODE
 from src.cogs.redaction import PathAwareEncoder
 from src.console import logger
 from src.description_languages import COMMON_LABELS, GAME_LABELS, MUSIC_LABELS, get_book_labels, get_labels
-from src.description_review import apply_saved_draft, is_meaningful_description, save_tracker_description
+from src.description_review import apply_saved_draft
 from src.languages import languages_manager
 from src.mediainfo import MediaInfo
 from src.meta import Meta
@@ -31,6 +31,20 @@ from src.takescreens import TakeScreensManager
 from src.tracker_images import get_tracker_image_collection, has_tracker_image_collection
 from src.trackers.common import Common
 from src.uploadscreens import UploadScreensManager
+
+NEXUSPHP_TRACKERS = {
+    "1PTBA",
+    "LAJIDUI",
+    "LEMONHD",
+    "LONGPT",
+    "PTCAFE",
+    "PTFANS",
+    "PTGTK",
+    "PTZONE",
+    "RAILGUNPT",
+    "XINGYUNGEPT",
+    "NEXUSPHP",
+}
 
 
 def html_to_bbcode(text: str) -> str:
@@ -115,11 +129,7 @@ async def gen_desc(
     base_dir = meta.base_dir
     uuid = meta.uuid
     specified_dir = Path(base_dir) / "tmp" / uuid
-    source_path = Path(meta.path or "")
-    # For single-file uploads, the adjacent NFO lives beside the media file,
-    # not underneath the file path. Directory uploads continue to search the
-    # directory itself.
-    source_dir = source_path.parent if source_path.is_file() else source_path
+    source_dir = Path(meta.path or "")
 
     if meta.description_override:
         description_lines.append(clean_text(meta.description_override))
@@ -233,7 +243,7 @@ async def gen_desc(
     meta.description = "\n".join(description_lines).strip()
     meta.saved_description = bool(meta.description)
 
-    if not is_meaningful_description(meta.description):
+    if meta.description in ("None", "", " "):
         meta.description = ""
 
     return meta
@@ -330,18 +340,6 @@ class DescriptionBuilder:
                 return str(val)
         val = self.config["DEFAULT"].get(key, default)
         return str(val) if val is not None else default
-
-    @staticmethod
-    def _manual_audio_language_values(meta: Meta) -> list[str]:
-        """Return explicitly supplied audio-language overrides in display order."""
-        raw_languages = meta.manual_audio_languages
-        if not raw_languages:
-            return []
-        values = [raw_languages] if isinstance(raw_languages, str) else raw_languages
-        result: list[str] = []
-        for value in values:
-            result.extend(part.strip() for part in str(value).split(",") if part.strip())
-        return list(dict.fromkeys(result))
 
     async def get_custom_header(self, meta: Meta) -> str:
         """Returns a custom header if configured."""
@@ -638,15 +636,6 @@ class DescriptionBuilder:
         """Returns the screenshot header if applicable."""
         try:
             screenheader = self._get_str_config("screenshot_header", "", meta)
-            # The generic heading adds no information and is visually noisy.
-            # Keep custom tracker-specific headings available, but suppress
-            # the stock Screenshots title wherever an older config still has it.
-            if screenheader.strip().lower() in {
-                "[h2]screenshots[/h2]",
-                "[h3]screenshots[/h3]",
-                "[b]screenshots[/b]",
-            }:
-                return ""
             if screenheader:
                 return screenheader
         except Exception as e:
@@ -1328,12 +1317,12 @@ class DescriptionBuilder:
         screenshots: bool = True,
         tonemapped_header: bool = True,
         tv_info: bool = True,
-        ua_signature: bool = True,  # noqa: ARG002 - retained for tracker extension compatibility
+        ua_signature: bool = True,
         user_description: bool = True,
         music: bool = True,
         dynamic_hdr_plot: bool = True,
         approved_image_hosts: list[str] | None = None,
-        signature: str = "",  # noqa: ARG002 - retained for tracker extension compatibility
+        signature: str = "",
         desc_header: str = "",
     ) -> str:
         apply_saved_draft(meta)
@@ -1362,31 +1351,12 @@ class DescriptionBuilder:
                 desc_parts.append(desc_header + "\n")
 
         # Language
-        language_labels = get_labels(COMMON_LABELS, self.language)
-        manual_audio_languages = self._manual_audio_language_values(meta)
-        if languages or manual_audio_languages:
+        if languages:
+            language_labels = get_labels(COMMON_LABELS, self.language)
             try:
                 if not meta.language_checked:
                     await languages_manager.process_desc_language(meta, self.tracker)
-                if manual_audio_languages:
-                    override_text = ", ".join(manual_audio_languages)
-                    desc_parts.append(f"[code]{language_labels['audio_languages']} (manual override): {override_text}[/code]\n")
-
-                    # Keep the raw MediaInfo untouched, but make the discrepancy
-                    # explicit when its audio language can be read. This prevents
-                    # a manual correction from looking like an accidental mismatch.
-                    parsed_info = await languages_manager.parsed_mediainfo(meta)
-                    detected_audio_languages = list(
-                        dict.fromkeys(
-                            str(track.get("language", "")).strip()
-                            for track in parsed_info.get("audio", [])
-                            if str(track.get("language", "")).strip()
-                        )
-                    )
-                    if detected_audio_languages:
-                        detected_text = ", ".join(detected_audio_languages)
-                        desc_parts.append(f"[code]MediaInfo audio language/s: {detected_text} (overridden above)[/code]\n")
-                elif meta.audio_languages and meta.write_audio_languages:
+                if meta.audio_languages and meta.write_audio_languages:
                     desc_parts.append(f"[code]{language_labels['audio_languages']}: {', '.join(meta.audio_languages)}[/code]\n")
 
                 if meta.subtitle_languages and meta.write_subtitle_languages:
@@ -1449,6 +1419,8 @@ class DescriptionBuilder:
         if bluray:
             release_url, cover_images = await self.get_bluray_section(meta)
             if release_url:
+                if self.tracker not in ("TORRENTLEECH", "IMMORTALSEED"):
+                    release_url = f"[url]{release_url}[/url]"
                 desc_parts.append(f"[center]{release_url}[/center]")
             if cover_images:
                 desc_parts.append(f"[center]{cover_images}[/center]\n")
@@ -1513,8 +1485,6 @@ class DescriptionBuilder:
         else:
             meta_description = str(meta_description_value)
 
-        # The scene NFO is included only for trackers that request NFO output.
-        # Do not leak its pre-rendered block into otherwise plain descriptions.
         if not nfo and meta.auto_nfo and meta.description_nfo_content:
             scene_nfo_block = f"[center][spoiler=Scene NFO:][code]{meta.description_nfo_content}[/code][/spoiler][/center]"
             meta_description = meta_description.replace(scene_nfo_block, "").strip()
@@ -1565,87 +1535,62 @@ class DescriptionBuilder:
             if not description or user_description_content.strip() != meta_description.strip():
                 desc_parts.append(user_description_content)
 
+        # Render the remaining optional sections before deciding whether a
+        # standalone screenshot section needs its heading.
+        menu_section = await self.menu_section(meta) if menu_screenshots else ""
+        tonemapped_section = tonemapped_header_text if tonemapped_header else ""
+        audio_spectrogram_section = await self.get_audio_spectrogram_section(meta) if audio_spectrogram else ""
+        dynamic_hdr_plot_section = await self.get_dynamic_hdr_plot_section(meta) if dynamic_hdr_plot else ""
+        custom_signature_section = await self.get_custom_signature(meta) if custom_signature else ""
+        if ua_signature:
+            if not signature:
+                script_signature = meta.ua_signature
+                if script_signature:
+                    signature = f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{script_signature}[/size][/url][/right]"
+            ua_signature_section = signature
+        else:
+            ua_signature_section = ""
+
+        other_sections = [*desc_parts, menu_section, tonemapped_section, audio_spectrogram_section, dynamic_hdr_plot_section, custom_signature_section, ua_signature_section]
+        include_screenshot_header = not (self._get_bool_config("hide_screenshot_header_if_only_section", True) and not any(part.strip() for part in other_sections))
+
         # Menu Screenshots
-        if menu_screenshots:
-            desc_parts.append(await self.menu_section(meta))
+        desc_parts.append(menu_section)
 
         # Tonemapped Header
-        if tonemapped_header:
-            desc_parts.append(tonemapped_header_text)
+        desc_parts.append(tonemapped_section)
 
         # Discs and Screenshots
         if screenshots:
-            discs_and_screenshots = await self._handle_discs_and_screenshots(meta, approved_image_hosts, images, multi_screens)
+            discs_and_screenshots = await self._handle_discs_and_screenshots(meta, approved_image_hosts, images, multi_screens, include_screenshot_header)
             desc_parts.append(discs_and_screenshots)
 
         # Audio Spectrograms
-        if audio_spectrogram:
-            desc_parts.append(await self.get_audio_spectrogram_section(meta))
+        desc_parts.append(audio_spectrogram_section)
 
         # Dynamic HDR metadata plots (Dolby Vision / HDR10+)
         if dynamic_hdr_plot:
-            desc_parts.append(await self.get_dynamic_hdr_plot_section(meta))
+            desc_parts.append(dynamic_hdr_plot_section)
 
         # Custom Signature
         if custom_signature:
-            desc_parts.append(await self.get_custom_signature(meta))
+            desc_parts.append(custom_signature_section)
+
+        # UA Signature
+        desc_parts.append(ua_signature_section)
 
         description_str: str = "\n".join(part for part in desc_parts if part.strip())
 
         # Formatting
         description_str = self.tracker_specific_formats(self.tracker, description_str)
 
-        # Keep the exact tracker-specific payload available after every run.
-        # This is intentionally not limited to debug mode: the Web UI review
-        # panel and the durable release history need the final rendered text,
-        # rather than only the source description/draft used to create it.
-        temp_dir = Path(meta.base_dir) / "tmp" / str(meta.uuid)
-        desc_path = temp_dir / f"[{self.tracker}]DESCRIPTION.txt"
         if meta.debug:
-            logger.debug(f"DEBUG: Saving final description to [yellow]{desc_path}[/yellow]")
-        # This is a tiny atomic write, avoiding a partial file while a detached
-        # Web UI job reads the rendered payload.
-        await asyncio.to_thread(save_tracker_description, temp_dir, self.tracker, description_str)
+            desc_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[{self.tracker}]DESCRIPTION.txt"
+            logger.debug(f"DEBUG: Saving final description to [yellow]{desc_file}[/yellow]")
+            async with aiofiles.open(desc_file, "w", encoding="utf-8") as description_file:
+                await description_file.write(description_str)
 
         return description_str
-
-    async def unit3d_edit_desc(
-        self,
-        meta: Meta,
-        signature: str = "",
-        desc_header: str = "",
-        approved_image_hosts: list[str] | None = None,
-        audio_spectrogram: bool = True,
-    ) -> str:
-        """Build the standard UNIT3D description used by manual uploads.
-
-        Keep this compatibility entry point for the tracker handling path and
-        extensions that use the older, more descriptive method name.
-        """
-        return await self.general_description_generator(
-            meta,
-            audio_spectrogram=audio_spectrogram,
-            bluray=True,
-            book=True,
-            custom_header=True,
-            custom_signature=True,
-            description=True,
-            game=True,
-            languages=False,
-            logo=True,
-            mediainfo=False,
-            menu_screenshots=True,
-            nfo=False,
-            screenshots=True,
-            tonemapped_header=True,
-            tv_info=True,
-            ua_signature=True,
-            user_description=True,
-            music=True,
-            signature=signature,
-            desc_header=desc_header,
-            approved_image_hosts=approved_image_hosts,
-        )
 
     async def _check_saved_pack_image_links(self, meta: Meta, approved_image_hosts: list[str]) -> dict[str, Any]:
         pack_images_file = Path(meta.base_dir) / "tmp" / meta.uuid / "pack_image_links.json"
@@ -1712,11 +1657,18 @@ class DescriptionBuilder:
                 logger.warning(f"[yellow]Warning: Could not load pack image data: {e!s}[/yellow]")
         return pack_images_data
 
-    async def _handle_discs_and_screenshots(self, meta: Meta, approved_image_hosts: list[str], images: list[dict[str, str]], multi_screens: int) -> str:
+    async def _handle_discs_and_screenshots(
+        self,
+        meta: Meta,
+        approved_image_hosts: list[str],
+        images: list[dict[str, str]],
+        multi_screens: int,
+        include_header: bool = True,
+    ) -> str:
         if not images:
             return ""
         try:
-            screenheader = await self.screenshot_header(meta)
+            screenheader = await self.screenshot_header(meta) if include_header else ""
         except Exception:
             screenheader = None
 
@@ -2155,9 +2107,6 @@ class DescriptionBuilder:
                         desc_parts.append(f"[center][spoiler={filename}]{formatted_bbcode}[/spoiler][/center]\n")
                         char_count += len(f"[center][spoiler={filename}]{formatted_bbcode}[/spoiler][/center]\n")
                     else:
-                        if i == 0 and images and screenheader is not None:
-                            desc_parts.append(screenheader + "\n")
-                            char_count += len(screenheader + "\n")
                         desc_parts.append(f"[center]{filename}\n[/center]\n")
                         char_count += len(f"[center]{filename}\n[/center]\n")
 
@@ -2212,11 +2161,6 @@ class DescriptionBuilder:
 
             # If screens_per_row is set, use that to determine how many screenshots should be on each row. Otherwise, use 2 as default
             screens_per_row = self._get_int_config("screens_per_row", 2)
-            if self.tracker == "HAWKEUNO":
-                width = self._get_int_config("thumbnail_size", 350)
-                # Adjust screens_per_row to keep total width below 1100
-                while screens_per_row * width > 1100 and screens_per_row > 1:
-                    screens_per_row -= 1
         except Exception:
             screens_per_row = 2
         return screens_per_row
@@ -2262,20 +2206,7 @@ class DescriptionBuilder:
         if not thumb_size:
             thumb_size = self._get_int_config("thumbnail_size", 350)
 
-        nexusphp_trackers = {
-            "1PTBA",
-            "LAJIDUI",
-            "LEMONHD",
-            "LONGPT",
-            "PTCAFE",
-            "PTFANS",
-            "PTGTK",
-            "PTZONE",
-            "RAILGUNPT",
-            "XINGYUNGEPT",
-            "NEXUSPHP",
-        }
-        if self.tracker in nexusphp_trackers:
+        if self.tracker in NEXUSPHP_TRACKERS:
             return f"[img]{raw_url}[/img]"
         if self.tracker == "HDTORRENTS":
             return f"<a href='{raw_url}'><img src='{img_url}' height=137></a> "
@@ -2293,6 +2224,12 @@ class DescriptionBuilder:
 
     def tracker_specific_formats(self, tracker: str, description: str) -> str:
         bbcode = BBCODE()
+        if tracker in NEXUSPHP_TRACKERS:
+            description = bbcode.remove_img_resize(description)
+
+        if tracker in {"ANTHELION", "BJSHARE", "BRASILTRACKER", "GREATPOSTERWALL"}:
+            description = bbcode.clamp_size_tags(description)
+
         if tracker == "BRASILTRACKER":
             description = bbcode.remove_img_resize(description)
             description = bbcode.remove_list(description)

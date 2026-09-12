@@ -23,11 +23,9 @@ from src.console import logger
 from src.edition import get_edition
 from src.exceptions import NoAudioMediaError
 from src.exportmi import export_info, get_conformance_error, mi_resolution, validate_mediainfo
-from src.get_name import _title_key
 from src.get_source import get_source
 from src.imdb import imdb_manager
 from src.languages import languages_manager
-from src.manual_metadata import request_missing_metadata, should_request_metadata
 from src.media_extensions import VIDEO_EXTENSIONS
 from src.meta import Meta
 from src.region import get_distributor, get_region, get_service
@@ -822,25 +820,8 @@ async def process_trackers_and_torrent(
                 meta.infohash = Torrent.read(reuse_torrent_path).infohash
             except Exception as e:
                 logger.debug(f"[yellow]Unable to read infohash from cached torrent: {e}")
-            path_parts = {part.casefold() for part in Path(str(meta.path or "")).parts}
-            is_cross_seed_path = bool(path_parts & {"cross_seed", "cross-seed", "crossseed"})
-            original_path = await client.resolve_reused_source_path(meta) if is_cross_seed_path else None
-            if original_path and Path(original_path).exists():
-                meta.cross_seed_source_path = original_path
-                meta.path = original_path
-                meta.filelist = [original_path]
-                logger.info(f"[green]Using original torrent-client content path for upload: {original_path}[/green]")
-            # Do not import tracker IDs from an automatically reused torrent.
-            # A reused torrent can be a cross-seed whose tracker comment belongs
-            # to a different (or stale/mislabelled) release.  Those IDs would be
-            # accepted before the filename search and would therefore make the
-            # tracker metadata override the local filename.  The reused torrent
-            # is still retained for BASE.torrent creation below; metadata is
-            # resolved from the current file name instead.
-            # Resolve tracker IDs from the reusable torrent after mapping a
-            # cross-seed back to its original content. This is needed to recover
-            # tracker metadata (including LST IDs) when a filename alone is not
-            # enough to identify the release.
+            # Fetch properties only: this preserves comment/tracker-ID discovery
+            # without running another name-based torrent search or exporting it.
             await client.get_ptp_from_hash(meta, pathed=True, client_name=meta.reuse_torrent_client)
 
 
@@ -855,12 +836,7 @@ def _clear_imdb_metadata(meta: Meta) -> None:
 
 def _should_fetch_bluray_info(meta: Meta, get_bluray_info: bool) -> bool:
     return bool(
-        meta.is_disc in ("BDMV", "DVD")
-        and get_bluray_info
-        and (not meta.distributor or not meta.region)
-        and meta.imdb_id != 0
-        and not meta.edit
-        and not meta.site_check
+        meta.is_disc in ("BDMV", "DVD") and get_bluray_info and (not meta.distributor or not meta.region) and meta.imdb_id != 0 and not meta.edit and not meta.site_check
     )
 
 
@@ -999,13 +975,7 @@ async def search_metadata(
             meta.we_checked_them_all = False
 
         # if not auto qbittorrent search, this also checks with the infohash if passed.
-        if (
-            meta.infohash is not None
-            and not meta.reuse_torrent_path
-            and not meta.base_torrent_created
-            and not meta.we_checked_them_all
-            and not ids
-        ):
+        if meta.infohash is not None and not meta.base_torrent_created and not meta.we_checked_them_all and not ids:
             meta = await client.get_ptp_from_hash(meta)
 
         if not meta.edit and not ids:
@@ -1270,32 +1240,6 @@ async def search_metadata(
         imdb_info = await imdb_manager.get_imdb_info_api(imdb_id_value, manual_language=meta.manual_language, base_dir=meta.base_dir, config=prep_instance.config)
         meta.imdb_info = imdb_info
 
-    # Detached Web UI jobs cannot answer an interactive prompt. Emit a
-    # machine-readable checkpoint so the server can collect the missing IDs
-    # and resume this same process through its stdin pipe.
-    if should_request_metadata(meta, detached=bool(os.environ.get("UA_DETACHED_JOB_ID"))) and meta.category not in ("BOOK", "GAME"):
-        changed = request_missing_metadata(meta)
-        if int(meta.imdb_id or 0) != 0 and int(meta.tmdb_id or 0) == 0:
-            category, tmdb_id, original_language, filename_search = await prep_instance.tmdb_manager.get_tmdb_from_imdb(
-                _to_int(meta.imdb_id),
-                _to_int(meta.tvdb_id) or None,
-                _normalize_search_year(meta.search_year),
-                filename,
-                debug=meta.debug,
-                mode=(meta.mode if meta.mode is not None else "non_cli"),
-                category_preference=meta.category,
-                imdb_info=meta.imdb_info,
-            )
-            meta.category = category
-            meta.tmdb_id = _to_int(tmdb_id)
-            meta.original_language = original_language
-            meta.no_ids = filename_search
-        if "tmdb_id" in changed or "category" in changed:
-            await prep_instance.tmdb_manager.set_tmdb_metadata(meta, filename)
-        if "imdb_id" in changed:
-            meta.imdb_info = await imdb_manager.get_imdb_info_api(
-                _to_int(meta.imdb_id), manual_language=meta.manual_language, base_dir=meta.base_dir, config=prep_instance.config
-            )
     meta.populate_cast()
 
 
@@ -1333,10 +1277,6 @@ async def finalize_metadata(
                 meta.title = meta.title.strip()
 
     if not meta.aka or meta.aka is None:
-        meta.aka = ""
-    elif _title_key(str(meta.title)) == _title_key(str(meta.aka)):
-        # Do not expose a redundant AKA when IMDb/TMDb report the same title
-        # with different punctuation, casing, or an optional year marker.
         meta.aka = ""
 
     # if it was skipped earlier, make sure we have the season/episode data

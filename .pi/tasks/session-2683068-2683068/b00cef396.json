@@ -1,0 +1,20 @@
+{
+  "id": "b00cef396",
+  "name": "Transfer pending uploads",
+  "command": "bash tools/ua-handoff-retry",
+  "description": "Run the corrected SSD to Destiny HDD transfer worker for staged pending uploads.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-2683068-2683068/b00cef396.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788910800769,
+  "endTime": 1788910804696,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 2764645,
+  "bytesWritten": 60,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 43200
+}

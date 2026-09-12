@@ -1,0 +1,20 @@
+{
+  "id": "bf7d48122",
+  "name": "Inspect Destiny runtime",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca bash -s <<'REMOTE'\nset -u\ncd ~/Upload-Assistant-wastaken\necho inspect:\npodman inspect upload-assistant-wastaken --format 'status={{.State.Status}} pid={{.State.Pid}} started={{.State.StartedAt}} finished={{.State.FinishedAt}} exit={{.State.ExitCode}} restart={{.RestartCount}}'\necho processes:\npodman exec upload-assistant-wastaken sh -c 'for f in /proc/[0-9]*/cmdline; do printf \"%s \" \"$f\"; tr \"\\\\0\" \" \" < \"$f\" 2>/dev/null || true; echo; done' 2>&1 | head -80 || true\necho logs-tail:\npodman logs --tail 25 upload-assistant-wastaken 2>&1 || true\nREMOTE",
+  "description": "Inspect Destiny’s current process tree and restart timestamps after the credential reset.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/bf7d48122.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788967237671,
+  "endTime": 1788967244066,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 648675,
+  "bytesWritten": 1240,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 120
+}

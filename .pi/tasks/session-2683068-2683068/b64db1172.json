@@ -1,0 +1,20 @@
+{
+  "id": "b64db1172",
+  "name": "Resume HDD handoff",
+  "command": "bash tools/ua-handoff-retry",
+  "description": "Resume pending Clementine SSD to Destiny HDD transfers using the updated live worker.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-2683068-2683068/b64db1172.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788909182502,
+  "endTime": 1788909186255,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 2584468,
+  "bytesWritten": 60,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 43200
+}

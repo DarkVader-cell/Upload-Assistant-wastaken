@@ -74,6 +74,68 @@ IGDB_GAME_FIELDS = ", ".join(
     )
 )
 
+IGDB_SEARCH_FIELDS = "id, name, first_release_date, platforms.name"
+IGDB_GAME_FIELDS = ", ".join(
+    (
+        "id",
+        "name",
+        "summary",
+        "storyline",
+        "first_release_date",
+        "rating",
+        "rating_count",
+        "aggregated_rating",
+        "aggregated_rating_count",
+        "cover.url",
+        "screenshots.url",
+        "genres.name",
+        "keywords.name",
+        "platforms.name",
+        "alternative_names.name",
+        "age_ratings.organization.name",
+        "age_ratings.rating_category.rating",
+        "collections.name",
+        "franchises.name",
+        "game_engines.name",
+        "game_modes.name",
+        "game_status.status",
+        "game_type.type",
+        "multiplayer_modes.campaigncoop",
+        "multiplayer_modes.dropin",
+        "multiplayer_modes.lancoop",
+        "multiplayer_modes.offlinecoop",
+        "multiplayer_modes.offlinecoopmax",
+        "multiplayer_modes.offlinemax",
+        "multiplayer_modes.onlinecoop",
+        "multiplayer_modes.onlinecoopmax",
+        "multiplayer_modes.onlinemax",
+        "multiplayer_modes.platform.name",
+        "multiplayer_modes.splitscreen",
+        "multiplayer_modes.splitscreenonline",
+        "parent_game.name",
+        "player_perspectives.name",
+        "release_dates.date",
+        "release_dates.human",
+        "release_dates.platform.name",
+        "release_dates.release_region.region",
+        "release_dates.status.name",
+        "themes.name",
+        "version_title",
+        "videos.name",
+        "videos.video_id",
+        "involved_companies.company.name",
+        "involved_companies.developer",
+        "involved_companies.publisher",
+        "websites.url",
+        "websites.type",
+        "external_games.url",
+        "external_games.external_game_source",
+        "external_games.uid",
+        "language_supports.language.name",
+        "language_supports.language_support_type.name",
+    )
+)
+
 
 class IGDBAPI:
     def __init__(self, client_id: str, client_secret: str, base_dir: str = ""):

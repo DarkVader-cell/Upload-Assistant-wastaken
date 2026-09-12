@@ -1,0 +1,72 @@
+checkout=/home/artemisprime/Upload-Assistant-wastaken
+total 1088
+drwxrwxr-x 18 artemisprime artemisprime   4096 Sep  9 03:50 .
+drwxr-x--- 40 artemisprime artemisprime  16384 Sep  9 12:46 ..
+drwxr-xr-x  2 artemisprime artemisprime     10 Aug 11 17:03 .agents
+-rw-rw-r--  1 artemisprime artemisprime  30594 Aug  9 04:24 audio.py
+-rw-r--r--  1 artemisprime artemisprime   1521 Aug 12 08:36 bandit.yaml
+drwxr-xr-x  2 artemisprime artemisprime     42 Aug 12 08:36 benchmarks
+drwx------  4 artemisprime artemisprime   4096 Sep  9 03:50 bin
+-rw-r--r--  1 artemisprime artemisprime  46338 Aug 11 06:29 clients.py
+drwxr-xr-x  2 artemisprime artemisprime     10 Aug 11 17:03 .codex
+drwxr-xr-x  2 artemisprime artemisprime     34 Aug 12 08:36 cogs
+-rw-r--r--  1 artemisprime artemisprime  56462 Aug 12 08:36 config-generator.py
+drwxr-xr-x  6 artemisprime artemisprime    300 Aug 12 08:36 data
+-rw-r--r--  1 artemisprime artemisprime   3955 Aug 11 06:29 description_review.py
+-rw-r--r--  1 artemisprime artemisprime   1612 Sep  9 03:50 docker-compose.local.yml
+-rw-r--r--  1 artemisprime artemisprime   1610 Sep  4 00:36 docker-compose.local.yml.backup-20260904T003611Z
+-rw-r--r--  1 artemisprime artemisprime   1604 Sep  4 00:35 docker-compose.local.yml.backup-20260908T030604Z-healthcheck
+-rw-r--r--  1 artemisprime artemisprime   1680 Sep  8 03:06 docker-compose.local.yml.backup-20260909T035013Z-destiny-hdd-paths
+-rw-r-----  1 artemisprime artemisprime   1100 Aug 11 10:06 docker-compose.local.yml.before-host-qbit
+-rw-r-----  1 artemisprime artemisprime   1597 Aug 22 13:48 docker-compose.local.yml.local-build-backup
+-rw-r--r--  1 artemisprime artemisprime   4150 Aug 12 08:36 docker-compose.yml
+drwxrwxr-x  5 artemisprime artemisprime     91 Jul 31 02:56 docker-data
+-rw-r--r--  1 artemisprime artemisprime   5047 Aug 12 08:36 Dockerfile
+-rw-r--r--  1 artemisprime artemisprime    982 Aug 12 08:36 .dockerignore
+drwxr-xr-x  3 artemisprime artemisprime   4096 Aug 12 08:36 docs
+-rw-r--r--  1 artemisprime artemisprime 114399 Aug 11 06:29 get_desc.py
+-rw-r--r--  1 artemisprime artemisprime  28621 Aug 11 06:29 get_tracker_data.py
+-rw-r--r--  1 artemisprime artemisprime    216 Aug 12 08:36 .gitattributes
+drwxr-xr-x  3 artemisprime artemisprime     31 Aug 12 08:36 .github
+-rw-r--r--  1 artemisprime artemisprime    796 Aug 12 08:36 .gitignore
+drwxr-xr-x  3 artemisprime artemisprime    160 Aug 12 08:36 graphify-out
+-rw-r--r--  1 artemisprime artemisprime   3894 Aug 12 08:36 LICENSE
+-rw-r--r--  1 artemisprime artemisprime     80 Aug 12 08:36 .prettierignore
+-rw-r--r--  1 artemisprime artemisprime     30 Aug 12 08:36 .prettierrc.json
+-rw-r--r--  1 artemisprime artemisprime   2164 Aug 12 08:36 pyproject.toml
+-rw-r--r--  1 artemisprime artemisprime  33297 Aug 12 08:36 README.md
+-rw-r--r--  1 artemisprime artemisprime    955 Aug 12 08:36 requirements.txt
+drwxrwxr-x  3 artemisprime artemisprime     75 Aug 11 17:03 .ruff_cache
+drwxr-xr-x  2 artemisprime artemisprime   4096 Aug 12 08:36 scripts
+-rw-r--r--  1 artemisprime artemisprime   5501 Aug 11 10:18 seedbox.md
+containers:
+netronome_vnstat	ghcr.io/vergoh/vnstat:latest	Exited (0) 5 days ago
+netronome_agent	ghcr.io/autobrr/netronome:latest	Exited (0) 5 days ago
+iperf3-server	docker.io/networkstatic/iperf3:latest	Exited (0) 5 days ago
+upload-assistant-wastaken_infra		Created
+upload-assistant-wastaken	ghcr.io/darkvader-cell/upload-assistant-wastaken:latest	Up 6 seconds (starting)
+config-files:
+docker-data/data/config.py
+docker-data/data/config.py.backup-20260904T003611Z
+docker-data/data/config.py.backup-20260908T034028Z-whatbox-hdd-client
+docker-data/data/config.py.backup-20260909T035013Z-destiny-hdd-paths
+docker-data/data/config.py.bak
+docker-data/data/config.py.before-client-list-fix
+docker-data/data/config.py.before-deluge-repair
+docker-data/data/config.py.before-imgbox-fix
+docker-data/data/config.py.before-old-settings
+docker-data/data/config.py.before-qbit-path-fix
+docker-data/data/config.py.before-qbit-switch
+docker-data/data/config.py.before-reset
+docker-data/data/config.py.before-ua-deluge-final
+docker-data/data/config.py.before-whatbox-deluge
+docker-data/data/config.py.before-whatbox-uploads
+compose:
+CONTAINER ID  IMAGE                                                    COMMAND               CREATED       STATUS                   PORTS       NAMES
+b3fc48aabcf6  ghcr.io/darkvader-cell/upload-assistant-wastaken:latest  --webui 0.0.0.0:1...  10 hours ago  Up 7 seconds (starting)  5000/tcp    upload-assistant-wastaken
+['podman', '--version', '']
+using podman version: 6.1.0
+podman ps -a --filter label=io.podman.compose.project=upload-assistant-wastaken
+exit code: 0
+health:
+<h1>401: Unauthorized</h1>

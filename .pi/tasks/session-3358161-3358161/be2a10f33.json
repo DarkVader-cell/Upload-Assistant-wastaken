@@ -1,0 +1,21 @@
+{
+  "id": "be2a10f33",
+  "name": "Check Destiny after timeout",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; timeout 45 sshpass -e ssh -4 -o ConnectTimeout=15 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@destiny.whatbox.ca 'podman ps -a --filter name=upload-assistant-wastaken --format \"{{.Names}}\\t{{.Status}}\"; code=$(curl -sS -o /dev/null -w \"%{http_code}\" --max-time 5 http://127.0.0.1:12347/api/health || true); echo health=$code'",
+  "description": "Check Destiny’s container and new WebUI port after the recreate command timed out.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/be2a10f33.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788967484767,
+  "endTime": 1788967529826,
+  "exitCode": 124,
+  "signal": null,
+  "pid": 678450,
+  "bytesWritten": 0,
+  "isAgent": false,
+  "error": "Exited with code 124",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 60
+}

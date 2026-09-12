@@ -1,6 +1,5 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import asyncio
-import re
 import sys
 import time
 import traceback
@@ -16,33 +15,16 @@ from src.cogs.redaction import Redaction
 from src.config_helpers import format_terminal_link, parse_bool
 from src.console import logger
 from src.dupe_checking import DupeChecker
-from src.extensions import load_extensions
 from src.get_desc import DescriptionBuilder
 from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
 from src.rehostimages import check_tracker_image_hosts, has_restricted_image_hosts, select_common_image_host
-from src.release_validation import tracker_release_name_issues
-from src.runtime.context import current_execution_context
-from src.runtime.scheduler import AdaptiveScheduler
-from src.trackers.adapter import TrackerRegistry
-from src.trackers.passthepopcorn import PassThePopcorn
+from src.torrent_provision import provision_tracker_torrents
+from src.trackers.GAZELLE.passthepopcorn import PassThePopcorn
 from src.trackersetup import TrackerSetup
 
 type StatusDict = dict[str, Any]
-
-
-def should_inject_uploaded_torrent(tracker_name: str, status: Mapping[str, Any], is_usenet: bool) -> bool:
-    """Return whether a successful upload should be added to the torrent client.
-
-    Most tracker drafts intentionally wait for publication before client injection.
-    BeyondHD is different: its draft response already represents a usable torrent,
-    and the user expects it to seed immediately while the tracker-side draft waits
-    for publication.
-    """
-    if is_usenet:
-        return False
-    return not status.get("pending_publication") or tracker_name.upper() == "BEYONDHD"
 
 
 async def check_mod_q_and_draft(
@@ -88,18 +70,20 @@ async def process_trackers(
     upload_target: str = "tracker",
     bandwidth_control: bool | None = None,
 ) -> None:
-    extensions = load_extensions(meta.base_dir, config)
-    registry = TrackerRegistry(tracker_class_map, extensions.trackers)
-    api_tracker_names = set(api_trackers) | registry.by_auth_type("unit3d_api")
-    other_api_tracker_names = set(other_api_trackers) | registry.by_auth_type("other_api")
-    http_tracker_names = set(http_trackers) | registry.by_auth_type("cookies")
     if bandwidth_control is None:
         bandwidth_control = parse_bool(meta.qbit_bandwidth_control) or parse_bool(config["DEFAULT"].get("qbit_bandwidth_control", False))
+
     tracker_setup = TrackerSetup(config=config)
     tracker_setup_any = cast(Any, tracker_setup)
     enabled_trackers = list(cast(Sequence[str], tracker_setup_any.trackers_enabled(meta)))
+    manual_targets = "MANUAL" in enabled_trackers
+    torrent_targets = [
+        tracker
+        for tracker in enabled_trackers
+        if tracker not in {"MANUAL", "USENET"} and (manual_targets or bool(cast(Mapping[str, Any], meta.tracker_status.get(tracker, {})).get("upload", False)))
+    ]
+    await provision_tracker_torrents(meta, config, torrent_targets, tracker_class_map)
     if config.get("DEFAULT", {}).get("smart_image_host_selection", True) and not meta.imghost_from_cli:
-        manual_targets = "MANUAL" in enabled_trackers
         target_trackers = [
             tracker
             for tracker in enabled_trackers
@@ -156,10 +140,6 @@ async def process_trackers(
                 if print_links and link_url:
                     result_parts.append(f"[[green]{format_terminal_link('link', link_url, config['DEFAULT'])}[/green]]")
 
-                submitted_name = str(status.get("upload_name", "")).strip()
-                if submitted_name:
-                    result_parts.insert(0, escape(submitted_name))
-
                 if has_status_message and (print_messages or (print_links and not link_url)):
                     result_parts.append(escape(Redaction.redact_private_info(status_message)))
 
@@ -174,47 +154,6 @@ async def process_trackers(
         except Exception as e:
             logger.error(f"[red]Error printing {tracker} result: {e}[/red]")
 
-    async def record_tracker_result(tracker_class: Any, status: StatusDict) -> None:
-        """Keep the exact submitted name and a browser-friendly release link."""
-        try:
-            name_result = await tracker_class.get_name(meta)
-            if isinstance(name_result, Mapping):
-                submitted_name = name_result.get("name")
-                if submitted_name:
-                    status["upload_name"] = str(submitted_name)
-        except Exception:
-            status.setdefault("upload_name", str(meta.name or meta.title or ""))
-
-        torrent_id = status.get("torrent_id")
-        torrent_url = str(getattr(tracker_class, "torrent_url", "") or "")
-        if torrent_id and torrent_url:
-            status["upload_url"] = f"{torrent_url}{torrent_id}"
-        elif not status.get("upload_url"):
-            message = str(status.get("status_message", ""))
-            match = re.search(r"https?://[^\s<>()]+", message)
-            if match:
-                status["upload_url"] = match.group(0).rstrip(".,)")
-
-    async def validate_tracker_release_name(tracker_class: Any) -> bool:
-        """Ensure tracker-specific title rewrites cannot drop required fields."""
-        tracker_name = str(getattr(tracker_class, "tracker", "UNKNOWN")).upper()
-        status = meta.tracker_status.setdefault(tracker_name, {})
-        try:
-            name_result = await tracker_class.get_name(meta)
-            submitted_name = name_result.get("name") if isinstance(name_result, Mapping) else name_result
-        except Exception as error:
-            status.update({"upload": False, "upload_success": False, "status_message": f"Skipped: unable to validate tracker title ({error})"})
-            logger.info(f"[red]{tracker_name}: skipped because its tracker title could not be validated: {error}[/red]")
-            return False
-
-        issues = tracker_release_name_issues(meta, submitted_name)
-        if not issues:
-            return True
-        reason = "; ".join(issues.values())
-        status.update({"upload": False, "upload_success": False, "upload_name": str(submitted_name or ""), "status_message": f"Skipped: invalid tracker title: {reason}"})
-        logger.info(f"[bold red]{tracker_name}: upload blocked — {reason}[/bold red]")
-        return False
-
     async def process_single_tracker(tracker: str) -> None:
         """
         try:
@@ -224,8 +163,8 @@ async def process_trackers(
         """
 
         tracker_class: Any = None
-        if tracker not in {"MANUAL", "TORRENTHR", "PASSTHEPOPCORN"}:
-            tracker_class = registry.create(tracker, config)
+        if tracker not in {"MANUAL", "PASSTHEPOPCORN"}:
+            tracker_class = tracker_class_map[tracker](config=config)
         if meta.name.endswith("DUPE?"):
             meta.name = meta.name.replace(" DUPE?", "")
 
@@ -292,7 +231,7 @@ async def process_trackers(
                                 return False
             return True
 
-        if tracker in api_tracker_names:
+        if tracker in api_trackers:
             tracker_status = meta.tracker_status
             upload_status = cast(Mapping[str, Any], tracker_status.get(tracker, {})).get("upload", False)
             if upload_status:
@@ -304,9 +243,6 @@ async def process_trackers(
                         logger.info(f"{tracker} (draft: {draft})")
                     is_uploaded = False
                     try:
-                        if not await validate_tracker_release_name(tracker_class):
-                            print_tracker_result(tracker, tracker_class, meta.tracker_status.setdefault(tracker_class.tracker, {}), False)
-                            return
                         if not await check_bandwidth_and_dupes(tracker, tracker_class):
                             status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                             status["status_message"] = "Skipped due to new dupe found after bandwidth wait"
@@ -332,12 +268,7 @@ async def process_trackers(
                 status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
-                    await record_tracker_result(tracker_class, status)
-                    if status.get("pending_publication") and tracker_class.tracker.upper() != "BEYONDHD":
-                        logger.info(f"{tracker_class.tracker}: saved as a tracker draft; skipping torrent-client injection until it is published.")
-                    elif should_inject_uploaded_torrent(tracker_class.tracker, status, getattr(tracker_class, "is_usenet", False)):
-                        if status.get("pending_publication"):
-                            logger.info(f"{tracker_class.tracker}: saved as a tracker draft; injecting its torrent into the configured client.")
+                    if not getattr(tracker_class, "is_usenet", False):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
@@ -345,16 +276,13 @@ async def process_trackers(
                     print_tracker_result(tracker, tracker_class, status, False)
                     logger.info(f"[red]{tracker} upload failed or returned data error.[/red]")
 
-        elif tracker in other_api_tracker_names or tracker in http_tracker_names:
+        elif tracker in other_api_trackers or tracker in http_trackers:
             tracker_status = meta.tracker_status
             upload_status = cast(Mapping[str, Any], tracker_status.get(tracker, {})).get("upload", False)
             if upload_status:
                 try:
                     is_uploaded = False
                     try:
-                        if not await validate_tracker_release_name(tracker_class):
-                            print_tracker_result(tracker, tracker_class, meta.tracker_status.setdefault(tracker_class.tracker, {}), False)
-                            return
                         if not await check_bandwidth_and_dupes(tracker, tracker_class):
                             status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                             status["status_message"] = "Skipped due to new dupe found after bandwidth wait"
@@ -380,12 +308,7 @@ async def process_trackers(
                 status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
-                    await record_tracker_result(tracker_class, status)
-                    if status.get("pending_publication") and tracker_class.tracker.upper() != "BEYONDHD":
-                        logger.info(f"{tracker_class.tracker}: saved as a tracker draft; skipping torrent-client injection until it is published.")
-                    elif should_inject_uploaded_torrent(tracker_class.tracker, status, getattr(tracker_class, "is_usenet", False)):
-                        if status.get("pending_publication"):
-                            logger.info(f"{tracker_class.tracker}: saved as a tracker draft; injecting its torrent into the configured client.")
+                    if not getattr(tracker_class, "is_usenet", False):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
@@ -408,11 +331,17 @@ async def process_trackers(
                 for manual_tracker in enabled_trackers:
                     if manual_tracker != "MANUAL":
                         manual_tracker = manual_tracker.replace(" ", "").upper().strip()
-                        tracker_class = registry.create(manual_tracker, config)
+                        tracker_class = tracker_class_map[manual_tracker](config=config)
                         try:
                             await check_tracker_image_hosts(meta, tracker_class)
-                            if manual_tracker in api_tracker_names:
-                                await DescriptionBuilder(manual_tracker, config).unit3d_edit_desc(meta, manual_tracker)
+                            if manual_tracker in api_trackers:
+                                await DescriptionBuilder(manual_tracker, config).general_description_generator(
+                                    meta,
+                                    languages=False,
+                                    mediainfo=False,
+                                    nfo=False,
+                                    signature=manual_tracker,
+                                )
                             else:
                                 await tracker_class.edit_desc(meta)
                         except Exception as e:
@@ -431,9 +360,6 @@ async def process_trackers(
                 try:
                     ptp = PassThePopcorn(config=config)
                     group_id = meta.ptp_groupid
-                    if not await validate_tracker_release_name(ptp):
-                        print_tracker_result(tracker, ptp, meta.tracker_status.setdefault(ptp.tracker, {}), False)
-                        return
                     await check_tracker_image_hosts(meta, ptp)
                     ptp_url, ptp_data = await ptp.fill_upload_form(group_id, meta)
                     is_uploaded = False
@@ -449,7 +375,6 @@ async def process_trackers(
                     status = meta.tracker_status.setdefault(ptp.tracker, {})
                     if is_uploaded and "data error" not in str(status.get("status_message", "")):
                         status["upload_success"] = True
-                        await record_tracker_result(ptp, status)
                         await client.add_to_client(meta, "PASSTHEPOPCORN")
                         print_tracker_result(tracker, ptp, status, True)
                     else:
@@ -468,24 +393,11 @@ async def process_trackers(
     elif discs and len(discs) > 1:
         one_disc = False
 
-    bandwidth_control = meta.qbit_bandwidth_control or config["DEFAULT"].get("qbit_bandwidth_control", False)
-
-    execution_context = current_execution_context()
-    scheduler = execution_context.scheduler if execution_context is not None else AdaptiveScheduler(meta.base_dir, config)
-    enabled_trackers = scheduler.ordered(enabled_trackers)
-
-    async def scheduled_tracker(tracker: str) -> None:
-        await scheduler.run(
-            f"tracker:{tracker}",
-            lambda: process_single_tracker(tracker),
-            serialize_mutation=True,
-        )
-
     if ((not meta.tv_pack and one_disc) or multi_screens == 0) and not bandwidth_control:
         # Run all tracker tasks concurrently with individual error handling
         tasks: list[tuple[str, asyncio.Task[None]]] = []
         for tracker in enabled_trackers:
-            task = asyncio.create_task(scheduled_tracker(tracker))
+            task = asyncio.create_task(process_single_tracker(tracker))
             tasks.append((tracker, task))
 
         # Wait for all tasks to complete, but don't let one tracker's failure stop others
@@ -499,9 +411,6 @@ async def process_trackers(
     else:
         # Process each tracker sequentially
         for tracker in enabled_trackers:
-            await scheduled_tracker(tracker)
-
-    if execution_context is None:
-        await scheduler.close()
+            await process_single_tracker(tracker)
 
     logger.info(f"[green]All {upload_target} uploads processed.[/green]")

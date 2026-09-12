@@ -1,0 +1,21 @@
+{
+  "id": "b4ad14ef8",
+  "name": "Resume HDD handoff",
+  "command": "./tools/ua-handoff-retry",
+  "description": "Resume pending Clementine SSD to Destiny HDD transfers using the updated live worker.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-2683068-2683068/b4ad14ef8.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788909149581,
+  "endTime": 1788909149624,
+  "exitCode": 126,
+  "signal": null,
+  "pid": 2580622,
+  "bytesWritten": 63,
+  "isAgent": false,
+  "error": "Exited with code 126",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 43200
+}

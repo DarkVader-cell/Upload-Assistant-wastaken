@@ -1,0 +1,20 @@
+{
+  "id": "b6f819f3b",
+  "name": "Apply SSD config overrides",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@clementine.whatbox.ca \"set -e; cd /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken; cfg=docker-data/data/config.py; backup=\\\"\\${cfg}.bak.\\$(date -u +%Y%m%dT%H%M%SZ)\\\"; cp -p \\\"\\$cfg\\\" \\\"\\$backup\\\"; sed -i -e 's/\\\"multiScreens\\\": \\\"\\\"/\\\"multiScreens\\\": \\\"0\\\"/' -e 's/\\\"charLimit\\\": \\\"\\\"/\\\"charLimit\\\": \\\"0\\\"/' -e 's/\\\"processLimit\\\": \\\"\\\"/\\\"processLimit\\\": \\\"0\\\"/' \\\"\\$cfg\\\"; echo \\\"backup=\\$backup\\\"; echo \\\"remaining_blank=\\$(grep -c -E '\\\"(multiScreens|charLimit|processLimit)\\\": \\\"\\\"' \\\"\\$cfg\\\" || true)\\\"; podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken; sleep 12; podman ps --filter name=upload-assistant-wastaken --format '{{.Names}}\\t{{.Image}}\\t{{.Status}}'; curl -fsS http://127.0.0.1:12346/api/health\"",
+  "description": "Back up Clementine’s persistent config, apply tracker overrides, restart the SSD client, and verify health.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b6f819f3b.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788961146682,
+  "endTime": 1788961165886,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 4135797,
+  "bytesWritten": 2754,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 1200
+}

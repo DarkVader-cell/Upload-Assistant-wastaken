@@ -1,0 +1,20 @@
+{
+  "id": "b92b55e66",
+  "name": "Resume HDD handoff",
+  "command": "bash tools/ua-handoff-retry",
+  "description": "Start the pending Clementine SSD to Destiny HDD handoff worker.",
+  "status": "completed",
+  "outputPath": ".pi/tasks/session-2683068-2683068/b92b55e66.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788909396627,
+  "endTime": 1788909400690,
+  "exitCode": 0,
+  "signal": null,
+  "pid": 2608368,
+  "bytesWritten": 168,
+  "isAgent": false,
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 43200
+}

@@ -20,15 +20,6 @@ def guessit_fn(value: str, options: dict[str, Any] | None = None) -> dict[str, A
     return cast(dict[str, Any], guessit_module.guessit(value, options))
 
 
-_DOT_GROUP_MAP: dict[str, str] = {
-    "Fried.Chicken.Please": "FriedChickenPlease",
-}
-
-
-def canonicalize_release_group(release_group: str) -> str:
-    return _DOT_GROUP_MAP.get(release_group, release_group)
-
-
 async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> str:
     # Using regex from cross-seed (https://github.com/cross-seed/cross-seed/tree/master?tab=Apache-2.0-1-ov-file)
     release_group = None
@@ -44,7 +35,7 @@ async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> st
             release_group = anime_match.group(1)
             logger.debug(f"Anime regex match: {release_group}")
     if (not meta.anime or not matched_anime) and meta.is_disc != "BDMV":
-        # Non-anime pattern: group at the end after a hyphen or tilde, avoiding resolutions and numbers
+        # Non-anime pattern: group at the end after last hyphen, avoiding resolutions and numbers
         if Path(video).is_dir():
             # If video is a directory, use the directory name as basename
             basename_stripped = Path(os.path.normpath(video)).name
@@ -86,7 +77,7 @@ async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> st
             basename_stripped = name
 
         non_anime_match = re.search(
-            r"(?<=[-~])((?!\s*(?:WEB-DL|Blu-ray|H-264|H-265))(?:\W|\b)(?!(?:\d{3,4}[ip]))(?!\d+\b)(?:\W|\b)([\w .]+?))(?:\[.+\])?(?:\))?(?:\s\[.+\])?$", basename_stripped
+            r"(?<=-)((?!\s*(?:WEB-DL|Blu-ray|H-264|H-265))(?:\W|\b)(?!(?:\d{3,4}[ip]))(?!\d+\b)(?:\W|\b)([\w .]+?))(?:\[.+\])?(?:\))?(?:\s\[.+\])?$", basename_stripped
         )
         if non_anime_match:
             release_group = non_anime_match.group(1).strip()
@@ -121,12 +112,8 @@ async def get_tag(video: str, meta: Meta, season_pack_check: bool = False) -> st
                             if merged and (merged in title_norm or merged in author_norm):
                                 release_group = None
 
-            if release_group:
-                if "Z0N3" in release_group:
-                    release_group = release_group.replace("Z0N3", "D-Z0N3")
-                release_group = canonicalize_release_group(release_group)
-                if not meta.scene and len(release_group) > 12:
-                    release_group = None
+            if release_group and "Z0N3" in release_group:
+                release_group = release_group.replace("Z0N3", "D-Z0N3")
             logger.debug(f"Non-anime regex match: {release_group}")
 
     # If regex patterns didn't work, fall back to guessit

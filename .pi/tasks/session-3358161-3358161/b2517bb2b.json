@@ -1,0 +1,21 @@
+{
+  "id": "b2517bb2b",
+  "name": "Inspect SSD updater",
+  "command": "set -euo pipefail; env_file=\"${UA_WHATBOX_ENV_FILE:-${XDG_CONFIG_HOME:-$HOME/.config}/upload-assistant/whatbox.env}\"; set -a; source \"$env_file\"; set +a; export SSHPASS=\"$UA_WHATBOX_PASSWORD\"; sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password -o StrictHostKeyChecking=yes artemisprime@clementine.whatbox.ca 'cd /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken; ls -l *ua-update* scripts/ua-update 2>/dev/null || true; for f in *ua-update* scripts/ua-update; do [ -f \"$f\" ] && { echo \"--- $f\"; sed -n \"1,180p\" \"$f\"; }; done'",
+  "description": "Inspect Clementine’s existing update helper before using it.",
+  "status": "failed",
+  "outputPath": ".pi/tasks/session-3358161-3358161/b2517bb2b.output",
+  "cwd": "/home/artemis/Upload-Assistant-wastaken",
+  "startTime": 1788920430936,
+  "endTime": 1788920439256,
+  "exitCode": 1,
+  "signal": null,
+  "pid": 3840619,
+  "bytesWritten": 0,
+  "isAgent": false,
+  "error": "Exited with code 1",
+  "notified": true,
+  "notifyOnCompletion": true,
+  "triggerOnCompletion": true,
+  "timeoutSeconds": 120
+}
