@@ -58,10 +58,12 @@ def test_blutopia_accepts_truehd_with_standalone_ac3():
     assert asyncio.run(tracker().get_additional_checks(meta)) is True
 
 
-def test_blutopia_removes_flux_nfo_from_description():
+def test_blutopia_removes_flux_nfo_and_release_notes_from_description():
     description = "[b]Release details[/b]\n[center][spoiler=Scene NFO:][code]FLUX presents...[/code][/spoiler][/center]"
+    release_notes = "[b]Release details[/b]\n[center][spoiler=Release Notes:][code]FLUX release notes...[/code][/spoiler][/center]"
 
     assert Blutopia._remove_nfo_sections(description) == "[b]Release details[/b]"
+    assert Blutopia._remove_nfo_sections(release_notes) == "[b]Release details[/b]"
 
 
 def test_blutopia_uses_tmdb_title_and_year_before_the_alternate_title():

@@ -182,9 +182,9 @@ class Blutopia(UNIT3D):
 
     @staticmethod
     def _remove_nfo_sections(description: str) -> str:
-        """BLU does not allow scene NFOs in the uploaded description."""
+        """Remove scene NFO and FLUX release-note blocks from BLU descriptions."""
         return re.sub(
-            r"\[center\]\[spoiler=[^\]]*NFO:\]\[code\].*?\[/code\]\[/spoiler\]\[/center\]",
+            r"\[center\]\[spoiler=[^\]]*(?:NFO|release\s+notes)[^\]]*\]\[code\].*?\[/code\]\[/spoiler\]\[/center\]",
             "",
             description,
             flags=re.IGNORECASE | re.DOTALL,
