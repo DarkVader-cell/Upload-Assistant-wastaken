@@ -118,6 +118,7 @@ STATIC_AUTH_TYPES = {
     "NEBULANCE": "other_api",
     "NORDICQUALITY": "unit3d_api",
     "NZBGEEK": "other_api",
+    "NZBNEST": "other_api",
     "OLDTOONSWORLD": "unit3d_api",
     "ONLYENCODES": "unit3d_api",
     "ORPHEUS": "other_api",
@@ -1487,6 +1488,7 @@ tracker_class_map: Any = LazyTrackerDict(
         "NEBULANCE": ("src.trackers.GAZELLE.nebulance", "Nebulance"),
         "NORDICQUALITY": ("src.trackers.UNIT3D.nordicquality", "NordicQuality"),
         "NZBGEEK": ("src.trackers.USENET.nzbgeek", "NZBGeek"),
+        "NZBNEST": ("src.trackers.USENET.nzbnest", "NzbNest"),
         "OLDTOONSWORLD": ("src.trackers.UNIT3D.oldtoonsworld", "OldToonsWorld"),
         "ONLYENCODES": ("src.trackers.UNIT3D.onlyencodes", "OnlyEncodes"),
         "ORPHEUS": ("src.trackers.GAZELLE.orpheus", "Orpheus"),
@@ -1496,10 +1498,10 @@ tracker_class_map: Any = LazyTrackerDict(
         "PORTUGAS": ("src.trackers.UNIT3D.portugas", "Portugas"),
         "PRIVATEHD": ("src.trackers.AVISTAZ.privatehd", "PrivateHD"),
         "PTCAFE": ("src.trackers.NEXUSPHP.ptcafe", "PTCafe"),
-        "PTERCLUB": ("src.trackers.pterclub", "PTerClub"),
+        "PTERCLUB": ("src.trackers.NEXUSPHP.pterclub", "PTerClub"),
         "PTFANS": ("src.trackers.NEXUSPHP.ptfans", "PTFans"),
         "PTGTK": ("src.trackers.NEXUSPHP.ptgtk", "PTGTK"),
-        "PTSKIT": ("src.trackers.ptskit", "Ptskit"),
+        "PTSKIT": ("src.trackers.NEXUSPHP.ptskit", "Ptskit"),
         "PTZONE": ("src.trackers.NEXUSPHP.ptzone", "PTZone"),
         "RACING4EVERYONE": ("src.trackers.UNIT3D.racing4everyone", "Racing4Everyone"),
         "RAILGUNPT": ("src.trackers.NEXUSPHP.railgunpt", "RailgunPT"),
@@ -1530,6 +1532,26 @@ tracker_class_map: Any = LazyTrackerDict(
     }
 )
 tracker_registry = TrackerRegistry(tracker_class_map)
+
+
+def _tracker_framework_from_module(module_name: str) -> str | None:
+    """Return the framework directory for a registered tracker module."""
+    parts = module_name.split(".")
+    if len(parts) < 4 or parts[:2] != ["src", "trackers"]:
+        return None
+    return parts[2]
+
+
+# Keep framework classification derived from the tracker registry without
+# importing tracker modules (the registry is intentionally lazy).
+tracker_framework_map: dict[str, str] = {
+    tracker: framework for tracker, (module_name, _class_name) in tracker_class_map._modules.items() if (framework := _tracker_framework_from_module(module_name)) is not None
+}
+
+
+def get_tracker_framework(tracker: str) -> str | None:
+    """Return the codebase framework for a tracker, if it has one."""
+    return tracker_framework_map.get(tracker.upper())
 
 
 def get_tracker_comment_hosts(config: dict[str, Any]) -> dict[str, tuple[str, ...]]:

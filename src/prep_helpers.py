@@ -175,7 +175,9 @@ def init_meta(prep_instance: Any, meta: Meta, mode: str) -> tuple[bool, bool, Cl
     # Screenshot capture starts during prep, before the upload stage. Populate
     # the overlay setting here so that the early capture sees the configured
     # value instead of Meta's default.
-    meta.frame_overlay = default_config.get("frame_overlay", False)
+    from src.screenshot_overlays import overlays_active
+
+    meta.frame_overlay = overlays_active(default_config)
     meta.skip_auto_torrent = (
         meta.skip_auto_torrent or default_config.get("skip_auto_torrent", False) or (meta.personalrelease and default_config.get("skip_auto_torrent_personalrelease", False))
     )
@@ -568,7 +570,7 @@ async def process_media_files(prep_instance: Any, meta: Meta, videoloc: str, bdi
             videopath, filelist, search_term, search_file_folder = prep_instance._resolve_game_filelist(meta, videoloc)
             video = videopath
         else:
-            videopath, meta.filelist = await video_manager.get_video(videoloc, (meta.mode if meta.mode is not None else "non_cli"), meta.sorted_filelist)
+            videopath, meta.filelist = await video_manager.get_video(videoloc, meta.sorted_filelist)
             filelist = meta.filelist
             meta.filelist = filelist
             search_term = Path(filelist[0]).name if filelist else ""
@@ -1283,9 +1285,6 @@ async def finalize_metadata(
     if not meta.not_anime and meta.category == "TV":
         meta = await prep_instance.season_episode_manager.get_season_episode(video, meta)
 
-    if meta.category == "TV" and meta.tv_pack:
-        await prep_instance.season_episode_manager.check_season_pack_completeness(meta)
-
     # lets check for tv movies
     meta.tv_movie = False
     if meta.imdb_id != 0:
@@ -1352,6 +1351,10 @@ async def finalize_metadata(
 
         # all your episode data belongs to us
         meta = await prep_instance.metadata_searching_manager.get_tv_data(meta)
+
+        # Completeness needs the final TVDB ID from the metadata lookup above.
+        if meta.category == "TV" and meta.tv_pack:
+            await prep_instance.season_episode_manager.check_season_pack_completeness(meta)
 
         if meta.tvdb_imdb_id and not meta.no_imdb:
             imdb = meta.tvdb_imdb_id.replace("tt", "")

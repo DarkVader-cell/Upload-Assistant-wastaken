@@ -2065,6 +2065,8 @@ async def get_service(
         "Atresplayer": "A3P",
         "ATV": "ATV",
         "ATVP": "ATVP",
+        "aha": "AHA",
+        "AHA": "AHA",
         "AUBC": "AUBC",
         "BB": "BB",
         "BBC iPlayer": "iP",
@@ -2072,6 +2074,8 @@ async def get_service(
         "BELA": "BELA",
         "Belas Artes À La Carte": "BELA",
         "Bentkey": "BK",
+        "BMS": "BMS",
+        "BookMyShow": "BMS",
         "BILI": "BILI",
         "Bilibili": "BILI",
         "Binge": "BNGE",
@@ -2098,6 +2102,8 @@ async def get_service(
         "CBS": "CBS",
         "CC": "CC",
         "CCGC": "CCGC",
+        "CHTV": "CHTV",
+        "Chaupal": "CHTV",
         "Channel 4": "ALL4",
         "Channel 5": "MY5",
         "CHGD": "CHGD",
@@ -2338,6 +2344,7 @@ async def get_service(
         "LOOKE": "LOOKE",
         "Loving Nature": "LN",
         "MA": "MA",
+        "MMAX": "MMAX",
         "manoramaMAX": "MMAX",
         "Max": "MAX",
         "MAX": "MAX",
@@ -2347,7 +2354,6 @@ async def get_service(
         "MEGOGO": "MGG",
         "MGG": "MGG",
         "Microsoft Store": "MS",
-        "MMAX": "MMAX",
         "MNBC": "MNBC",
         "MONOMAX": "MX",
         "Motor Trend OnDemand": "MTOD",
@@ -2486,7 +2492,7 @@ async def get_service(
         "Sony Pictures Core": "BCORE",
         "Sony": "SONY",
         "SONY": "SONY",
-        "SonyLiv": "SLIV",
+        "SonyLIV": "SLIV",
         "SPIK": "SPIK",
         "Spike TV": "SPKE",
         "Spike": "SPIK",
@@ -2505,6 +2511,7 @@ async def get_service(
         "STRP": "STRP",
         "STZ": "STZ",
         "Sun NXT": "SNXT",
+        "SunNXT": "SNXT",
         "Sveriges Television": "SVT",
         "SVT": "SVT",
         "SwearNet": "SWER",
@@ -2541,6 +2548,8 @@ async def get_service(
         "TV3": "TV3",
         "TV4 Sweden": "TV4",
         "TV4": "TV4",
+        "TVF": "TVF",
+        "TVFPlay": "TVF",
         "TVING": "TVING",
         "TVL": "TVL",
         "TVLand": "TVL",
@@ -2660,9 +2669,15 @@ async def get_service(
     for key, value in services.items():
         if value == service and len(key) > len(service_longname):
             service_longname = key
-    # Keep the established compact brand spelling when local aliases include
-    # a spaced variant (for example, ``Jio Hotstar``).
-    service_longname = {"JHS": "JioHotstar"}.get(service, service_longname)
+    # Keep established brand spellings when local aliases include a spaced
+    # variant (for example, ``Jio Hotstar`` or ``Book My Show``).
+    service_longname = {
+        "BMS": "BookMyShow",
+        "CHTV": "Chaupal",
+        "JHS": "JioHotstar",
+        "MMAX": "manoramaMAX",
+        "TVF": "TVFPlay",
+    }.get(service, service_longname)
     if service_longname in ("Amazon Prime", "Amazon Prime Video"):
         service_longname = "Amazon"
     return service, service_longname

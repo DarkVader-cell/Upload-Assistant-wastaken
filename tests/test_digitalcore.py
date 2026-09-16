@@ -68,3 +68,20 @@ def test_dupe_search_uses_pending_aware_paginated_endpoint() -> None:
         {"limit": 100, "index": 0, "imdb": "tt1234567", "releaseName": "Movie.2026"},
         {"limit": 100, "index": 1, "imdb": "tt1234567", "releaseName": "Movie.2026"},
     ]
+
+
+def test_force_rehost_images_uses_digitalcore_sharex_without_changing_global_host():
+    config = {
+        "DEFAULT": {
+            "img_host_1": "ptscreens",
+            "sharex_url": "https://img.digitalcore.club/api/upload",
+            "sharex_api_key": "secret",
+        },
+        "TRACKERS": {"DIGITALCORE": {"api_key": "tracker-key", "force_rehost_images": True}},
+    }
+
+    tracker = DigitalCore(config)
+
+    assert tracker.image_host_policy.approved_image_hosts == ("sharex",)  # noqa: S101
+    assert tracker.rehost_images_manager.default_config["img_host_1"] == "sharex"  # noqa: S101
+    assert config["DEFAULT"]["img_host_1"] == "ptscreens"  # noqa: S101

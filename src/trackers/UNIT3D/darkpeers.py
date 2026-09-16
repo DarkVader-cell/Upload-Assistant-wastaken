@@ -14,6 +14,7 @@ from src.music.models import MusicRelease
 from src.music.validation import MusicValidator, ValidationLevel
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.tmdb import TmdbManager
+from src.trackers.naming import add_incomplete_pack_marker
 from src.trackers.UNIT3D import UNIT3D
 
 
@@ -452,7 +453,7 @@ class DarkPeers(UNIT3D):
         if audio and audio != "SKIPPED" and "Dual-Audio" in dp_name:
             dp_name = dp_name.replace("Dual-Audio", audio)
 
-        return {"name": dp_name}
+        return {"name": add_incomplete_pack_marker(dp_name, meta, self.tracker)}
 
     async def _tv_name(self, meta: Meta, name: str) -> str:
         title = str(meta.title or "").strip()

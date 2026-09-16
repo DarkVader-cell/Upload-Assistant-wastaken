@@ -8,6 +8,7 @@ from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
+from src.trackers.naming import add_incomplete_pack_marker
 from src.trackers.UNIT3D import UNIT3D
 
 Config = dict[str, Any]
@@ -322,4 +323,4 @@ class ULCX(UNIT3D):
         if meta.type == "WEBDL" and ("hybrid" in meta.edition.lower() or meta.webdv):
             ulcx_name = ulcx_name.replace("Hybrid ", "", 1)
 
-        return {"name": ulcx_name}
+        return {"name": add_incomplete_pack_marker(ulcx_name, meta, self.tracker)}

@@ -755,7 +755,7 @@ const argumentCategories = [
       {
         label: "--torrenthash",
         placeholder: "HASH",
-        description: "(qBitTorrent only) Get site id from Torrent hash",
+        description: "(qBittorrent only) Get site id from Torrent hash",
       },
     ],
   },
@@ -905,7 +905,7 @@ const argumentCategories = [
       {
         label: "--force-recheck",
         description:
-          "(qBitTorrent only) Force recheck the file in client before upload",
+          "(qBittorrent only) Force recheck the file in client before upload",
       },
     ],
   },
