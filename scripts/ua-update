@@ -66,7 +66,7 @@ update_whatbox_ssd() {
 
 update_whatbox_hdd() {
     : "${UA_WHATBOX_PASSWORD:?Set UA_WHATBOX_PASSWORD in ~/.config/upload-assistant/whatbox.env}"
-    update_whatbox_client "HDD" "$whatbox_hdd_host" "$whatbox_hdd_repo" "12345"
+    update_whatbox_client "HDD" "$whatbox_hdd_host" "$whatbox_hdd_repo" "12347"
 }
 
 update_whatbox() {

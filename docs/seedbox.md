@@ -94,8 +94,9 @@ podman compose -f docker-compose.local.yml up -d upload-assistant-wastaken
 podman logs --tail 100 upload-assistant-wastaken
 ```
 
-The WebUI is exposed on port `12345`, for example
-`http://destiny.whatbox.ca:12345` when the Whatbox firewall allows that port.
+The WebUI is exposed on port `12347` on Destiny (Whatbox reserves `12345`
+for Transmission), for example `http://destiny.whatbox.ca:12347` when the
+Whatbox firewall allows that port.
 The qBittorrent WebUI is available through the Whatbox-provided HTTPS link:
 `https://qbittorrent.destinyhdd.box.ca`.
 
@@ -111,7 +112,7 @@ Update to the latest published fork image without building on Whatbox:
 podman compose -f docker-compose.local.yml pull
 podman compose -f docker-compose.local.yml down
 podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken
-curl -fsS http://127.0.0.1:12345/api/health
+curl -fsS http://127.0.0.1:12347/api/health
 ```
 
 From the maintained checkout, the deployment wrapper updates the local
