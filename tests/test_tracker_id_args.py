@@ -3,7 +3,7 @@
 import pytest
 
 from src.args import Args
-from src.meta import Meta
+from src.meta import Meta, canonicalize_tracker_config
 
 
 def test_tracker_id_accepts_explicit_tracker_and_id():
@@ -78,6 +78,25 @@ def test_restored_tracker_ids_are_canonicalized():
     meta = Meta({"tracker_ids": {"bhd": "123"}})
 
     assert meta.tracker_ids == {"BEYONDHD": "123"}
+
+
+def test_legacy_tracker_config_keys_and_defaults_are_canonicalized():
+    config = {
+        "TRACKERS": {
+            "ANT": {"api_key": "ant-token"},
+            "DC": {"api_key": "dc-token"},
+            "default_trackers": "ANT, DC, ULCX",
+        }
+    }
+
+    normalized = canonicalize_tracker_config(config)
+
+    assert normalized["TRACKERS"] == {
+        "ANTHELION": {"api_key": "ant-token"},
+        "DIGITALCORE": {"api_key": "dc-token"},
+        "default_trackers": "ANTHELION, DIGITALCORE, ULCX",
+    }
+    assert config["TRACKERS"]["ANT"] == {"api_key": "ant-token"}
 
 
 def test_trackers_pass_parsed_as_int(tmp_path):

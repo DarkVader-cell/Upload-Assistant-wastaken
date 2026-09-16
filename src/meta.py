@@ -6,20 +6,133 @@ from typing import Any
 
 from src.app_paths import STATE_DIR
 
+# Legacy tracker IDs still appear in existing config.py files. Keep this
+# mapping in the runtime path as well as config-generator.py so old configs
+# work without requiring an interactive migration first.
 _TRACKER_ID_ALIASES = {
+    "AR": "ALPHARATIO",
+    "ASC": "AMIGOSSHARE",
     "ANT": "ANTHELION",
+    "AZ": "AVISTAZ",
     "BHD": "BEYONDHD",
     "BLU": "BLUTOPIA",
     "BTN": "BROADCASTHENET",
+    "CZ": "CINEMAZ",
+    "BHDTV": "BITHDTV",
+    "BJS": "BJSHARE",
+    "PHD": "PRIVATEHD",
+    "BT": "BRASILTRACKER",
+    "DC": "DIGITALCORE",
     "DVL": "DREADVAULT",
-    "BROADCASTHENET": "BROADCASTHENET",
+    "DS": "DRUNKENSLUG",
+    "EMUW": "EMUWAREZ",
+    "FL": "FILELIST",
+    "FF": "FUNFILE",
+    "GPW": "GREATPOSTERWALL",
     "HDB": "HDBITS",
-    "HUNO": "HAWKEUNO",
-    "OE": "ONLYENCODES",
+    "HDS": "HDSPACE",
+    "HDT": "HDTORRENTS",
+    "IS": "IMMORTALSEED",
+    "IPT": "IPTORRENTS",
+    "MKO": "MAKINGOFF",
+    "NBL": "NEBULANCE",
     "PTP": "PASSTHEPOPCORN",
     "RHD": "ROCKETHD",
     "FLD": "FLOOD",
+    "LPT": "LONGPT",
+    "PTER": "PTERCLUB",
+    "PTS": "PTSKIT",
+    "RPT": "RAILGUNPT",
+    "RTF": "RETROFLIX",
+    "RMC": "RETROMOVIESCLUB",
+    "SPD": "SPEEDAPP",
+    "SN": "SWARMAZON",
+    "TTG": "TOTHEGLORY",
+    "TL": "TORRENTLEECH",
+    "TVC": "TVCHAOSUK",
+    "ACM": "ASIANCINEMA",
+    "AITHER": "AITHER",
+    "CRP": "CURUPIRA",
+    "CBR": "CAPYBARABR",
+    "TIK": "CINEMATIK",
+    "DP": "DARKPEERS",
+    "HUNO": "HAWKEUNO",
+    "HHD": "HOMIEHELPDESK",
+    "IHD": "INFINITYHD",
+    "ITT": "ITATORRENTS",
+    "LT": "LATTEAM",
+    "LCD": "LOCADORA",
+    "LST": "LST",
+    "LUME": "LUMINARR",
+    "MS": "MIDNIGHTSCENE",
+    "OTW": "OLDTOONSWORLD",
+    "OE": "ONLYENCODES",
+    "PTT": "POLISHTORRENT",
+    "PT": "PORTUGAS",
+    "R4E": "RACING4EVERYONE",
+    "RAS": "RASTASTUGAN",
+    "RF": "REELFLIX",
+    "SAM": "SAMARITANO",
+    "SP": "SEEDPOOL",
+    "SHRI": "SHAREISLAND",
+    "STC": "SKIPTHECOMMERCIALS",
+    "LDU": "LASTDIGITALUNDERGROUND",
+    "TOS": "THEOLDSCHOOL",
+    "TLZ": "THELEACHZONE",
+    "DT": "DESITORRENTS",
+    "TTR": "TORRENTEROS",
+    "ULCX": "ULCX",
+    "UTP": "UTOPIA",
+    "YUS": "YUSCENE",
+    "ZNTH": "ZENITH",
+    "SUIO": "SUIO",
+    "BROADCASTHENET": "BROADCASTHENET",
+    "HDBITS": "HDBITS",
+    "HAWKEUNO": "HAWKEUNO",
+    "ONLYENCODES": "ONLYENCODES",
+    "PASSTHEPOPCORN": "PASSTHEPOPCORN",
+    "ROCKETHD": "ROCKETHD",
 }
+
+
+def canonicalize_tracker_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return a config view with legacy tracker keys under canonical names.
+
+    Existing config files are user-owned and are not rewritten. Canonical keys
+    win when both a legacy alias and canonical key are present.
+    """
+    trackers = config.get("TRACKERS")
+    if not isinstance(trackers, dict):
+        return config
+
+    aliases: dict[str, Any] = {}
+    canonical: dict[str, Any] = {}
+    for raw_name, value in trackers.items():
+        name = str(raw_name)
+        if name.lower() == "default_trackers":
+            target = "default_trackers"
+            canonical[target] = value
+            continue
+        target = _TRACKER_ID_ALIASES.get(name.upper(), name.upper())
+        destination = canonical if target == name.upper() else aliases
+        destination[target] = dict(value) if isinstance(value, dict) else value
+
+    normalized_trackers = {**aliases, **canonical}
+    default_trackers = normalized_trackers.get("default_trackers")
+    if isinstance(default_trackers, str):
+        normalized_trackers["default_trackers"] = ", ".join(
+            Meta.canonical_tracker_name(part.strip())
+            for part in default_trackers.split(",")
+            if part.strip()
+        )
+    elif isinstance(default_trackers, list):
+        normalized_trackers["default_trackers"] = [
+            Meta.canonical_tracker_name(str(part).strip())
+            for part in default_trackers
+            if str(part).strip()
+        ]
+
+    return {**config, "TRACKERS": normalized_trackers}
 
 
 @dataclass(init=False)

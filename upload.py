@@ -256,7 +256,7 @@ if _is_webui_arg and not Path(_config_path).exists():
             logger.info("Continuing without config file...", extra={"markup": False})
 
 from src.book_prep import sanitize_book_author, sanitize_book_language
-from src.meta import Meta
+from src.meta import Meta, canonicalize_tracker_config
 from src.post_upload_hooks import run_post_upload_hooks
 from src.prep import Prep
 
@@ -301,7 +301,7 @@ if Path(_config_path).exists():
     try:
         from data.config import config as _imported_config  # pyright: ignore[reportMissingImports,reportUnknownVariableType]
 
-        config = cast(dict[str, Any], _imported_config)
+        config = canonicalize_tracker_config(cast(dict[str, Any], _imported_config))
         parser: Any = Args(config)
         client = Clients(config)
         name_manager = NameManager(config)

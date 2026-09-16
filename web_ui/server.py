@@ -53,7 +53,7 @@ from web_ui.services.history_api import create_history_api_blueprint
 from web_ui.services.presets import load_argument_presets, save_argument_presets
 from web_ui.services.qui_sync import QuiEventBroker, create_qui_sync_blueprint, progress_from_log_line
 from web_ui.services.runtime_api import create_runtime_api_blueprint
-from src.meta import Meta
+from src.meta import Meta, canonicalize_tracker_config
 from src.version import __version__
 from src.update_checker import get_changelog_history, get_update_status
 
@@ -5035,7 +5035,8 @@ def _configured_tracker_names(
     configured: set[str] = set()
     cookie_tracker_names = {str(name).upper() for name in (cookie_trackers or set())}
 
-    tracker_configs = {str(name).upper(): value for name, value in trackers_section.items() if isinstance(value, Mapping)}
+    normalized_section = canonicalize_tracker_config({"TRACKERS": dict(trackers_section)}).get("TRACKERS", {})
+    tracker_configs = {str(name).upper(): value for name, value in normalized_section.items() if isinstance(value, Mapping)}
     example_configs = {str(name).upper(): value for name, value in example_trackers.items() if isinstance(value, Mapping)}
 
     # Older configurations stored the BroadcasTheNet API key in DEFAULT.
@@ -5280,7 +5281,7 @@ def get_trackers():
 
     base_dir = STATE_DIR
     config_path = base_dir / "data" / "config.py"
-    user_config = _load_config_from_file(config_path) or {}
+    user_config = canonicalize_tracker_config(_load_config_from_file(config_path) or {})
 
     # Load tracker_class_map from src.trackersetup
     try:
@@ -5313,6 +5314,7 @@ def get_trackers():
 
     trackers_section_raw = user_config.get("TRACKERS", {})
     trackers_section = cast(dict[str, Any], trackers_section_raw) if isinstance(trackers_section_raw, Mapping) else {}
+    trackers_section = cast(dict[str, Any], canonicalize_tracker_config({"TRACKERS": trackers_section}).get("TRACKERS", {}))
     default_trackers_val = trackers_section.get("default_trackers", "")
     default_trackers_list = []
     if isinstance(default_trackers_val, str):

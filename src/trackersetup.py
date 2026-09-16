@@ -18,7 +18,7 @@ from src.api_key_expiry import observe_tracker_response, warn_api_key_expiry
 from src.cleanup import cleanup_manager
 from src.console import logger
 from src.extensions import load_extensions
-from src.meta import Meta
+from src.meta import Meta, canonicalize_tracker_config
 from src.trackers.adapter import TrackerRegistry
 from src.trackers.common import Common
 
@@ -168,9 +168,11 @@ example_config: dict[str, Any]
 
 class TrackerSetup:
     def __init__(self, config: dict[str, Any]):
-        self.config: dict[str, Any] = config
+        # Keep legacy tracker acronyms usable at runtime without rewriting the
+        # user's config.py. Tracker classes consistently consume canonical IDs.
+        self.config: dict[str, Any] = canonicalize_tracker_config(config)
         project_root = Path(__file__).resolve().parent.parent
-        extensions = load_extensions(project_root, config)
+        extensions = load_extensions(project_root, self.config)
         self.registry = TrackerRegistry(tracker_class_map, extensions.trackers)
 
     def _create_tracker_instance(self, tracker: str) -> Any | None:

@@ -35,6 +35,16 @@ def test_tracker_supported_categories_are_normalized_and_deduplicated() -> None:
     assert server._tracker_supported_categories(Tracker) == ["TV", "MOVIE", "BOOK"]
 
 
+def test_configured_trackers_accept_legacy_tracker_aliases() -> None:
+    configured = server._configured_tracker_names(
+        {"ANT": {"api_key": "configured-key"}, "DC": {"api_key": "configured-key"}},
+        {"ANTHELION": {"api_key": ""}, "DIGITALCORE": {"api_key": ""}},
+        {"ANTHELION": object(), "DIGITALCORE": object()},
+    )
+
+    assert configured == {"ANTHELION", "DIGITALCORE"}
+
+
 def test_configured_trackers_require_complete_setup_independently_of_defaults() -> None:
     trackers_section = {
         "default_trackers": "AITHER",
