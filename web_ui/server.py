@@ -5976,7 +5976,15 @@ def config_update():
     elif is_optional_arr_field:
         example_value = ""
     elif example_value is None:
-        return jsonify({"success": False, "error": "Path not found in example config"}), 400
+        # User configs can legitimately contain settings that were removed from
+        # or are absent in the bundled example. Use the existing value as the
+        # type template so those settings remain editable instead of failing
+        # with a misleading "Path not found" error.
+        user_config_for_value = _load_config_from_file(config_path) or {}
+        user_value = _get_nested_value(user_config_for_value, path)
+        if user_value is None:
+            return jsonify({"success": False, "error": "Path not found in example config"}), 400
+        example_value = user_value
 
     coerced_value = _coerce_config_value(raw_value, example_value)
     overlay_choices = {"overlay_position": {"left", "right"}, "overlay_layout": {"stacked", "single_line"}}

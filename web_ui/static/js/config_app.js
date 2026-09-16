@@ -7813,6 +7813,8 @@ function ItemList({
     pathParts[0] === "DEFAULT" &&
     regularItems.some((item) => item.key === "tone_map") &&
     regularItems.some((item) => item.key === "overlay_frame_number");
+  const otherGroupKey = [...pathParts, "OTHER"].join("/");
+  const isOtherOpen = expandedGroups.has(otherGroupKey);
 
   // Partition regularItems into subgroups and an "Other" bucket
   const grouped = {};
@@ -7964,26 +7966,63 @@ function ItemList({
         <div className="space-y-4">
           {/* Ungrouped items */}
           {ungrouped.length > 0 && (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-              {ungrouped.map((item) => {
-                const leafPath = [...pathParts, item.key].join("/");
-                return (
-                  <ConfigLeaf
-                    key={leafPath}
-                    item={item}
-                    pathParts={pathParts}
-                    depth={depth}
-                    isDarkMode={isDarkMode}
-                    fullWidth={fullWidth}
-                    allImageHosts={allImageHosts}
-                    usedImageHosts={usedImageHosts}
-                    torrentClients={torrentClients}
-                    externalToolStatus={externalToolStatuses?.[item.key]}
-                    onValueChange={onValueChange}
-                  />
-                );
-              })}
-            </div>
+            <section
+              className="ua-config-accordion overflow-hidden rounded-xl border"
+              data-open={isOtherOpen ? "true" : "false"}
+            >
+              <button
+                type="button"
+                onClick={() => toggleGroup(otherGroupKey)}
+                className="ua-config-accordion-trigger flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm font-semibold"
+                aria-expanded={isOtherOpen}
+              >
+                <span>Other</span>
+                <span
+                  className="ua-config-accordion-chevron text-lg transition-transform"
+                  style={{
+                    transform: isOtherOpen ? "rotate(90deg)" : "rotate(0deg)",
+                  }}
+                  aria-hidden="true"
+                >
+                  <svg
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="m9 18 6-6-6-6"></path>
+                  </svg>
+                </span>
+              </button>
+              {isOtherOpen && (
+                <div className="ua-config-accordion-panel border-t p-4">
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+                    {ungrouped.map((item) => {
+                      const leafPath = [...pathParts, item.key].join("/");
+                      return (
+                        <ConfigLeaf
+                          key={leafPath}
+                          item={item}
+                          pathParts={pathParts}
+                          depth={depth}
+                          isDarkMode={isDarkMode}
+                          fullWidth={fullWidth}
+                          allImageHosts={allImageHosts}
+                          usedImageHosts={usedImageHosts}
+                          torrentClients={torrentClients}
+                          externalToolStatus={externalToolStatuses?.[item.key]}
+                          onValueChange={onValueChange}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </section>
           )}
 
           {/* Grouped subheaders */}

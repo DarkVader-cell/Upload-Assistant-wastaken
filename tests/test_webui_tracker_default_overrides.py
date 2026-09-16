@@ -81,6 +81,16 @@ def test_existing_override_missing_from_tracker_template_remains_editable(tracke
     assert server._load_config_from_file(config_path) == original
 
 
+def test_user_only_setting_is_editable_without_example_config_entry(tracker_config):
+    config_path, _, original = tracker_config
+    original["DEFAULT"]["legacy_setting"] = "old value"
+    config_path.write_text(f"config = {original!r}\n", encoding="utf-8")
+
+    assert update(["DEFAULT", "legacy_setting"], "new value")[1] == 200
+    saved = server._load_config_from_file(config_path)
+    assert saved["DEFAULT"]["legacy_setting"] == "new value"
+
+
 @pytest.mark.parametrize("path", [["TRACKERS", "UNKNOWN", "add_logo"], ["TRACKERS", "AITHER", "unknown_key"]])
 def test_unknown_override_paths_do_not_modify_config(tracker_config, path):
     config_path, _, _ = tracker_config
