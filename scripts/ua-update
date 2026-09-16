@@ -15,9 +15,12 @@ fi
 repo_dir="${UA_REPO_DIR:-/home/artemis/Upload-Assistant-wastaken}"
 compose_file="${UA_COMPOSE_FILE:-/opt/yams/docker-compose.yaml}"
 env_file="${UA_COMPOSE_ENV:-/opt/yams/.env}"
-whatbox_host="${UA_WHATBOX_HOST:-grape.whatbox.ca}"
 whatbox_user="${UA_WHATBOX_USER:-artemisprime}"
-whatbox_repo="${UA_WHATBOX_REPO:-Upload-Assistant-wastaken}"
+whatbox_ssd_host="${UA_WHATBOX_SSD_HOST:-clementine.whatbox.ca}"
+whatbox_hdd_host="${UA_WHATBOX_HDD_HOST:-destiny.whatbox.ca}"
+whatbox_ssd_repo="${UA_WHATBOX_SSD_REPO:-/mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken}"
+whatbox_hdd_repo="${UA_WHATBOX_HDD_REPO:-/home/artemisprime/Upload-Assistant-wastaken}"
+whatbox_image="${UA_WHATBOX_IMAGE:-ghcr.io/darkvader-cell/upload-assistant-wastaken:latest}"
 
 update_local() {
     echo "Updating local homelab..."
@@ -29,28 +32,67 @@ update_local() {
     docker compose --env-file "$env_file" -f "$compose_file" ps upload-assistant
 }
 
-update_whatbox() {
-    : "${UA_WHATBOX_PASSWORD:?Set UA_WHATBOX_PASSWORD in ~/.config/upload-assistant/whatbox.env}"
-    echo "Updating Whatbox..."
+update_whatbox_client() {
+    local label="$1"
+    local host="$2"
+    local repo="$3"
+    local port="$4"
+
+    echo "Updating Whatbox ${label} client..."
     export SSHPASS="$UA_WHATBOX_PASSWORD"
-    sshpass -e ssh -o PubkeyAuthentication=no -o PreferredAuthentications=password \
-        -o StrictHostKeyChecking=yes "$whatbox_user@$whatbox_host" \
-        "cd ~/$whatbox_repo && podman pull ghcr.io/darkvader-cell/upload-assistant-wastaken:latest && podman tag ghcr.io/darkvader-cell/upload-assistant-wastaken:latest localhost/upload-assistant-wastaken:local && podman rm -f upload-assistant-wastaken 2>/dev/null || true; podman pod rm -f upload-assistant-wastaken 2>/dev/null || true; cd ~/$whatbox_repo && podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken && podman ps --filter name=upload-assistant-wastaken --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'"
+    sshpass -e ssh -4 -o PubkeyAuthentication=no -o PreferredAuthentications=password \
+        -o StrictHostKeyChecking=yes -o ConnectTimeout=20 "$whatbox_user@$host" \
+        "set -eu
+         cd '$repo'
+         podman pull '$whatbox_image'
+         podman rm -f upload-assistant-wastaken 2>/dev/null || true
+         podman pod rm -f upload-assistant-wastaken 2>/dev/null || true
+         podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken
+         podman ps --filter name=upload-assistant-wastaken --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'
+         code=''
+         for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+             code=\"\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 http://127.0.0.1:$port/api/health || true)\"
+             case \"\$code\" in 2??|3??|4??) echo \"health=\$code\"; exit 0;; esac
+             sleep 2
+         done
+         echo \"health check failed (last status: \$code)\" >&2
+         exit 1"
+}
+
+update_whatbox_ssd() {
+    : "${UA_WHATBOX_PASSWORD:?Set UA_WHATBOX_PASSWORD in ~/.config/upload-assistant/whatbox.env}"
+    update_whatbox_client "SSD" "$whatbox_ssd_host" "$whatbox_ssd_repo" "12346"
+}
+
+update_whatbox_hdd() {
+    : "${UA_WHATBOX_PASSWORD:?Set UA_WHATBOX_PASSWORD in ~/.config/upload-assistant/whatbox.env}"
+    update_whatbox_client "HDD" "$whatbox_hdd_host" "$whatbox_hdd_repo" "12345"
+}
+
+update_whatbox() {
+    update_whatbox_ssd
+    update_whatbox_hdd
 }
 
 case "${1:-}" in
     local)
         update_local
         ;;
-    whatbox)
+    whatbox|whatbox-all)
         update_whatbox
+        ;;
+    whatbox-ssd)
+        update_whatbox_ssd
+        ;;
+    whatbox-hdd)
+        update_whatbox_hdd
         ;;
     "")
         update_local
         update_whatbox
         ;;
     *)
-        echo "Usage: ua update [local|whatbox]" >&2
+        echo "Usage: ua update [local|whatbox|whatbox-ssd|whatbox-hdd]" >&2
         exit 2
         ;;
 esac

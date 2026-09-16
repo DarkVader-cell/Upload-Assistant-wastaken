@@ -114,17 +114,20 @@ podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-was
 curl -fsS http://127.0.0.1:12345/api/health
 ```
 
-From the maintained checkout, the deployment wrapper updates both the local
-homelab client and Destiny/Whatbox in sequence:
+From the maintained checkout, the deployment wrapper updates the local
+homelab client, the Clementine SSD client, and the Destiny HDD client in
+sequence:
 
 ```bash
 ./scripts/ua-update
 ```
 
-Use `./scripts/ua-update local` or `./scripts/ua-update whatbox` for one
-client only. The wrapper pulls the published image, recreates only the UA
-service, and checks the container status; it does not touch persistent
-`docker-data/` state. Whatbox credentials are read from the local
+Use `./scripts/ua-update local`, `./scripts/ua-update whatbox-ssd`, or
+`./scripts/ua-update whatbox-hdd` for one client only. The `whatbox` alias
+updates both Whatbox clients. The wrapper pulls the published image, removes
+only the named UA container/pod, recreates the UA service without building on
+the seedboxes, and waits for the WebUI health endpoint; it does not touch
+persistent `docker-data/` state. Whatbox credentials are read from the local
 `whatbox.env` file and are never committed.
 
 Apply the same update to the Clementine client from its own checkout; its
