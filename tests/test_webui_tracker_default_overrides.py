@@ -8,7 +8,7 @@ import web_ui.server as server
 @pytest.fixture
 def tracker_config(tmp_path: Path, monkeypatch):
     example = {
-        "DEFAULT": {"add_logo": True, "multiScreens": 4, "custom_signature": "Default text"},
+        "DEFAULT": {"add_logo": True, "multiScreens": 4, "custom_signature": "Default text", "nullable_setting": None},
         "TRACKERS": {"AITHER": {"api_key": "", "add_logo": True, "multiScreens": 2, "custom_signature": ""}},
     }
     user = {
@@ -89,6 +89,13 @@ def test_user_only_setting_is_editable_without_example_config_entry(tracker_conf
     assert update(["DEFAULT", "legacy_setting"], "new value")[1] == 200
     saved = server._load_config_from_file(config_path)
     assert saved["DEFAULT"]["legacy_setting"] == "new value"
+
+
+def test_example_setting_with_none_value_is_editable(tracker_config):
+    config_path, _, _ = tracker_config
+
+    assert update(["DEFAULT", "nullable_setting"], 20)[1] == 200
+    assert server._load_config_from_file(config_path)["DEFAULT"]["nullable_setting"] == 20
 
 
 @pytest.mark.parametrize("path", [["TRACKERS", "UNKNOWN", "add_logo"], ["TRACKERS", "AITHER", "unknown_key"]])

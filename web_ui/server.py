@@ -3249,6 +3249,19 @@ def _get_nested_value(data: Any, path: list[str]) -> Any:
     return current
 
 
+def _nested_path_exists(data: Any, path: list[str]) -> bool:
+    """Return whether a nested path exists, including paths whose value is None."""
+    current: Any = data
+    for key in path:
+        if not isinstance(current, dict):
+            return False
+        current_dict = _as_dict(current)
+        if current_dict is None or key not in current_dict:
+            return False
+        current = current_dict[key]
+    return True
+
+
 def _coerce_config_value(raw: Any, example_value: Any) -> Any:
     if isinstance(example_value, bool):
         if isinstance(raw, bool):
@@ -5975,16 +5988,16 @@ def config_update():
         example_value = []  # Default to empty list
     elif is_optional_arr_field:
         example_value = ""
-    elif example_value is None:
+    elif example_value is None and not _nested_path_exists(example_config, path):
         # User configs can legitimately contain settings that were removed from
         # or are absent in the bundled example. Use the existing value as the
         # type template so those settings remain editable instead of failing
-        # with a misleading "Path not found" error.
+        # with a misleading "Path not found" error. A present example value of
+        # None is also valid (for example, dupe_size_difference_tolerance).
         user_config_for_value = _load_config_from_file(config_path) or {}
-        user_value = _get_nested_value(user_config_for_value, path)
-        if user_value is None:
+        if not _nested_path_exists(user_config_for_value, path):
             return jsonify({"success": False, "error": "Path not found in example config"}), 400
-        example_value = user_value
+        example_value = _get_nested_value(user_config_for_value, path)
 
     coerced_value = _coerce_config_value(raw_value, example_value)
     overlay_choices = {"overlay_position": {"left", "right"}, "overlay_layout": {"stacked", "single_line"}}
