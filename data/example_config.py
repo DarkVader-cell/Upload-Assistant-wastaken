@@ -354,7 +354,7 @@ config: dict[str, Any] = {
         "overlay_tonemapped": False,
         # --- DISC MENU SCREENSHOTS ---
         # Set to True to capture DVD menu screenshots from menu VOBs.
-        "auto_dvd_menus": True,
+        "auto_dvd_menus": False,
         # Maximum number of disc menu screenshots to upload.
         "max_menu_screens": "6",
         # --- XXX CONTACT SHEETS ---
@@ -374,7 +374,7 @@ config: dict[str, Any] = {
         # See detailed documentation on how these settings affect description building:
         # https://github.com/wastaken7/Upload-Assistant/blob/development/docs/description-builder.md
         # Add a TMDB show or movie logo to the top of the description.
-        "add_logo": True,
+        "add_logo": False,
         # Logo width in pixels.
         "logo_size": "300",
         # Preferred logo language (ISO 639-1). Defaults to English ("en").
@@ -397,7 +397,7 @@ config: dict[str, Any] = {
         # Number of screenshots to use for each disc or episode in packs on supported sites.
         # Set to 0 to use only the original description and images for later items.
         # PassThePopcorn always uses at least 2 images per item, regardless of this value.
-        "multiScreens": "2",
+        "multiScreens": "0",
         # The following pack settings do not affect PassThePopcorn, which uses a fixed format.
         # Screenshot thumbnail width for pack descriptions. Default: 300.
         "pack_thumb_size": "300",
@@ -426,15 +426,15 @@ config: dict[str, Any] = {
         "hide_screenshot_header_if_only_section": True,
         # Header added above screenshots after HDR tone mapping.
         # Can be overridden per tracker by adding the same setting to its configuration.
-        "tonemapped_header": "[center]Screenshots have been adapted for SDR viewing, for reference only.[/center]",
+        "tonemapped_header": "",
         # Applicable only to raw discs (Blu-ray/DVD).
         # Header added above disc menu screenshots where supported.
         # Can be overridden per tracker by adding the same setting to its configuration.
-        "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
+        "disc_menu_header": "",
         # Header added above audio spectrograms.
-        "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
+        "audio_spectrogram_header": "",
         # Header added above Dolby Vision and HDR10+ metadata plots.
-        "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
+        "dynamic_hdr_plot_header": "",
         # Custom signature added to the bottom of the description.
         # Can be overridden per tracker by adding the same setting to its configuration.
         "custom_signature": "",
@@ -472,10 +472,10 @@ config: dict[str, Any] = {
         "bluray_single_score": 89.5,
         # Set to True to add a Blu-ray.com link to the description.
         # Requires "get_bluray_info" to be set to True.
-        "add_bluray_link": True,
+        "add_bluray_link": False,
         # Set to True to add available Blu-ray.com cover, back, and slip images.
         # Requires "get_bluray_info" to be set to True.
-        "use_bluray_images": True,
+        "use_bluray_images": False,
         # Width of Blu-ray.com cover images in pixels. BBCode limits image width, and
         # covers are usually taller than screenshots, so a smaller value is preferable.
         "bluray_image_size": "250",
@@ -596,31 +596,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://1ptba.com/ to data/cookies/1PTBA.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "mediainfo_header": "",
-            "audio_spectrogram_header": "",
-            "custom_signature": "",
-            "user_description": "",
-            "custom_header": "",
-            "custom_footer": "",
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "AITHER": {
             "cli_alias": "ATH",
@@ -629,7 +605,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -651,28 +626,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ALPHARATIO": {
             "cli_alias": "AR",
@@ -682,7 +635,6 @@ config: dict[str, Any] = {
             "username": "",
             "password": "",
             "announce_url": "",
-            "inject_delay": 0,
         },
         "ANTHELION": {
             "cli_alias": "ANT",
@@ -690,30 +642,9 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             "api_key": "",
             "announce_url": "",
-            "anon": True,
             # Number of upload retry attempts for network/server errors (e.g. 500, timeouts).
             "max_retries": 5,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ASIANCINEMA": {
             "cli_alias": "ACM",
@@ -722,7 +653,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -733,28 +663,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "AVISTAZ": {
             "cli_alias": "AZ",
@@ -763,23 +671,12 @@ config: dict[str, Any] = {
             # Cookies required (export from https://avistaz.to to data/cookies/AVISTAZ.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # If True, the script performs a basic rules compliance check (e.g., codecs, region).
             # This does not cover all tracker rules. Set to False to disable.
             "check_for_rules": True,
             # AvistaZ does not allow frame overlays; use cached non-overlay images or recapture them.
             "image_tag_blacklist": ["overlay"],
             # The configurations below override the DEFAULT configuration
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "custom_description_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_audio_spectrogram": True,
-            "add_dynamic_hdr_plot": True,
-            "inject_delay": 0,
         },
         "BEYONDHD": {
             "cli_alias": "BHD",
@@ -792,29 +689,7 @@ config: dict[str, Any] = {
             "announce_url": "",
             # Send uploads to BeyondHD drafts
             "draft_default": False,
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "BITHDTV": {
             "cli_alias": "BHDTV",
@@ -825,15 +700,12 @@ config: dict[str, Any] = {
             "announce_url": "https://trackerr.bit-hdtv.com/announce",
             # passkey found under https://www.bit-hdtv.com/my.php
             "my_announce_url": "https://trackerr.bit-hdtv.com/passkey/announce",
-            "anon": True,
-            "inject_delay": 0,
         },
         "BITPORN": {
             "cli_alias": "BP",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -844,28 +716,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "BJSHARE": {
             "cli_alias": "BJS",
@@ -875,32 +725,11 @@ config: dict[str, Any] = {
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             # Two-factor authentication (2FA) must be enabled in your profile settings; otherwise, your session cookies will expire fairly quickly.
             "announce_url": "",
-            "anon": True,
             # Set to False if during an anonymous upload you want your release group to be hidden
             "show_group_if_anon": True,
             # Set this to True if you want to allow external subtitles to be included in the upload
             "allow_ext_subtitles": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[align=center]As capturas de tela foram adaptadas para visualização em SDR, apenas para referência.[/align]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "disc_menu_header": "[size=3][b][align=center]Capturas de Tela do Menu do Disco[/align][/b][/size]",
-            "audio_spectrogram_header": "[size=3][b][align=center]Espectrogramas de Áudio[/align][/b][/size]",
-            "dynamic_hdr_plot_header": "[size=3][b][align=center]Metadados HDR Dinâmicos[/align][/b][/size]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "BLUTOPIA": {
             "cli_alias": "BLU",
@@ -909,7 +738,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -922,28 +750,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "BRASILTRACKER": {
             "cli_alias": "BT",
@@ -951,26 +757,9 @@ config: dict[str, Any] = {
             # Cookies required (export from https://brasiltracker.org/ to data/cookies/BRASILTRACKER.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # Set this to True if you want to allow external subtitles to be included in the upload
             "allow_ext_subtitles": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[align=center]As capturas de tela foram adaptadas para visualização em SDR, apenas para referência.[/align]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "inject_delay": 0,
         },
         "BROADCASTHENET": {
             "cli_alias": "BTN",
@@ -983,7 +772,6 @@ config: dict[str, Any] = {
             "announce_url": "",
             # Optional override for BTN's JSON-RPC endpoint.
             "api_url": "https://api.broadcasthe.net/",
-            "inject_delay": 0,
         },
         "CAPYBARABR": {
             "cli_alias": "CBR",
@@ -992,7 +780,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # BiOMA Zipline API key/token for rehosting screenshots when uploading releases with tag 'BiOMA' (Host: https://img.thebioma.space/)
             "bioma_api_key": "",
             # Send uploads to the moderation queue for staff review and approval
@@ -1009,35 +796,12 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]As capturas de tela foram adaptadas para visualização em SDR, apenas para referência.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Capturas de Tela[/h2]",
-            "disc_menu_header": "[h2]Capturas de Tela do Menu do Disco[/h2]",
-            "audio_spectrogram_header": "[h2]Espectrogramas de Áudio[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Metadados HDR Dinâmicos[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "CATHODERAYTUBE": {
             "cli_alias": "CRT",
             # Cookies required (export from https://www.cathode-ray.tube/ to data/cookies/CATHODERAYTUBE.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
         },
         "CINEMATIK": {
             "cli_alias": "TIK",
@@ -1046,7 +810,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1057,28 +820,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "CINEMAZ": {
             "cli_alias": "CZ",
@@ -1087,23 +828,12 @@ config: dict[str, Any] = {
             # Cookies required (export from https://cinemaz.to to data/cookies/CINEMAZ.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # If True, the script performs a basic rules compliance check (e.g., codecs, region).
             # This does not cover all tracker rules. Set to False to disable.
             "check_for_rules": True,
             # CinemaZ does not allow frame overlays.
             "image_tag_blacklist": ["overlay"],
             # The configurations below override the DEFAULT configuration
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "custom_description_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_audio_spectrogram": True,
-            "add_dynamic_hdr_plot": True,
-            "inject_delay": 0,
         },
         "CURUPIRA": {
             "cli_alias": "CRP",
@@ -1111,10 +841,8 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             # Your API Key, obtained from Perfil -> API Key
             "api_key": "",
-            "anon": True,
             # Only block uploads when the existing release exactly matches files.
             "exact_match_only": False,
-            "inject_delay": 0,
         },
         "DARKPEERS": {
             "cli_alias": "DP",
@@ -1123,7 +851,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -1136,29 +863,7 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
             # Audio spectrograms will only be added for music uploads, as requested by the tracker staff.
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "DESITORRENTS": {
             "cli_alias": "DT",
@@ -1167,7 +872,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1178,28 +882,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "DIGITALCORE": {
             "cli_alias": "DC",
@@ -1207,33 +889,11 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             # You can find your api key at Settings -> Security -> API Key -> Generate API Key
             "api_key": "",
-            "anon": True,
             # Force DigitalCore uploads to re-host screenshots on img.digitalcore.club using DEFAULT.sharex_api_key.
             "force_rehost_images": False,
             # If True, the script will use the metadata-based title instead of the directory/file name.
             "use_metadata_name": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "DREADVAULT": {
             "cli_alias": "DVL",
@@ -1242,7 +902,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Only block uploads when the existing release exactly matches files and size.
             "exact_match_only": True,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -1255,28 +914,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "DRUNKENSLUG": {
             "cli_alias": "DS",
@@ -1289,7 +926,6 @@ config: dict[str, Any] = {
             "daily_api_hit_limit": 0,
             # Only block uploads when the existing release exactly matches files.
             "exact_match_only": False,
-            "inject_delay": 0,
         },
         "EMUWAREZ": {
             "cli_alias": "EMUW",
@@ -1298,7 +934,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Use Spanish title instead of English title, if available
             "use_spanish_title": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -1311,28 +946,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "FILELIST": {
             "cli_alias": "FL",
@@ -1341,8 +954,6 @@ config: dict[str, Any] = {
             "username": "",
             "passkey": "",
             "uploader_name": "https://filelist.io/Custom_Announce_URL",
-            "anon": True,
-            "inject_delay": 0,
         },
         "FLOOD": {
             "cli_alias": "FLD",
@@ -1350,7 +961,6 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             "api_key": "",
             "announce_url": "https://flood.st/announce/Custom_Announce_URL",
-            "anon": False,
         },
         "FUNFILE": {
             "cli_alias": "FF",
@@ -1365,26 +975,6 @@ config: dict[str, Any] = {
             # Set to True if you want to include the full MediaInfo in your upload description or False to include only the most relevant parts.
             "full_mediainfo": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "GREATPOSTERWALL": {
             "cli_alias": "GPW",
@@ -1398,26 +988,6 @@ config: dict[str, Any] = {
             # Upload with Exclusive flag
             "exclusive": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "HAWKEUNO": {
             "cli_alias": "HUNO",
@@ -1427,7 +997,6 @@ config: dict[str, Any] = {
             "api_key": "",
             # You can find your announce URL at https://hawke.uno/upload
             "announce_url": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1438,28 +1007,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "HDBITS": {
             "cli_alias": "HDB",
@@ -1474,7 +1021,6 @@ config: dict[str, Any] = {
             "passkey": "",
             "announce_url": "",
             "img_rehost": True,
-            "inject_delay": 0,
         },
         "HDSPACE": {
             "cli_alias": "HDS",
@@ -1483,30 +1029,9 @@ config: dict[str, Any] = {
             # Cookies required (export from https://hd-space.org/ to data/cookies/HDSPACE.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # Set to True if you want to include the full MediaInfo in your upload description or False to include only the most relevant parts.
             "full_mediainfo": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "HDTORRENTS": {
             "cli_alias": "HDT",
@@ -1522,38 +1047,16 @@ config: dict[str, Any] = {
             #   - https://hd-torrents.me/
             #   - https://hdts.ru/
             "url": "https://hd-torrents.me/",
-            "anon": True,
             "announce_url": "",
             # Set to True if you want to include the full MediaInfo in your upload description or False to include only the most relevant parts.
             "full_mediainfo": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "HOMIEHELPDESK": {
             "cli_alias": "HHD",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1564,28 +1067,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "IMMORTALSEED": {
             "cli_alias": "IS",
@@ -1594,31 +1075,9 @@ config: dict[str, Any] = {
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
             "announce_url": "",
-            "anon": True,
             # Set to True if you want to include the full MediaInfo in your upload description or False to include only the most relevant parts.
             "full_mediainfo": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "INFINITYHD": {
             "cli_alias": "IHD",
@@ -1627,7 +1086,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1638,28 +1096,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "IPTORRENTS": {
             "cli_alias": "IPT",
@@ -1674,29 +1110,7 @@ config: dict[str, Any] = {
             "force_data": False,
             # Set to True if you want to include the full MediaInfo in your upload description or False to include only the most relevant parts.
             "full_mediainfo": False,
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ITATORRENTS": {
             "cli_alias": "ITT",
@@ -1705,7 +1119,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1716,28 +1129,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LAJIDUI": {
             "cli_alias": "LAJIDUI",
@@ -1746,29 +1137,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://pt.lajidui.top/ to data/cookies/LAJIDUI.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LASTDIGITALUNDERGROUND": {
             "cli_alias": "LDU",
@@ -1777,7 +1146,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -1788,28 +1156,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LATTEAM": {
             "cli_alias": "LT",
@@ -1818,7 +1164,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -1831,28 +1176,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LEMONHD": {
             "cli_alias": "LHD",
@@ -1862,29 +1185,6 @@ config: dict[str, Any] = {
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "mediainfo_header": "",
-            "audio_spectrogram_header": "",
-            "custom_signature": "",
-            "user_description": "",
-            "custom_header": "",
-            "custom_footer": "",
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LOCADORA": {
             "cli_alias": "LCD",
@@ -1893,7 +1193,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Set this to True if you want to allow external subtitles to be included in the upload
             "allow_ext_subtitles": True,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -1906,28 +1205,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]As capturas de tela foram adaptadas para visualização em SDR, apenas para referência.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Capturas de Tela[/h2]",
-            "disc_menu_header": "[h2]Capturas de Tela do Menu do Disco[/h2]",
-            "audio_spectrogram_header": "[h2]Espectrogramas de Áudio[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Metadados HDR Dinâmicos[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LONGPT": {
             "cli_alias": "LPT",
@@ -1936,29 +1213,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://longpt.org/ to data/cookies/LONGPT.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LST": {
             "cli_alias": "LST",
@@ -1967,7 +1222,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # Send uploads to LST drafts
@@ -1982,28 +1236,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "LUMINARR": {
             "cli_alias": "LUME",
@@ -2012,7 +1244,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -2025,28 +1256,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "MAKINGOFF": {
             "cli_alias": "MKO",
@@ -2068,7 +1277,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -2081,58 +1289,14 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "MTEAM": {
             "cli_alias": "MTEAM",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
             "api_key": "",
-            "anon": True,
             "base_url": "kp.m-team.cc",
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "NEBULANCE": {
             "cli_alias": "NBL",
@@ -2140,7 +1304,6 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             "api_key": "",
             "announce_url": "",
-            "inject_delay": 0,
         },
         "NORDICQUALITY": {
             "cli_alias": "NQ",
@@ -2149,7 +1312,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2160,28 +1322,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "NZBGEEK": {
             "cli_alias": "NZBG",
@@ -2191,7 +1331,6 @@ config: dict[str, Any] = {
             "daily_api_hit_limit": 0,
             # Only block uploads when the existing release exactly matches files.
             "exact_match_only": False,
-            "inject_delay": 0,
         },
         "NZBNEST": {
             "cli_alias": "NZBN",
@@ -2202,7 +1341,6 @@ config: dict[str, Any] = {
             "daily_api_hit_limit": 0,
             # Only block uploads when the existing release exactly matches files.
             "exact_match_only": False,
-            "inject_delay": 0,
         },
         "OLDTOONSWORLD": {
             "cli_alias": "OTW",
@@ -2213,7 +1351,6 @@ config: dict[str, Any] = {
             "api_key": "",
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2224,28 +1361,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ONLYENCODES": {
             "cli_alias": "OE",
@@ -2254,7 +1369,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2267,28 +1381,6 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
             # OnlyEncodes forbids description logos and requires linked medium screenshots
             # from the first episode/movie rather than screenshots for every pack item.
-            "add_logo": False,
-            "logo_size": "",
-            "thumbnail_size": 350,
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": 0,
-            "pack_thumb_size": 350,
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ORPHEUS": {
             "cli_alias": "OPS",
@@ -2296,7 +1388,6 @@ config: dict[str, Any] = {
             "api_key": "",
             # Obtain from https://orpheus.network/upload.php
             "announce_url": "",
-            "inject_delay": 0,
         },
         "PASSTHEPOPCORN": {
             "cli_alias": "PTP",
@@ -2310,7 +1401,6 @@ config: dict[str, Any] = {
             "username": "",
             "password": "",
             "announce_url": "",
-            "inject_delay": 5,
         },
         "PEERGARDEN": {
             "cli_alias": "PG",
@@ -2319,7 +1409,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Only block uploads when the existing release exactly matches files and size.
             "exact_match_only": True,
             # Send uploads to the moderation queue for staff review and approval
@@ -2334,28 +1423,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "POLISHTORRENT": {
             "cli_alias": "PTT",
@@ -2364,7 +1431,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2375,28 +1441,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "PORTUGAS": {
             "cli_alias": "PT",
@@ -2405,7 +1449,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2416,28 +1459,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "PRIVATEHD": {
             "cli_alias": "PHD",
@@ -2446,23 +1467,12 @@ config: dict[str, Any] = {
             # Cookies required (export from https://privatehd.to/ to data/cookies/PRIVATEHD.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # If True, the script performs a basic rules compliance check (e.g., codecs, region).
             # This does not cover all tracker rules. Set to False to disable.
             "check_for_rules": True,
             # PrivateHD does not allow frame overlays.
             "image_tag_blacklist": ["overlay"],
             # The configurations below override the DEFAULT configuration
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "custom_description_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_audio_spectrogram": True,
-            "add_dynamic_hdr_plot": True,
-            "inject_delay": 0,
         },
         "PTCAFE": {
             "cli_alias": "PTCAFE",
@@ -2471,29 +1481,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://ptcafe.club/ to data/cookies/PTCAFE.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         # PTERCLUB support is currently experimental and may not work reliably.
         "PTERCLUB": {
@@ -2505,8 +1493,6 @@ config: dict[str, Any] = {
             "username": "",
             "password": "",
             "ptgen_api": "",
-            "anon": True,
-            "inject_delay": 0,
         },
         "PTFANS": {
             "cli_alias": "PTFANS",
@@ -2515,29 +1501,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://ptfans.cc/ to data/cookies/PTFANS.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "PTGTK": {
             "cli_alias": "PTGTK",
@@ -2546,29 +1510,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://pt.gtkpw.xyz to data/cookies/PTGTK.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "PTSKIT": {
             "cli_alias": "PTS",
@@ -2578,27 +1520,6 @@ config: dict[str, Any] = {
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "PTZONE": {
             "cli_alias": "PTZ",
@@ -2607,31 +1528,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://ptzone.xyz/ to data/cookies/PTZONE.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "mediainfo_header": "",
-            "audio_spectrogram_header": "",
-            "custom_signature": "",
-            "user_description": "",
-            "custom_header": "",
-            "custom_footer": "",
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "RACING4EVERYONE": {
             "cli_alias": "R4E",
@@ -2641,7 +1538,6 @@ config: dict[str, Any] = {
             "use_for_search": False,
             "api_key": "",
             "announce_url": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2652,28 +1548,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "RAILGUNPT": {
             "cli_alias": "RPT",
@@ -2682,29 +1556,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://bilibili.download to data/cookies/RAILGUNPT.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "RASTASTUGAN": {
             "cli_alias": "RAS",
@@ -2713,7 +1565,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2724,28 +1575,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "REELFLIX": {
             "cli_alias": "RF",
@@ -2754,7 +1583,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -2765,28 +1593,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "RETROFLIX": {
             "cli_alias": "RTF",
@@ -2797,29 +1603,7 @@ config: dict[str, Any] = {
             # get_it_by_running_/api/ login command from https://retroflix.club/api/doc
             "api_key": "",
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "RETROMOVIESCLUB": {
             "cli_alias": "RMC",
@@ -2828,7 +1612,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if you want to use Retro Movies Club for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -2841,28 +1624,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ROCKETHD": {
             "cli_alias": "RHD",
@@ -2871,7 +1632,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if you want to use RocketHD for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": False,
             # Use German title instead of English title, if available
             "use_german_title": False,
         },
@@ -2882,7 +1642,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Set this to True if you want to allow external subtitles to be included in the upload
             "allow_ext_subtitles": True,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -2895,28 +1654,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]As capturas de tela foram adaptadas para visualização em SDR, apenas para referência.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Capturas de Tela[/h2]",
-            "disc_menu_header": "[h2]Capturas de Tela do Menu do Disco[/h2]",
-            "audio_spectrogram_header": "[h2]Espectrogramas de Áudio[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Metadados HDR Dinâmicos[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "SEEDPOOL": {
             "cli_alias": "SP",
@@ -2925,7 +1662,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Only block uploads when the existing release exactly matches files and size.
             "exact_match_only": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -2938,28 +1674,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "SHAREISLAND": {
             "cli_alias": "SHRI",
@@ -2968,7 +1682,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Use Italian title instead of English title, if available
             "use_italian_title": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -2981,28 +1694,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "SKIPTHECOMMERCIALS": {
             "cli_alias": "STC",
@@ -3011,7 +1702,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -3022,28 +1712,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "SPEEDAPP": {
             "cli_alias": "SPD",
@@ -3057,26 +1725,6 @@ config: dict[str, Any] = {
             # If True, the script will use the metadata-based title instead of the folder/file name.
             "use_metadata_name": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "SUIO": {
             "cli_alias": "SUIO",
@@ -3094,7 +1742,6 @@ config: dict[str, Any] = {
             # Maximum number of API hits the script may make within 24 hours for duplicate search.
             # Set to 0 to disable duplicate search via API.
             "daily_api_hit_limit": 0,
-            "anon": True,
             # Only block uploads when the existing release exactly matches files.
             "exact_match_only": False,
             # If False, the indexer will decide (uses ID "0").
@@ -3104,7 +1751,6 @@ config: dict[str, Any] = {
             #   - 3 or more languages: uses the ID for "multi" ("9").
             #   - No languages: uses "0" (Auto).
             "resolve_language": True,
-            "inject_delay": 0,
         },
         "SWARMAZON": {
             "cli_alias": "SN",
@@ -3112,7 +1758,6 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             "api_key": "",
             "announce_url": "",
-            "inject_delay": 0,
         },
         "THELEACHZONE": {
             "cli_alias": "TLZ",
@@ -3121,7 +1766,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -3132,28 +1776,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "THEOLDSCHOOL": {
             "cli_alias": "TOS",
@@ -3165,7 +1787,6 @@ config: dict[str, Any] = {
             "api_key": "",
             # Mon profil > Réglages > Passkey
             "announce_url": "",
-            "anon": True,
             # Upload with Exclusive flag (team of staff only)
             "exclusive": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -3178,28 +1799,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "TORRENTEROS": {
             "cli_alias": "TTR",
@@ -3208,7 +1807,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -3221,28 +1819,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "TORRENTHR": {
             "cli_alias": "THR",
@@ -3251,7 +1827,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -3262,28 +1837,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "TORRENTLEECH": {
             "cli_alias": "TL",
@@ -3295,34 +1848,12 @@ config: dict[str, Any] = {
             "api_upload": True,
             # You can find your passkey at your profile (https://www.torrentleech.org/profile/[YourUserName]/view) -> Torrent Passkey
             "passkey": "",
-            "anon": True,
             # Rehost images to the TORRENTLEECH image host. Does not work with the API upload method.
             # Keep in mind that screenshots are only anonymous if you enable the "Anonymous Gallery Uploads" option in your profile settings.
             "img_rehost": True,
             # Set to True if you want to include the full MediaInfo in your upload description or False to include only the most relevant parts.
             "full_mediainfo": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "audio_spectrogram_header": "",
-            "dynamic_hdr_plot_header": "",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "TOTHEGLORY": {
             "cli_alias": "TTG",
@@ -3334,8 +1865,6 @@ config: dict[str, Any] = {
             "login_answer": "",
             "user_id": "",
             "announce_url": "",
-            "anon": True,
-            "inject_delay": 0,
         },
         "TVCHAOSUK": {
             "cli_alias": "TVC",
@@ -3345,8 +1874,6 @@ config: dict[str, Any] = {
             "image_count": 2,
             "api_key": "",
             "announce_url": "",
-            "anon": True,
-            "inject_delay": 0,
         },
         "ULCX": {
             "cli_alias": "ULCX",
@@ -3355,7 +1882,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -3368,28 +1894,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "UTOPIA": {
             "cli_alias": "UTP",
@@ -3398,7 +1902,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -3409,28 +1912,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "XINGYUNGEPT": {
             "cli_alias": "XYPT",
@@ -3439,31 +1920,7 @@ config: dict[str, Any] = {
             # Cookies required (export from https://pt.xingyungept.org/ to data/cookies/XINGYUNGEPT.txt).
             # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
             "announce_url": "",
-            "anon": True,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "",
-            "disc_menu_header": "",
-            "mediainfo_header": "",
-            "audio_spectrogram_header": "",
-            "custom_signature": "",
-            "user_description": "",
-            "custom_header": "",
-            "custom_footer": "",
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "YUSCENE": {
             "cli_alias": "YUS",
@@ -3472,7 +1929,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # For authorized users only. Do not change this unless you know what you are doing
             # Upload as featured
             "featured": False,
@@ -3483,28 +1939,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "ZENITH": {
             "cli_alias": "ZNTH",
@@ -3513,7 +1947,6 @@ config: dict[str, Any] = {
             # "use_for_search": False, set to True if using this tracker for automatic ID searching or description parsing
             "use_for_search": False,
             "api_key": "",
-            "anon": True,
             # Send uploads to the moderation queue for staff review and approval
             "modq": False,
             # For authorized users only. Do not change this unless you know what you are doing
@@ -3526,28 +1959,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[note]Screenshots have been adapted for SDR viewing, for reference only.[/note]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": True,
-            "inject_delay": 0,
         },
         "MANUAL": {
             "cli_alias": "MANUAL",

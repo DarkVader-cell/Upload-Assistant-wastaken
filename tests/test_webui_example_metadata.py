@@ -337,3 +337,55 @@ def test_referenced_or_edited_torrent_client_templates_remain_visible() -> None:
         "qbittorrent",
         "rtorrent",
     ]
+
+
+def test_example_config_keeps_only_primary_screenshot_description_defaults() -> None:
+    example_config = server._load_config_from_file(server.CODE_DIR / "data" / "example_config.py")
+    assert example_config is not None
+    defaults = example_config["DEFAULT"]
+    assert defaults["add_logo"] is False
+    assert defaults["add_audio_spectrogram"] is False
+    assert defaults["add_bluray_link"] is False
+    assert defaults["use_bluray_images"] is False
+    assert defaults["multiScreens"] == "0"
+    assert defaults["auto_dvd_menus"] is False
+    assert defaults["screenshot_header"] == "[h2]Screenshots[/h2]"
+    assert defaults["tonemapped_header"] == ""
+    assert defaults["disc_menu_header"] == ""
+    assert defaults["audio_spectrogram_header"] == ""
+    assert defaults["dynamic_hdr_plot_header"] == ""
+
+    override_keys = {
+        "anon",
+        "add_audio_spectrogram",
+        "add_bluray_link",
+        "add_dynamic_hdr_plot",
+        "add_logo",
+        "audio_spectrogram_header",
+        "bluray_image_size",
+        "charLimit",
+        "custom_description_header",
+        "custom_footer",
+        "custom_header",
+        "custom_signature",
+        "disc_menu_header",
+        "dynamic_hdr_plot_header",
+        "episode_overview",
+        "fileLimit",
+        "inject_delay",
+        "logo_size",
+        "mediainfo_header",
+        "multiScreens",
+        "pack_thumb_size",
+        "processLimit",
+        "screens_per_row",
+        "screenshot_header",
+        "thumbnail_size",
+        "tonemapped_header",
+        "use_bluray_images",
+        "user_description",
+    }
+    assert all(
+        not (isinstance(tracker, dict) and override_keys.intersection(tracker))
+        for tracker in example_config["TRACKERS"].values()
+    )
