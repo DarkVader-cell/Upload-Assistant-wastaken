@@ -16,8 +16,12 @@ TARGET_UID="${PUID:-}"
 TARGET_GID="${PGID:-}"
 
 ensure_default_config() {
-    if [ ! -f /Upload-Assistant/data/config.py ] && [ -f /Upload-Assistant/defaults/data/example_config.py ]; then
-        cp /Upload-Assistant/defaults/data/example_config.py /Upload-Assistant/data/config.py
+    state_root="${UA_DATA_DIR:-/state}"
+    config_path="$state_root/data/config.py"
+    if [ ! -f "$config_path" ] && [ -f /Upload-Assistant/defaults/data/example_config.py ]; then
+        mkdir -p "$(dirname "$config_path")"
+        cp /Upload-Assistant/defaults/data/example_config.py "$config_path"
+        chmod 600 "$config_path" 2>/dev/null || true
     fi
 }
 

@@ -1,4 +1,5 @@
 import ast
+import stat
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,18 @@ config: dict[str, Any] = {
     assert updated["TRACKERS"]["FICTIONAL"] == {"api_key": "tracker-secret", "new_tracker_option": True}
     assert updated["CUSTOM"] == {"untouched": True}
     assert "# Keep this user comment." in config_path.read_text(encoding="utf-8")
+
+
+def test_sync_preserves_private_config_permissions(tmp_path: Path) -> None:
+    config_path = tmp_path / "config.py"
+    example_path = tmp_path / "example_config.py"
+    config_path.write_text("config = {'DEFAULT': {}}\n", encoding="utf-8")
+    config_path.chmod(0o600)
+    example_path.write_text("config = {'DEFAULT': {'new': True}}\n", encoding="utf-8")
+
+    sync_user_config(config_path, example_path)
+
+    assert stat.S_IMODE(config_path.stat().st_mode) == 0o600
 
 
 def test_sync_is_idempotent_and_does_not_create_another_backup(tmp_path: Path) -> None:

@@ -7,14 +7,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from src.config_io import atomic_write_text, ensure_private_directory
+
 DEFAULT_LEVEL = "access_denied"  # default: log only failed/denied attempts
 VALID_LEVELS = {"access_denied", "access", "disabled"}
 
 
 class AccessLogger:
     def __init__(self, cfg_dir: Path) -> None:
-        self.cfg_dir = Path(cfg_dir)
-        self.cfg_dir.mkdir(parents=True, exist_ok=True)
+        self.cfg_dir = ensure_private_directory(Path(cfg_dir))
         # store access level inside webui_auth.json per request
         self.user_file = self.cfg_dir / "webui_auth.json"
         self.log_file = self.cfg_dir / "access_log.log"
@@ -47,7 +48,7 @@ class AccessLogger:
                 data = {}
             data["access_log_level"] = level
             # write back safely
-            self.user_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            atomic_write_text(self.user_file, json.dumps(data, ensure_ascii=False, indent=2), default_mode=0o600)
             return True
         except Exception:
             return False

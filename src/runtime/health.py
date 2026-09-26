@@ -35,8 +35,14 @@ def _tool_available(root: Path, *names: str) -> bool:
     )
 
 
-def collect_runtime_health(base_dir: str | Path, config: Mapping[str, Any]) -> dict[str, Any]:
+def collect_runtime_health(
+    base_dir: str | Path,
+    config: Mapping[str, Any],
+    *,
+    tool_root: str | Path | None = None,
+) -> dict[str, Any]:
     root = Path(base_dir).resolve()
+    tool_root_path = Path(tool_root).resolve() if tool_root is not None else root
     default = config.get("DEFAULT", {}) if isinstance(config, Mapping) else {}
     settings = default if isinstance(default, Mapping) else {}
     artifact_store = ArtifactStore(root, config)
@@ -45,13 +51,13 @@ def collect_runtime_health(base_dir: str | Path, config: Mapping[str, Any]) -> d
     metadata_dir = Path(str(settings.get("metadata_cache_dir", "data/cache/metadata")))
     metadata_dir = metadata_dir if metadata_dir.is_absolute() else root / metadata_dir
     tools = {
-        "ffmpeg": _tool_available(root, "ffmpeg"),
-        "mediainfo": _tool_available(root, "mediainfo"),
-        "mkbrr": _tool_available(root, "mkbrr"),
-        "bdinfo": _tool_available(root, "bdinfo"),
-        "7z": _tool_available(root, "7z", "7zz", "7zr"),
-        "par2": _tool_available(root, "par2", "par2create"),
-        "nyuu": _tool_available(root, "nyuu"),
+        "ffmpeg": _tool_available(tool_root_path, "ffmpeg"),
+        "mediainfo": _tool_available(tool_root_path, "mediainfo"),
+        "mkbrr": _tool_available(tool_root_path, "mkbrr"),
+        "bdinfo": _tool_available(tool_root_path, "bdinfo"),
+        "7z": _tool_available(tool_root_path, "7z", "7zz", "7zr"),
+        "par2": _tool_available(tool_root_path, "par2", "par2create"),
+        "nyuu": _tool_available(tool_root_path, "nyuu"),
     }
 
     clients = config.get("TORRENT_CLIENTS", {}) if isinstance(config, Mapping) else {}

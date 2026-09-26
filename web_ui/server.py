@@ -38,6 +38,7 @@ import web_ui.auth as auth_mod
 from src.webui_progress import PROGRESS_STDOUT_PREFIX
 from src.prompt_sound import PROMPT_SOUND_STDOUT_MARKER
 from src.app_paths import CODE_DIR, DATA_DIR, STATE_DIR
+from src.config_io import atomic_write_text, ensure_private_directory
 from src.args import cli_argument_catalog
 from src.external_tools import EXTERNAL_TOOL_KEYS, check_external_tools
 from src.manual_metadata import (
@@ -223,7 +224,7 @@ with contextlib.suppress(Exception):
         console = loaded_console
 
 cfg_dir = auth_mod.get_config_dir()
-cfg_dir.mkdir(parents=True, exist_ok=True)
+ensure_private_directory(cfg_dir)
 
 ARGUMENT_PRESETS_PATH = DATA_DIR / "argument_presets.json"
 LEGACY_ARGUMENT_PRESETS_PATH = CODE_DIR / "data" / "argument_presets.json"
@@ -279,7 +280,7 @@ def _cfg_read(name: str) -> str | None:
 def _cfg_write(name: str, value: str) -> None:
     p = _cfg_file_path(name)
     with contextlib.suppress(Exception):
-        p.write_text(value, encoding="utf-8")
+        atomic_write_text(p, value, default_mode=0o600)
 
 
 def _cfg_delete(name: str) -> None:
@@ -3241,6 +3242,22 @@ def set_runtime_browse_roots(browse_roots: str) -> None:
     _runtime_browse_roots = browse_roots
 
 
+def _ensure_config_file_for_write(path: Path) -> None:
+    """Create the active runtime config before a WebUI mutation."""
+    if path.exists():
+        return
+    example_path = CODE_DIR / "data" / "example_config.py"
+    if not example_path.is_file():
+        raise FileNotFoundError(f"Bundled example configuration is missing: {example_path}")
+    atomic_write_text(path, example_path.read_text(encoding="utf-8"), default_mode=0o600)
+
+
+def _write_config_source(path: Path, source: str) -> None:
+    """Persist config source atomically without losing its permissions."""
+    _ensure_config_file_for_write(path)
+    atomic_write_text(path, source, default_mode=0o600)
+
+
 def _load_config_from_file(path: Path) -> dict[str, Any] | None:
     """Load and return the ``config`` dict from a Python config file.
 
@@ -5712,6 +5729,7 @@ def config_set_tracker_overrides():
         return jsonify({"success": False, "error": "This tracker has no DEFAULT override block"}), 400
 
     config_path = STATE_DIR / "data" / "config.py"
+    _ensure_config_file_for_write(config_path)
     user_config = _load_config_from_file(config_path) or {}
     user_trackers = _as_dict(user_config.get("TRACKERS")) or {}
     actual_user_name = next(
@@ -5735,7 +5753,7 @@ def config_set_tracker_overrides():
         else:
             for key in override_keys:
                 source = _remove_config_key_in_source(source, ["TRACKERS", actual_user_name, key])
-        config_path.write_text(source, encoding="utf-8")
+        _write_config_source(config_path, source)
         try:
             _write_audit_log(
                 "set_tracker_default_overrides",
@@ -6098,6 +6116,7 @@ def config_update():
     base_dir = STATE_DIR
     example_path = CODE_DIR / "data" / "example_config.py"
     config_path = base_dir / "data" / "config.py"
+    _ensure_config_file_for_write(config_path)
 
     example_config = _load_config_from_file(example_path) or {}
     example_value = _get_nested_value(example_config, path)
@@ -6179,7 +6198,7 @@ def config_update():
 
             source = config_path.read_text(encoding="utf-8")
             updated_source = _remove_config_key_in_source(source, path)
-            config_path.write_text(updated_source, encoding="utf-8")
+            _write_config_source(config_path, updated_source)
             # Audit record for removal
             try:
                 _write_audit_log("remove_key", path, prior_value, None, True)
@@ -6213,7 +6232,7 @@ def config_update():
                 # including configs that have never saved an explicit master.
                 source = _replace_config_value_in_source(source, ["DEFAULT", "frame_overlay"], _python_literal(overlay_enabled(prior_defaults)))
         updated_source = _replace_config_value_in_source(source, path, new_value_literal)
-        config_path.write_text(updated_source, encoding="utf-8")
+        _write_config_source(config_path, updated_source)
         # Audit record for update
         try:
             _write_audit_log("update_value", path, prior_value, coerced_value, True)
@@ -6228,41 +6247,6 @@ def config_update():
         return jsonify({"success": False, "error": "An error occurred while updating the configuration"}), 500
 
     return jsonify({"success": True, "value": _json_safe(coerced_value)})
-
-
-@app.route("/api/config_remove_subsection", methods=["POST"])
-def config_remove_subsection():
-    """Remove a subsection (top-level key) from the user's config.py if present"""
-    # Require authenticated web session and CSRF protection; disallow bearer/basic API auth
-    if not _is_authenticated():
-        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
-    # Require CSRF + same-origin for config removal
-    if not _verify_csrf_header() or not _verify_same_origin():
-        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
-
-    data = _request_json_dict()
-    path_raw = data.get("path", [])
-    path: list[str] = []
-    if isinstance(path_raw, Sequence) and not isinstance(path_raw, (str, bytes, bytearray)):
-        path_items: Sequence[Any] = cast(Sequence[Any], path_raw)
-        path.extend(p for p in path_items if isinstance(p, str) and p)
-
-    if not path:
-        return jsonify({"success": False, "error": "Invalid path"}), 400
-
-    base_dir = STATE_DIR
-    config_path = base_dir / "data" / "config.py"
-
-    try:
-        source = config_path.read_text(encoding="utf-8")
-        updated = _remove_config_key_in_source(source, path)
-        if updated == source:
-            # Nothing changed
-            return jsonify({"success": True, "value": None})
-        config_path.write_text(updated, encoding="utf-8")
-        return jsonify({"success": True})
-    except Exception:
-        return jsonify({"success": False, "error": "An error occurred while removing the configuration subsection"}), 500
 
 
 @app.route("/api/config_add_torrent_client", methods=["POST"])
@@ -6291,6 +6275,7 @@ def config_add_torrent_client():
         return jsonify({"success": False, "error": "Unknown torrent client template"}), 400
 
     config_path = STATE_DIR / "data" / "config.py"
+    _ensure_config_file_for_write(config_path)
     user_config = _load_config_from_file(config_path) or {}
     user_clients = _as_dict(user_config.get("TORRENT_CLIENTS")) or {}
     if client_name.casefold() in {str(name).casefold() for name in user_clients}:
@@ -6305,7 +6290,7 @@ def config_add_torrent_client():
             ["TORRENT_CLIENTS", client_name],
             _python_literal(dict(template)),
         )
-        config_path.write_text(updated, encoding="utf-8")
+        _write_config_source(config_path, updated)
         try:
             _write_audit_log(
                 "add_subsection",
@@ -6351,6 +6336,7 @@ def config_rename_torrent_client():
         return jsonify({"success": False, "error": "Choose a different client name"}), 400
 
     config_path = STATE_DIR / "data" / "config.py"
+    _ensure_config_file_for_write(config_path)
     user_config = _load_config_from_file(config_path) or {}
     user_clients = _as_dict(user_config.get("TORRENT_CLIENTS")) or {}
     actual_old_name = next(
@@ -6401,7 +6387,7 @@ def config_rename_torrent_client():
                 updated = _replace_config_value_in_source(updated, ["DEFAULT", key], _python_literal(next_value))
                 updated_references.append(key)
 
-        config_path.write_text(updated, encoding="utf-8")
+        _write_config_source(config_path, updated)
         try:
             _write_audit_log(
                 "rename_subsection",
@@ -7851,10 +7837,10 @@ def internal_error(e: Exception):
 
 
 app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, broker=QUI_EVENT_BROKER, snapshots=_detached_job_snapshot, retry_job=_retry_detached_job))
-app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=Path(__file__).resolve().parent.parent))
+app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=CODE_DIR, config_root=STATE_DIR, runtime_root=STATE_DIR, include_health=False))
 app.register_blueprint(create_history_api_blueprint(auth_check=_submit_auth_ok, history=RELEASE_HISTORY, json_safe=_json_safe))
 _config_source_operations = ConfigSourceOperations(_load_config_from_file, _remove_config_key_in_source, _replace_config_value_in_source, _python_literal, _get_nested_value, _write_audit_log)
-app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=Path(__file__).resolve().parent.parent, operations=_config_source_operations))
+app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=STATE_DIR, operations=_config_source_operations))
 
 
 # Keep these helpers referenced so static analysis does not flag them as unused.

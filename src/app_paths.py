@@ -5,8 +5,9 @@ the supported override for containers, portable installs, and test runs.
 """
 
 import os
-import shutil
 from pathlib import Path
+
+from src.config_io import atomic_write_text, ensure_private_directory
 
 CODE_DIR = Path(__file__).resolve().parent.parent
 
@@ -51,8 +52,8 @@ def ensure_legacy_config_absent() -> None:
 
 def ensure_data_dir() -> Path:
     """Create and return the user-owned runtime directory."""
-    STATE_DIR.mkdir(parents=True, exist_ok=True)
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    ensure_private_directory(STATE_DIR)
+    ensure_private_directory(DATA_DIR)
     return STATE_DIR
 
 
@@ -69,5 +70,5 @@ def ensure_user_config() -> bool:
     ensure_data_dir()
     if CONFIG_PATH.exists():
         return False
-    shutil.copy2(bundled_example_config_path(), CONFIG_PATH)
+    atomic_write_text(CONFIG_PATH, bundled_example_config_path().read_text(encoding="utf-8"), default_mode=0o600)
     return True

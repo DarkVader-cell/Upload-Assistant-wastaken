@@ -309,7 +309,7 @@ The following endpoints via a valid web session.
 - Methods: POST
 - Auth: requires web session + CSRF + Origin (disallows bearer/basic auth)
 - POST payload: {"path": ["SECTION", "KEY"], "value": `<value>`} (path is array of path components)
-- Description: updates data/config.py with a coerced Python literal of the provided value; special handling for certain client lists
+- Description: updates the user-state `data/config.py` with a coerced Python literal using an atomic replacement that preserves private file permissions; special handling for certain client lists
 - Response: {"success": true, "value": `<json-safe-value>`}
 
 ### /api/config_remove_subsection
@@ -317,7 +317,7 @@ The following endpoints via a valid web session.
 - Methods: POST
 - Auth: requires web session + CSRF + Origin
 - POST payload: `{"path":["SECTION"]}` or `{"path":["TORRENT_CLIENTS","profile-name"]}`
-- Description: removes a user-config subsection. Removing a torrent-client profile also repairs the default, injecting, and searching client references and selects a remaining profile as the default when possible.
+- Description: removes a user-config subsection from the user-state `data/config.py`. The mutation is atomic and permission-preserving. Removing a torrent-client profile also repairs the default, injecting, and searching client references and selects a remaining profile as the default when possible.
 - Response: `{"success":true,"references_updated":[["DEFAULT","default_torrent_client"], ...]}`; unchanged paths return `{"success":true,"value":null}`
 
 ### /api/tokens

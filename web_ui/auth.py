@@ -16,11 +16,12 @@ import logging
 import math
 import os
 import string
-from contextlib import suppress
 from pathlib import Path
 
 from argon2 import PasswordHasher
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
+from src.config_io import atomic_write_text, ensure_private_directory
 
 log = logging.getLogger(__name__)
 
@@ -163,9 +164,7 @@ def _resolve_session_secret() -> bytes:
 
                 try:
                     b = token_bytes(64)
-                    p.write_text(b.hex(), encoding="utf-8")
-                    with suppress(Exception):
-                        Path(p).chmod(0o600)
+                    atomic_write_text(p, b.hex(), default_mode=0o600)
                     log.info("Auto-generated session secret at %s", p)
                     return b
                 except Exception as e:
@@ -200,8 +199,7 @@ def _resolve_session_secret() -> bytes:
     # stable across restarts. Use 64 bytes and store as hex.
     from secrets import token_bytes
 
-    cfg = get_config_dir()
-    cfg.mkdir(parents=True, exist_ok=True)
+    cfg = ensure_private_directory(get_config_dir())
     secret_file = cfg / "session_secret"
     if secret_file.exists():
         try:
@@ -216,11 +214,7 @@ def _resolve_session_secret() -> bytes:
     # Generate and persist
     try:
         b = token_bytes(64)
-        with Path(secret_file).open("w", encoding="utf-8") as fobj:
-            fobj.write(b.hex())
-        with suppress(Exception):
-            # Tighten permissions when possible
-            Path(secret_file).chmod(0o600)
+        atomic_write_text(secret_file, b.hex(), default_mode=0o600)
         return b
     except Exception as e:
         log.error("failed to persist session secret: %s", e)
@@ -256,8 +250,7 @@ def verify_password(hash: str, password: str) -> bool:
 
 
 def _get_user_file() -> Path:
-    cfg = get_config_dir()
-    cfg.mkdir(parents=True, exist_ok=True)
+    cfg = ensure_private_directory(get_config_dir())
     return cfg / "webui_auth.json"
 
 
@@ -387,9 +380,7 @@ def create_user(username: str, password: str) -> None:
     username_enc = encrypt_text(key, username)
 
     data = {"username_enc": username_enc, "password_hash": hash_password(password), "extras_enc": extras_enc}
-    path.write_text(json.dumps(data), encoding="utf-8")
-    with suppress(Exception):
-        Path(path).chmod(0o600)
+    atomic_write_text(path, json.dumps(data), default_mode=0o600)
 
 
 def load_user() -> dict | None:
@@ -473,9 +464,7 @@ def set_totp_secret(secret: str | None) -> None:
 
     key = _get_master_key()
     raw["extras_enc"] = encrypt_text(key, json.dumps(extras, separators=(",", ":"), ensure_ascii=False))
-    path.write_text(json.dumps(raw), encoding="utf-8")
-    with suppress(Exception):
-        Path(path).chmod(0o600)
+    atomic_write_text(path, json.dumps(raw), default_mode=0o600)
 
 
 def get_recovery_hashes() -> list[str]:
@@ -516,9 +505,7 @@ def set_recovery_hashes(hashes: list[str]) -> None:
 
     key = _get_master_key()
     raw["extras_enc"] = encrypt_text(key, json.dumps(extras, separators=(",", ":"), ensure_ascii=False))
-    path.write_text(json.dumps(raw), encoding="utf-8")
-    with suppress(Exception):
-        Path(path).chmod(0o600)
+    atomic_write_text(path, json.dumps(raw), default_mode=0o600)
 
 
 def set_twofa_state(secret: str | None, recovery_hashes: list[str]) -> None:
@@ -545,9 +532,7 @@ def set_twofa_state(secret: str | None, recovery_hashes: list[str]) -> None:
 
     key = _get_master_key()
     raw["extras_enc"] = encrypt_text(key, json.dumps(extras, separators=(",", ":"), ensure_ascii=False))
-    path.write_text(json.dumps(raw), encoding="utf-8")
-    with suppress(Exception):
-        Path(path).chmod(0o600)
+    atomic_write_text(path, json.dumps(raw), default_mode=0o600)
 
 
 def get_api_tokens() -> dict:
@@ -587,9 +572,7 @@ def set_api_tokens(store: dict) -> None:
 
     key = _get_master_key()
     raw["extras_enc"] = encrypt_text(key, json.dumps(extras, separators=(",", ":"), ensure_ascii=False))
-    path.write_text(json.dumps(raw), encoding="utf-8")
-    with suppress(Exception):
-        Path(path).chmod(0o600)
+    atomic_write_text(path, json.dumps(raw), default_mode=0o600)
 
 
 def verify_user(username: str, password: str) -> bool:

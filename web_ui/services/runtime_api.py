@@ -25,16 +25,24 @@ def create_runtime_api_blueprint(
     validate_args: Any,
     load_config: Any,
     project_root: Path,
+    config_root: Path | None = None,
+    runtime_root: Path | None = None,
+    include_health: bool = True,
 ) -> Blueprint:
     blueprint = Blueprint("runtime_api", __name__)
 
-    def config() -> dict[str, Any]:
-        return load_config(project_root / "data" / "config.py") or load_config(project_root / "data" / "example_config.py") or {}
+    config_root = config_root or project_root
+    runtime_root = runtime_root or project_root
 
-    @blueprint.route("/api/health")
-    @limiter.limit("70 per hour", key_func=basic_rate_key)
-    def health():
-        return jsonify({"status": "healthy", "success": True, "message": "Upload-Assistant Web UI is running"})
+    def config() -> dict[str, Any]:
+        return load_config(config_root / "data" / "config.py") or load_config(project_root / "data" / "example_config.py") or {}
+
+    if include_health:
+
+        @blueprint.route("/api/health")
+        @limiter.limit("70 per hour", key_func=basic_rate_key)
+        def health():
+            return jsonify({"status": "healthy", "success": True, "message": "Upload-Assistant Web UI is running"})
 
     @blueprint.route("/api/runtime/health")
     @limiter.limit("120 per hour", key_func=rate_limit_key)
@@ -42,7 +50,12 @@ def create_runtime_api_blueprint(
         ok, response = auth_check()
         if not ok:
             return response
-        return jsonify({"success": True, **collect_runtime_health(project_root, config())})
+        return jsonify(
+            {
+                "success": True,
+                **collect_runtime_health(runtime_root, config(), tool_root=project_root),
+            }
+        )
 
     @blueprint.route("/api/plan", methods=["POST"])
     @limiter.limit("300 per hour", key_func=rate_limit_key)
@@ -56,12 +69,12 @@ def create_runtime_api_blueprint(
             planned_path = resolve_user_path(str(data.get("path") or ""), require_exists=True, require_dir=False)
             validated_args, _ = validate_args(data.get("args", ""), False)
             loaded = config()
-            plan_meta, _, _ = Args(loaded).parse([planned_path, *validated_args], Meta(base_dir=str(project_root)))
+            plan_meta, _, _ = Args(loaded).parse([planned_path, *validated_args], Meta(base_dir=str(runtime_root)))
         except (SystemExit, TypeError, ValueError) as error:
             return jsonify({"success": False, "error": str(error) or "Invalid plan request"}), 400
 
         async def create_plan() -> dict[str, Any]:
-            async with ExecutionContext.create(project_root, loaded) as context:
+            async with ExecutionContext.create(runtime_root, loaded) as context:
                 return (await build_execution_plan(context, plan_meta, planned_path)).to_dict()
 
         return jsonify({"success": True, "plan": asyncio.run(create_plan())})

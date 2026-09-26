@@ -59,6 +59,8 @@ def test_ensure_user_config_copies_bundled_example(monkeypatch, tmp_path: Path) 
 
     assert app_paths.ensure_user_config() is True  # noqa: S101
     assert config_path.read_text(encoding="utf-8") == "config = {'source': 'example'}"  # noqa: S101
+    if os.name != "nt":
+        assert config_path.stat().st_mode & 0o777 == 0o600  # noqa: S101
 
 
 def test_ensure_user_config_falls_back_to_defaults(monkeypatch, tmp_path: Path) -> None:

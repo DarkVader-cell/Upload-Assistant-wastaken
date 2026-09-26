@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import contextlib
-import os
 import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,6 +11,7 @@ from typing import Any
 
 from flask import Blueprint, jsonify
 
+from src.config_io import atomic_write_text
 from web_ui.services.config_references import torrent_client_reference_updates
 
 
@@ -51,6 +51,8 @@ def create_config_remove_blueprint(
             return jsonify({"success": False, "error": "Invalid path"}), 400
 
         config_path = project_root / "data" / "config.py"
+        if not config_path.is_file():
+            return jsonify({"success": True, "value": None})
         try:
             with mutation_lock:
                 prior_config = operations.load(config_path) or {}
@@ -67,13 +69,7 @@ def create_config_remove_blueprint(
                             if value is None
                             else operations.replace_value(updated, reference_path, operations.python_literal(value))
                         )
-                temporary = config_path.with_name(f".{config_path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-                try:
-                    temporary.write_text(updated, encoding="utf-8")
-                    temporary.replace(config_path)
-                finally:
-                    with contextlib.suppress(OSError):
-                        temporary.unlink()
+                atomic_write_text(config_path, updated, default_mode=0o600)
             changed_paths = [reference_path for reference_path, _value in reference_updates]
             with contextlib.suppress(Exception):
                 operations.audit(
