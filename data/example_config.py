@@ -599,6 +599,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "AITHER": {
+            "anon": False,
             "cli_alias": "ATH",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -647,6 +648,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "ASIANCINEMA": {
+            "anon": False,
             "cli_alias": "ACM",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -702,6 +704,7 @@ config: dict[str, Any] = {
             "my_announce_url": "https://trackerr.bit-hdtv.com/passkey/announce",
         },
         "BITPORN": {
+            "anon": False,
             "cli_alias": "BP",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -732,6 +735,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "BLUTOPIA": {
+            "anon": False,
             "cli_alias": "BLU",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -774,6 +778,7 @@ config: dict[str, Any] = {
             "api_url": "https://api.broadcasthe.net/",
         },
         "CAPYBARABR": {
+            "anon": False,
             "cli_alias": "CBR",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -804,6 +809,7 @@ config: dict[str, Any] = {
             "announce_url": "",
         },
         "CINEMATIK": {
+            "anon": False,
             "cli_alias": "TIK",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -845,6 +851,7 @@ config: dict[str, Any] = {
             "exact_match_only": False,
         },
         "DARKPEERS": {
+            "anon": False,
             "cli_alias": "DP",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -866,6 +873,7 @@ config: dict[str, Any] = {
             # Audio spectrograms will only be added for music uploads, as requested by the tracker staff.
         },
         "DESITORRENTS": {
+            "anon": False,
             "cli_alias": "DT",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -896,6 +904,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "DREADVAULT": {
+            "anon": False,
             "cli_alias": "DVL",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -928,6 +937,7 @@ config: dict[str, Any] = {
             "exact_match_only": False,
         },
         "EMUWAREZ": {
+            "anon": False,
             "cli_alias": "EMUW",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -990,6 +1000,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "HAWKEUNO": {
+            "anon": False,
             "cli_alias": "HUNO",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1053,6 +1064,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "HOMIEHELPDESK": {
+            "anon": False,
             "cli_alias": "HHD",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1080,6 +1092,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "INFINITYHD": {
+            "anon": False,
             "cli_alias": "IHD",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1113,6 +1126,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "ITATORRENTS": {
+            "anon": False,
             "cli_alias": "ITT",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1140,6 +1154,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "LASTDIGITALUNDERGROUND": {
+            "anon": False,
             "cli_alias": "LDU",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1158,6 +1173,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "LATTEAM": {
+            "anon": False,
             "cli_alias": "LT",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1187,6 +1203,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "LOCADORA": {
+            "anon": False,
             "cli_alias": "LCD",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1216,6 +1233,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "LST": {
+            "anon": False,
             "cli_alias": "LST",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1238,6 +1256,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "LUMINARR": {
+            "anon": False,
             "cli_alias": "LUME",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1271,6 +1290,7 @@ config: dict[str, Any] = {
             "allow_ext_subtitles": True,
         },
         "MIDNIGHTSCENE": {
+            "anon": False,
             "cli_alias": "MS",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1306,6 +1326,7 @@ config: dict[str, Any] = {
             "announce_url": "",
         },
         "NORDICQUALITY": {
+            "anon": False,
             "cli_alias": "NQ",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1343,6 +1364,7 @@ config: dict[str, Any] = {
             "exact_match_only": False,
         },
         "OLDTOONSWORLD": {
+            "anon": False,
             "cli_alias": "OTW",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1363,6 +1385,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "ONLYENCODES": {
+            "anon": False,
             "cli_alias": "OE",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1403,6 +1426,7 @@ config: dict[str, Any] = {
             "announce_url": "",
         },
         "PEERGARDEN": {
+            "anon": False,
             "cli_alias": "PG",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1425,6 +1449,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "POLISHTORRENT": {
+            "anon": False,
             "cli_alias": "PTT",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1443,6 +1468,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "PORTUGAS": {
+            "anon": False,
             "cli_alias": "PT",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1531,6 +1557,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "RACING4EVERYONE": {
+            "anon": False,
             "cli_alias": "R4E",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1559,6 +1586,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "RASTASTUGAN": {
+            "anon": False,
             "cli_alias": "RAS",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1577,6 +1605,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "REELFLIX": {
+            "anon": False,
             "cli_alias": "RF",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1606,6 +1635,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "RETROMOVIESCLUB": {
+            "anon": False,
             "cli_alias": "RMC",
             # Instead of using the tracker name for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1626,6 +1656,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "ROCKETHD": {
+            "anon": False,
             "cli_alias": "RHD",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1636,6 +1667,7 @@ config: dict[str, Any] = {
             "use_german_title": False,
         },
         "SAMARITANO": {
+            "anon": False,
             "cli_alias": "SAM",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1656,6 +1688,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "SEEDPOOL": {
+            "anon": False,
             "cli_alias": "SP",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1676,6 +1709,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "SHAREISLAND": {
+            "anon": False,
             "cli_alias": "SHRI",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1696,6 +1730,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "SKIPTHECOMMERCIALS": {
+            "anon": False,
             "cli_alias": "STC",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1760,6 +1795,7 @@ config: dict[str, Any] = {
             "announce_url": "",
         },
         "THELEACHZONE": {
+            "anon": False,
             "cli_alias": "TLZ",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1778,6 +1814,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "THEOLDSCHOOL": {
+            "anon": False,
             "cli_alias": "TOS",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1801,6 +1838,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "TORRENTEROS": {
+            "anon": False,
             "cli_alias": "TTR",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1821,6 +1859,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "TORRENTHR": {
+            "anon": False,
             "cli_alias": "THR",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1876,6 +1915,7 @@ config: dict[str, Any] = {
             "announce_url": "",
         },
         "ULCX": {
+            "anon": False,
             "cli_alias": "ULCX",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1896,6 +1936,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "UTOPIA": {
+            "anon": False,
             "cli_alias": "UTP",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1923,6 +1964,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "YUSCENE": {
+            "anon": False,
             "cli_alias": "YUS",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1941,6 +1983,7 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "ZENITH": {
+            "anon": False,
             "cli_alias": "ZNTH",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",

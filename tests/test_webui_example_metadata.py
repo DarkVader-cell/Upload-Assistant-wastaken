@@ -385,7 +385,10 @@ def test_example_config_keeps_only_primary_screenshot_description_defaults() -> 
         "use_bluray_images",
         "user_description",
     }
-    assert all(
-        not (isinstance(tracker, dict) and override_keys.intersection(tracker))
-        for tracker in example_config["TRACKERS"].values()
-    )
+    for tracker in example_config["TRACKERS"].values():
+        if not isinstance(tracker, dict):
+            continue
+        active_overrides = override_keys.intersection(tracker)
+        assert active_overrides <= {"anon"}
+        if "anon" in active_overrides:
+            assert tracker["anon"] is False
