@@ -77,14 +77,24 @@ Qui reaches it through the existing `172.60.0.1:5000` route.
 ## Qui External Programs
 
 The local Qui external program uses `/config/ua-submit` with the local UA
-token. The Whatbox entry uses `/config/ua-submit-whatbox`, which posts to the
-Whatbox WebUI and reads `/config/.ua-token-whatbox`.
+token. Its argument template should be `{content_path}` so the wrapper's
+safe default selects the active `qbitt2` client and unattended mode. The
+Whatbox entry uses `/config/ua-submit-whatbox`, posts to the Whatbox WebUI,
+and reads `/config/.ua-token-whatbox`.
 
 For the Whatbox qBittorrent instance, the external-program path mapping must
 rewrite the qBittorrent host path `/home/artemisprime` to the path seen
 by the Whatbox Upload Assistant container, `/mnt/seeding`. Its argument
 template is `{content_path} -client qbittorrent`; the wrapper supplies the
 unattended mode and session prefix.
+
+The Clementine entry uses `/config/ua-submit-clementine`, the separate
+`/config/.ua-token-clementine`, and the `qui.richmayfly.box.ca` Upload
+Assistant endpoint. Its argument template is `{content_path} -client
+qbittorrent`, matching Clementine's active qBittorrent profile. The two
+Clementine-to-Grape recovery entries use `/config/ua-handoff-clementine-now`
+and `/config/ua-racing-handoff-clementine-now`; both must remain executable
+and use `{content_path}`.
 
 For dashboards or automation, use `/api/qui/events` with a persisted cursor for incremental updates, `/api/qui/summary` for low-cost counts, `/api/qui/retry` for validated bulk recovery, and `/api/release_history` for cross-restart release outcomes. `/api/qui/status` remains the authoritative live resynchronization snapshot. All endpoints use the same Upload Assistant API token policy as the submit wrapper.
 
