@@ -617,6 +617,7 @@ const DEFAULT_WORKFLOW_GROUPS = [
     id: "metadata",
     label: "Metadata Services",
     headings: [
+      "API CREDENTIALS",
       "METADATA API CREDENTIALS",
       "ARR INTEGRATION",
       "METADATA CACHING",
@@ -10289,8 +10290,13 @@ function ConfigApp() {
   });
   const [activeSubTab, setActiveSubTab] = useState(() => {
     try {
+      const storedTab = sessionStorage.getItem("ua_active_tab") || "default";
       const storedSubTab =
-        sessionStorage.getItem("ua_active_subtab") || "general";
+        sessionStorage.getItem(`ua_active_subtab:${storedTab}`) ||
+        (storedTab === "default"
+          ? sessionStorage.getItem("ua_active_subtab")
+          : null) ||
+        "general";
       return storedSubTab === "release-preparation" ? "upload" : storedSubTab;
     } catch (e) {
       return "general";
@@ -10333,6 +10339,8 @@ function ConfigApp() {
   useEffect(() => {
     try {
       sessionStorage.setItem("ua_active_tab", activeTab);
+      sessionStorage.setItem(`ua_active_subtab:${activeTab}`, activeSubTab);
+      // Keep the legacy key updated for older tabs during a rolling frontend update.
       sessionStorage.setItem("ua_active_subtab", activeSubTab);
     } catch (error) {
       // Navigation still works when browser storage is unavailable.
@@ -12803,6 +12811,7 @@ function ConfigApp() {
                     {activeSection && (
                       <React.Fragment>
                         <ItemList
+                          key={`${activeTab}:${activeSubTab}`}
                           requestedTracker={requestedTracker}
                           onSavedApiKeyStatus={updateSavedApiKeyStatus}
                           items={visibleItems}
