@@ -1022,6 +1022,24 @@ const apiFetch =
     return response;
   });
 
+const readApiResponse = async (response, fallbackMessage, allowedStatuses = []) => {
+  const text = await response.text();
+  let data = null;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch (error) {
+    const statusMessage =
+      response.status === 429
+        ? "Too many configuration requests. Please wait a moment and retry."
+        : text || `${fallbackMessage} (HTTP ${response.status})`;
+    throw new Error(statusMessage);
+  }
+  if (!response.ok && !allowedStatuses.includes(response.status)) {
+    throw new Error(data?.error || data?.message || fallbackMessage);
+  }
+  return data || {};
+};
+
 // Use shared loader when available; otherwise provide a no-op fallback.
 const loadCsrfToken =
   (typeof window !== "undefined" && window.loadCsrfToken) || (async () => {});
@@ -11709,7 +11727,10 @@ function ConfigApp() {
             body: JSON.stringify({ old_name: oldName, new_name: newName }),
           },
         );
-        const data = await response.json();
+        const data = await readApiResponse(
+          response,
+          "Failed to rename torrent client",
+        );
         if (!data.success) {
           throw new Error(data.error || "Failed to rename torrent client");
         }
@@ -11723,7 +11744,11 @@ function ConfigApp() {
             body: JSON.stringify({ name: clientName, template: templateName }),
           },
         );
-        const data = await response.json();
+        const data = await readApiResponse(
+          response,
+          "Failed to add torrent client",
+          [409],
+        );
         if (!data.success && response.status !== 409) {
           throw new Error(data.error || "Failed to add torrent client");
         }
@@ -11772,7 +11797,10 @@ function ConfigApp() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: createPath, value: "{}" }),
         });
-        const dataCreate = await respCreate.json();
+        const dataCreate = await readApiResponse(
+          respCreate,
+          "Failed to create subsection",
+        );
         if (!dataCreate.success) {
           throw new Error(dataCreate.error || "Failed to create subsection");
         }
@@ -11789,7 +11817,7 @@ function ConfigApp() {
             remove: Boolean(update.removeKey),
           }),
         });
-        const data = await response.json();
+        const data = await readApiResponse(response, "Failed to save");
         if (!data.success) {
           throw new Error(data.error || "Failed to save");
         }
@@ -11806,7 +11834,10 @@ function ConfigApp() {
             }),
           },
         );
-        const data = await response.json();
+        const data = await readApiResponse(
+          response,
+          "Failed to remove torrent client",
+        );
         if (!data.success) {
           throw new Error(data.error || "Failed to remove torrent client");
         }
@@ -11822,7 +11853,10 @@ function ConfigApp() {
             }),
           },
         );
-        const data = await response.json();
+        const data = await readApiResponse(
+          response,
+          "Failed to remove tracker configuration",
+        );
         if (!data.success) {
           throw new Error(
             data.error || "Failed to remove tracker configuration",

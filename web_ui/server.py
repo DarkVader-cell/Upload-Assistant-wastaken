@@ -6094,6 +6094,7 @@ def qui_release_metadata(job_id: str):
 
 
 @app.route("/api/config_update", methods=["POST"])
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def config_update():
     """Update a config value in data/config.py"""
     # Require authenticated web session and CSRF protection; disallow bearer/basic API auth
@@ -6250,6 +6251,7 @@ def config_update():
 
 
 @app.route("/api/config_add_torrent_client", methods=["POST"])
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def config_add_torrent_client():
     """Create a custom-named torrent client from an example template."""
     if not _is_authenticated():
@@ -6315,6 +6317,7 @@ def config_add_torrent_client():
 
 
 @app.route("/api/config_rename_torrent_client", methods=["POST"])
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def config_rename_torrent_client():
     """Rename a torrent-client block and its DEFAULT client references."""
     if not _is_authenticated():
@@ -7840,7 +7843,7 @@ app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, bro
 app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=CODE_DIR, config_root=STATE_DIR, runtime_root=STATE_DIR, include_health=False))
 app.register_blueprint(create_history_api_blueprint(auth_check=_submit_auth_ok, history=RELEASE_HISTORY, json_safe=_json_safe))
 _config_source_operations = ConfigSourceOperations(_load_config_from_file, _remove_config_key_in_source, _replace_config_value_in_source, _python_literal, _get_nested_value, _write_audit_log)
-app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=STATE_DIR, operations=_config_source_operations))
+app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, limiter=limiter, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=STATE_DIR, operations=_config_source_operations))
 
 
 # Keep these helpers referenced so static analysis does not flag them as unused.

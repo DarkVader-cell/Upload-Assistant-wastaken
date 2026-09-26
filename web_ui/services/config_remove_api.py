@@ -29,6 +29,7 @@ def create_config_remove_blueprint(
     *,
     authenticated: Any,
     csrf_valid: Any,
+    limiter: Any,
     same_origin: Any,
     request_json: Any,
     project_root: Path,
@@ -38,6 +39,7 @@ def create_config_remove_blueprint(
     mutation_lock = threading.Lock()
 
     @blueprint.route("/api/config_remove_subsection", methods=["POST"])
+    @limiter.limit("7200 per hour", override_defaults=True)
     def config_remove_subsection():
         """Remove a subsection and repair references to deleted clients."""
         if not authenticated():
