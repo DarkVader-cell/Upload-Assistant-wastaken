@@ -50,7 +50,7 @@ class NzbNest:
         return build_newznab_search_query(meta)
 
     def _parse_dupes_from_response(self, response_text: str) -> list[dict[str, Any]]:
-        return parse_newznab_dupes(response_text, self.torrent_url)
+        return parse_newznab_dupes(response_text, self.torrent_url, use_title_as_file=True)
 
     async def search_existing(self, meta: Meta) -> list[Any]:
         release_name = await self.get_name(meta)
@@ -63,7 +63,7 @@ class NzbNest:
             logger.info(f"{self.tracker}: [yellow]Duplicate search via API is disabled because daily_api_hit_limit is 0.[/yellow]")
             return []
 
-        category = meta.category.upper()
+        category = meta.category.upper() if not meta.is_sports else "SPORTS"
         params: dict[str, str] = {}
         if category != "XXX":
             params["cat"] = get_newznab_search_category_id(meta)

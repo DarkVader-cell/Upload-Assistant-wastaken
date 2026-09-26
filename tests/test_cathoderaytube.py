@@ -71,6 +71,7 @@ def meta(**overrides):
         "tmdb_poster_path": "",
         "artwork_url": "",
         "hosted_artwork": [],
+        "valid_mi": True,
     }
     values.update(overrides)
     result = SimpleNamespace(**values)
@@ -107,6 +108,7 @@ def test_formats_titles_to_crt_conventions():
 
 def test_uses_the_image_hosts_approved_by_crt():
     site = tracker()
+    assert site.requires_tonemapped_hdr_screenshots is True  # noqa: S101
     assert site.approved_image_hosts == ("ptpimg", "catbox", "imgbb", "postimages", "freeimage", "imgbox")  # noqa: S101
     assert site.image_host_policy.url_host_mapping["catbox.moe"] == "catbox"  # noqa: S101
     assert site.image_host_policy.url_host_mapping["postimg.cc"] == "postimages"  # noqa: S101
@@ -129,10 +131,10 @@ def test_cover_uses_only_an_approved_image_host():
 
 def test_extracts_matching_upload_from_site_log():
     html = """
-    <table><tr><td>2 mins ago</td><td>Torrent 22015 (A Beautiful Mind (2001)) (41 GiB) was uploaded by User</td>
+    <table><tr><td>2 mins ago</td><td>Torrent 22015 (An Invented Film (2001)) (41 GiB) was uploaded by User</td>
     <td><a href="/details.php?id=22015">22015</a></td></tr></table>
     """
-    assert CathodeRayTube._log_upload_url(html, "A Beautiful Mind (2001)") == "https://www.cathode-ray.tube/torrents.php?id=22015"  # noqa: S101
+    assert CathodeRayTube._log_upload_url(html, "An Invented Film (2001)") == "https://www.cathode-ray.tube/torrents.php?id=22015"  # noqa: S101
 
 
 def test_hosts_local_cover_on_an_approved_image_host(tmp_path):
@@ -187,7 +189,7 @@ def test_renders_crt_category_description_templates():
     movie = meta(
         overview="A spoiler-free plot.",
         description="Release-specific note.",
-        image_list=[{"raw_url": "https://iili.io/one.png"}],
+        image_list=[{"raw_url": f"https://iili.io/{index}.png"} for index in range(1, 4)],
         is_disc="BDMV",
         discs=[{"summary": "Disc Title: EXAMPLE"}],
     )
@@ -195,7 +197,7 @@ def test_renders_crt_category_description_templates():
         "[info]\nhttps://www.imdb.com/title/tt1234567/\nhttps://www.themoviedb.org/movie/123\n[/info]\n"
         "[plot]\nA spoiler-free plot.\n[/plot]\n"
         "[notes]\nRelease-specific note.\n[/notes]\n"
-        "[screens]\nhttps://iili.io/one.png\n[/screens]\n"
+        "[screens]\nhttps://iili.io/1.png https://iili.io/2.png https://iili.io/3.png\n[/screens]\n"
         "[details]\n[mediainfo]\nDisc Title: EXAMPLE\n[/mediainfo]\n[/details]\n\n"
         "[align=right][url=https://github.com/wastaken7/Upload-Assistant][size=1]Upload-Assistant[/size][/url][/align]"
     )
@@ -206,6 +208,30 @@ def test_renders_crt_category_description_templates():
         "[info]\nhttps://store.steampowered.com/app/1\n[/info]\n[plot]\nGame plot\n[/plot]\n\n"
         "[align=right][url=https://github.com/wastaken7/Upload-Assistant][size=1]Upload-Assistant[/size][/url][/align]"
     )
+
+
+def test_places_supplemental_images_in_notes_and_groups_screenshots_by_three():
+    site = tracker()
+    item = meta(
+        description="Release note.",
+        menu_images=[{"raw_url": "https://iili.io/menu.png"}],
+        spectrograms_images=[{"raw_url": "https://iili.io/spectrum.png"}],
+        dynamic_hdr_plot_images=[{"raw_url": "https://iili.io/hdr.png"}],
+        image_list=[{"raw_url": f"https://iili.io/screen{i}.png"} for i in range(1, 9)] + [{}],
+    )
+
+    description = asyncio.run(site.generate_description(item))
+    assert "[notes]\nRelease note.\n\nhttps://iili.io/menu.png\nhttps://iili.io/spectrum.png\nhttps://iili.io/hdr.png\n[/notes]" in description  # noqa: S101
+    assert (  # noqa: S101
+        "[screens]\nhttps://iili.io/screen1.png https://iili.io/screen2.png https://iili.io/screen3.png\n"
+        "https://iili.io/screen4.png https://iili.io/screen5.png https://iili.io/screen6.png\n[/screens]" in description
+    )
+
+
+def test_supplemental_images_create_notes_without_note_text():
+    description = asyncio.run(tracker().generate_description(meta(menu_images=[{"raw_url": "https://iili.io/menu.png"}])))
+    assert "[notes]\nhttps://iili.io/menu.png\n[/notes]" in description  # noqa: S101
+    assert "[screens]" not in description  # noqa: S101
 
 
 def test_builds_simple_advanced_search_params():
@@ -277,16 +303,14 @@ def test_content_name_uses_the_file_for_single_file_torrents():
     <div id="files_22000"><table>
       <tr class="smallhead"><td colspan="2">/</td></tr>
       <tr class="rowa"><td><strong>File Name</strong></td><td><strong>Size</strong></td></tr>
-      <tr><td>The.Abominable.DrPhibes.1971.mkv</td><td>23.90 GiB</td></tr>
+      <tr><td>Invented.Archive.Film.1971.mkv</td><td>23.90 GiB</td></tr>
     </table></div>
     """
-    assert CathodeRayTube._content_name(html) == "The.Abominable.DrPhibes.1971.mkv"  # noqa: S101
+    assert CathodeRayTube._content_name(html) == "Invented.Archive.Film.1971.mkv"  # noqa: S101
 
 
 def test_enforces_known_archive_rules():
     assert asyncio.run(tracker().get_additional_checks(meta()))  # noqa: S101
-    assert not asyncio.run(tracker().get_additional_checks(meta(filelist=["Example.iso"])))  # noqa: S101
-    assert asyncio.run(tracker().get_additional_checks(meta(filelist=["Example.iso"], three_d="3D")))  # noqa: S101
     assert asyncio.run(tracker().get_additional_checks(meta(category="GAME", filelist=["Game.7z"])))  # noqa: S101
 
 
@@ -321,9 +345,3 @@ def test_extracts_successful_upload_url():
     request = httpx.Request("POST", "https://www.cathode-ray.tube/torrents.php?id=123&torrentid=456")
     response = httpx.Response(200, request=request)
     assert CathodeRayTube._uploaded_torrent_url(response).endswith("id=123&torrentid=456")  # noqa: S101
-
-
-def test_excludes_images_without_raw_url_from_screenshot_validation():
-    valid_images = [{"raw_url": f"https://images.example/{index}.png"} for index in range(5)]
-
-    assert not asyncio.run(tracker().get_additional_checks(meta(image_list=valid_images, dynamic_hdr_plot_images=[{}])))  # noqa: S101

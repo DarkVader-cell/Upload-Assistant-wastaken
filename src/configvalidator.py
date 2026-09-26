@@ -67,6 +67,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "tone_map": (bool,),
     "auto_dvd_menus": (bool,),
     "scale_screenshots_for_par": (bool,),
+    "scale_dvd_screenshots_for_par": (bool,),
     "use_libplacebo": (bool,),
     "ffmpeg_is_good": (bool,),
     "ffmpeg_warmup": (bool,),
@@ -129,7 +130,6 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "bluray_image_size": (str, int),
     "bluray_score": (float, int),
     "bluray_single_score": (float, int),
-    "keep_meta": (bool,),
     "post_upload_hooks": (list, tuple),
     "post_upload_inprocess_hooks": (list, tuple),
     "post_upload_hook_timeout": (str, int, float),
@@ -225,8 +225,10 @@ USENET_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "archive_password": (str,),
     "par2_percentage": (str, int),
     "obscure_subject": (bool,),
+    "pesto_obfuscation_mode": (str,),
     "usenet_uploader": (str,),
     "pesto_check": (bool,),
+    "pesto_season_upload": (bool,),
     "pesto_check_delay": (str, int),
     "pesto_check_retries": (str, int),
     "pesto_check_connections": (str, int),
@@ -751,6 +753,22 @@ def _validate_trackers_section(trackers: dict[str, Any], active_trackers: list[s
                     )
 
         # Check integer fields
+        list_fields = [
+            "image_tag_whitelist",
+            "image_tag_blacklist",
+        ]
+        for field in list_fields:
+            if field in tracker_config_dict:
+                value = tracker_config_dict[field]
+                if not isinstance(value, list) or any(not isinstance(tag, str) or not tag.strip() for tag in value):
+                    warnings.append(
+                        ConfigValidationWarning(
+                            f"'{field}' must be a list of non-empty strings, got {type(value).__name__}: {value!r}",
+                            key=tracker_name,
+                            section="TRACKERS",
+                        )
+                    )
+
         int_fields = [
             "freeleech_until",
             "double_upload_until",
@@ -842,6 +860,16 @@ def _validate_usenet_section(usenet: dict[str, Any], is_usenet_active: bool = Fa
                     int(value)
                 except ValueError:
                     warnings.append(ConfigValidationWarning(f"Cannot parse '{value}' as integer", key=key, section="USENET"))
+
+    pesto_obfuscation_mode = str(usenet.get("pesto_obfuscation_mode", "full")).strip().lower()
+    if pesto_obfuscation_mode not in {"full", "light", "article", "full-shared"}:
+        warnings.append(
+            ConfigValidationWarning(
+                "Must be one of: full, light, article, full-shared",
+                key="pesto_obfuscation_mode",
+                section="USENET",
+            )
+        )
 
     return errors, warnings
 

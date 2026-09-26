@@ -3,7 +3,7 @@
 import asyncio
 
 from src.meta import Meta
-from src.trackers.UNIT3D.znth import Zenith
+from src.trackers.UNIT3D.zenith import Zenith
 
 
 def test_zenith_movie_name_keeps_the_tmdb_year_when_imdb_disagrees():
@@ -25,8 +25,8 @@ def test_zenith_supports_music_and_uses_its_music_naming_guide():
         tag="-FiVE0",
         music_release={
             "fields": {
-                "artist": {"value": "Salem"},
-                "album": {"value": "King Night"},
+                "artist": {"value": "Example Band"},
+                "album": {"value": "Sample Single"},
                 "release_year": {"value": "2010"},
                 "media": {"value": "WEB"},
                 "format": {"value": "FLAC"},
@@ -39,7 +39,7 @@ def test_zenith_supports_music_and_uses_its_music_naming_guide():
     tracker = Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}})
 
     assert "MUSIC" in tracker.supported_categories
-    assert asyncio.run(tracker.get_name(meta))["name"] == "Salem - King Night (2010) - [WEB FLAC 24bit-44.1kHz Single]-FiVE0"
+    assert asyncio.run(tracker.get_name(meta))["name"] == "Example Band - Sample Single (2010) - [WEB FLAC 24bit-44.1kHz Single]-FiVE0"
 
 
 def test_zenith_music_name_omits_calculated_lossless_bitrate():
@@ -47,8 +47,8 @@ def test_zenith_music_name_omits_calculated_lossless_bitrate():
         category="MUSIC",
         music_release={
             "fields": {
-                "artist": {"value": "Kanye West"},
-                "album": {"value": "808s & Heartbreak"},
+                "artist": {"value": "Example Rapper"},
+                "album": {"value": "Invented Album"},
                 "release_year": {"value": "2008"},
                 "media": {"value": "CD"},
                 "format": {"value": "FLAC"},
@@ -59,7 +59,7 @@ def test_zenith_music_name_omits_calculated_lossless_bitrate():
 
     name = asyncio.run(Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}).get_name(meta))["name"]
 
-    assert name == "Kanye West - 808s & Heartbreak (2008) - [CD FLAC 16bit-44.1kHz]"
+    assert name == "Example Rapper - Invented Album (2008) - [CD FLAC 16bit-44.1kHz]"
 
 
 def test_zenith_music_additional_data_sends_valid_external_ids():
@@ -78,6 +78,7 @@ def test_zenith_music_additional_data_sends_valid_external_ids():
     data = asyncio.run(Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}).get_additional_data(meta))
 
     assert data == {
+        "mod_queue_opt_in": "0",
         "exists_on_musicbrainz": "1",
         "musicbrainz_release_id": "c0d17e85-3a36-4dc8-9a88-c188a5e78b0d",
         "musicbrainz_release_group_id": "3bdb2b21-f6f5-3f8b-a1e0-067f8bb71940",
@@ -94,7 +95,13 @@ def test_zenith_music_additional_data_omits_invalid_or_disabled_external_ids():
         music_release={"external_ids": {"musicbrainz_release": "invalid", "discogs_release": "not-a-number"}},
     )
 
-    assert asyncio.run(Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}).get_additional_data(meta)) == {}
+    assert asyncio.run(Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}).get_additional_data(meta)) == {"mod_queue_opt_in": "0"}
+
+
+def test_zenith_additional_data_opts_into_moderation_queue():
+    tracker = Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}})
+
+    assert asyncio.run(tracker.get_additional_data(Meta(modq=True))) == {"mod_queue_opt_in": "1"}
 
 
 def test_zenith_music_type_id_comes_from_the_analyzed_codec():
@@ -103,3 +110,28 @@ def test_zenith_music_type_id_comes_from_the_analyzed_codec():
     type_data = asyncio.run(Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}}).get_type_id(meta))
 
     assert type_data == {"type_id": "7"}
+
+
+def test_zenith_reported_ids():
+    tracker = Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}})
+    meta = Meta()
+
+    assert asyncio.run(tracker.get_category_id(meta, mapping_only=True))["SOFTWARE"] == "8"
+    types = asyncio.run(tracker.get_type_id(meta, mapping_only=True))
+    assert {name: types[name] for name in ("CONSOLE", "PC", "EDUCATIONAL", "LIVE SPORTS")} == {
+        "CONSOLE": "18",
+        "PC": "17",
+        "EDUCATIONAL": "15",
+        "LIVE SPORTS": "14",
+    }
+    resolutions = asyncio.run(tracker.get_resolution_id(meta, mapping_only=True))
+    assert resolutions["540p"] == "12"
+    assert resolutions["1440p"] == "11"
+
+
+def test_zenith_game_type_uses_platform():
+    tracker = Zenith({"DEFAULT": {}, "TRACKERS": {"ZENITH": {}}})
+
+    assert asyncio.run(tracker.get_type_id(Meta(category="GAME", console_game=True))) == {"type_id": "18"}
+    assert asyncio.run(tracker.get_type_id(Meta(category="GAME", platform="Windows"))) == {"type_id": "17"}
+    assert asyncio.run(tracker.get_type_id(Meta(category="GAME"))) == {"type_id": "16"}

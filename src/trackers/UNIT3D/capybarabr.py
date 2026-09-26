@@ -43,7 +43,15 @@ class CapybaraBR(UNIT3D):
         self.common = Common(config)
 
     async def get_category_id(self, meta: Meta, category: str = "", reverse: bool = False, mapping_only: bool = False) -> dict[str, str]:
-        category_id: dict[str, str] = {"MOVIE": "1", "TV": "2", "ANIMES": "4", "BOOK": "11", "COMIC_MANGA": "10", "GAME": "5"}
+        category_id: dict[str, str] = {
+            "MOVIE": "1",
+            "TV": "2",
+            "ANIMES": "4",
+            "BOOK": "11",
+            "COMIC_MANGA": "10",
+            "GAME": "5",
+            "SPORTS": "8",
+        }
 
         if mapping_only:
             return category_id
@@ -56,6 +64,9 @@ class CapybaraBR(UNIT3D):
 
         if resolved_category == "BOOK" and (str(meta.type).upper() in ("CBR", "CBZ") or meta.manga or meta.comic):
             resolved_category = "COMIC_MANGA"
+
+        if meta.is_sports:
+            resolved_category = "SPORTS"
 
         if resolved_category:
             return {"category_id": category_id.get(resolved_category, "0")}
@@ -163,7 +174,8 @@ class CapybaraBR(UNIT3D):
         if category == "BOOK":
             book_title = f"{meta.book_series.strip()}: " if meta.book_series else ""
             book_title += meta.title.strip()
-            book_title += f" {meta.book_series_index.strip()}" if meta.book_series_index else ""
+            series_index = meta.book_series_index.strip()
+            book_title += f" Vol. {series_index}" if series_index else ""
             book_title = self.common.portuguese_title_capitalization(book_title)
 
             year_str = str(meta.year) if meta.year is not None else ""

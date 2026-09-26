@@ -1408,7 +1408,6 @@ const trackerDefaultOverrideKeys = new Set([
 const trackerNameMap = {
   AITHER: "Aither",
   ALPHARATIO: "AlphaRatio",
-  AMIGOSSHARE: "Amigos Share Club",
   ANTHELION: "Anthelion",
   ASIANCINEMA: "AsianCinema",
   AVISTAZ: "AvistaZ",
@@ -7896,9 +7895,12 @@ function ItemList({
     }
     if (isScreenshotCaptureProcessingSection) {
       if (
-        ["screens", "cutoff_screens", "scale_screenshots_for_par"].includes(
-          it.key,
-        )
+        [
+          "screens",
+          "cutoff_screens",
+          "scale_screenshots_for_par",
+          "scale_dvd_screenshots_for_par",
+        ].includes(it.key)
       ) {
         grouped["Screenshot Capture"].push(it);
       } else {

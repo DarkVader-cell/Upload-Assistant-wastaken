@@ -7,7 +7,8 @@ import os
 import sys
 from pathlib import Path
 
-from src.app_paths import LegacyConfigLocationError, ensure_legacy_config_absent
+from src.app_paths import CONFIG_PATH, LegacyConfigLocationError, bundled_example_config_path, ensure_legacy_config_absent, ensure_user_config
+from src.config_sync import ConfigSyncError, sync_user_config
 
 _entrypoint_name = Path(sys.argv[0]).stem.lower()
 _is_uploader_entrypoint = __name__ == "__main__" or _entrypoint_name == "ua"
@@ -36,6 +37,28 @@ if _is_uploader_entrypoint:
         print(f"Error: {exc}", file=sys.stderr)
         sys.exit(1)
 
+    _is_webui_arg = any((arg == "-webui" or arg == "--webui" or arg.startswith("-webui=") or arg.startswith("--webui=")) for arg in sys.argv)
+    try:
+        _config_created = ensure_user_config()
+    except OSError as exc:
+        print(f"Failed to create configuration file: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    if _config_created:
+        print(f"Configuration file created at: {CONFIG_PATH}")
+        if not _is_webui_arg:
+            print("Configure it before running an upload, then run the command again.")
+            sys.exit(1)
+    else:
+        try:
+            _config_sync_result = sync_user_config(CONFIG_PATH, bundled_example_config_path())
+        except (ConfigSyncError, OSError) as exc:
+            print(f"Warning: configuration was not automatically updated: {exc}", file=sys.stderr)
+        else:
+            if _config_sync_result.changed:
+                print(f"Configuration updated with {len(_config_sync_result.added_paths)} new setting(s).")
+                print(f"Previous configuration backed up to: {_config_sync_result.backup_path}")
+
 import ast
 import asyncio
 import gc
@@ -57,6 +80,8 @@ from src.check_requirements import check_dependencies
 check_dependencies()
 
 import logging
+
+from rich.markup import escape
 
 from bin.get_ffmpeg import FfmpegBinaryManager
 from bin.get_mkbrr import MkbrrBinaryManager
@@ -81,6 +106,7 @@ from src.early_tasks import is_usenet_only as _is_usenet_only
 from src.get_desc import gen_desc
 from src.get_name import NameManager
 from src.get_tracker_data import TrackerDataManager
+from src.meta_file import write_meta_file
 from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
@@ -241,20 +267,6 @@ if Path(_defaults_data_dir).is_dir():
 
 _config_path = Path(_data_dir) / "config.py"
 
-# Detect -webui or --webui forms, including --webui=host:port
-_is_webui_arg = any((arg == "-webui" or arg == "--webui" or arg.startswith("-webui=") or arg.startswith("--webui=")) for arg in sys.argv)
-# Auto-create config.py from example on first WebUI start
-if _is_webui_arg and not Path(_config_path).exists():
-    _example_config_path = Path(_data_dir) / "example_config.py"
-    if Path(_example_config_path).exists():
-        logger.info("No config.py found. Creating default config from example_config.py...", extra={"markup": False})
-        try:
-            shutil.copy2(_example_config_path, _config_path)
-            logger.info("Default config created successfully!", extra={"markup": False})
-        except Exception as e:
-            logger.info(f"Failed to create default config: {e}", extra={"markup": False})
-            logger.info("Continuing without config file...", extra={"markup": False})
-
 from src.book_prep import sanitize_book_author, sanitize_book_language
 from src.meta import Meta, canonicalize_tracker_config
 from src.post_upload_hooks import run_post_upload_hooks
@@ -369,116 +381,6 @@ else:
     logger.info(f"{_RED}Please ensure the file is located at: {_YELLOW}{_config_path}{_RESET}", extra={"markup": False})
     logger.info(f"{_RED}Follow the setup instructions: https://github.com/wastaken7/Upload-Assistant{_RESET}", extra={"markup": False})
     sys.exit(1)
-
-
-async def merge_meta(meta: Meta, saved_meta: dict[str, Any]) -> dict[str, Any]:
-    """Merges saved metadata with the current meta, respecting overwrite rules."""
-    overwrite_list = [
-        "anon",
-        "asin",
-        "audible_url",
-        "audiobook_bitrate",
-        "audiobook_duration_formatted",
-        "audiobook_duration",
-        "author",
-        "book_asin",
-        "book_author",
-        "book_isbn",
-        "book_language_iso",
-        "book_language",
-        "book_publisher",
-        "book_title",
-        "category",
-        "client",
-        "comic",
-        "debug",
-        "desc",
-        "description_file",
-        "description_link",
-        "double_upload_until",
-        "doubleup",
-        "draft",
-        "dual_audio",
-        "dupe",
-        "exclusive",
-        "featured",
-        "freeleech",
-        "freeleech_until",
-        "game_region",
-        "game_subcategory",
-        "game_system",
-        "game_version",
-        "hardcoded_subs",
-        "igdb_manual",
-        "imdb",
-        "imghost",
-        "isbn",
-        "keywords",
-        "magazine",
-        "mal",
-        "manga",
-        "manual_edition",
-        "manual_episode",
-        "manual_platform",
-        "manual_season",
-        "manual_source",
-        "manual_type",
-        "manual_year",
-        "manual",
-        "modq",
-        "narrator",
-        "newspaper",
-        "no_aka",
-        "no_dub",
-        "no_season",
-        "no_seed",
-        "no_tag",
-        "no_year",
-        "nohash",
-        "openlibrary",
-        "personalrelease",
-        "platform",
-        "qbit_cat",
-        "qbit_tag",
-        "refundable",
-        "region",
-        "screens",
-        "skip_imghost_upload",
-        "steam_manual",
-        "sticky",
-        "title",
-        "tmdb_manual",
-        "torrent_creation",
-        "trackers",
-        "tvmaze_manual",
-        "type",
-        "unattended",
-        "webdv",
-        "year",
-    ]
-    sanitized_saved_meta: dict[str, Any] = {}
-    for key, value in saved_meta.items():
-        clean_key = key.strip().strip("'").strip('"')
-        if clean_key == "tracker_ids":
-            current_tracker_ids = meta.tracker_ids
-            sanitized_saved_meta[clean_key] = current_tracker_ids if current_tracker_ids else value
-        elif clean_key in overwrite_list:
-            meta_val = getattr(meta, clean_key, None)
-            if meta_val not in (None, False, 0, "", [], {}):
-                sanitized_saved_meta[clean_key] = meta_val
-                logger.debug(f"Overriding {clean_key} with meta value: {meta_val}")
-            else:
-                sanitized_saved_meta[clean_key] = value
-        else:
-            sanitized_saved_meta[clean_key] = value
-    tracker_ids = sanitized_saved_meta.pop("tracker_ids", None)
-    meta.update(sanitized_saved_meta)
-    if isinstance(tracker_ids, dict):
-        meta.set_tracker_ids(tracker_ids)
-        sanitized_saved_meta["tracker_ids"] = dict(meta.tracker_ids)
-    sanitize_book_language(meta)
-    sanitize_book_author(meta)
-    return sanitized_saved_meta
 
 
 async def print_progress(message: str, interval: int = 10) -> None:
@@ -1199,8 +1101,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
     meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
 
     logger.debug(f"Trackers list before editing: {meta.trackers}")
-    async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
-        await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+    await write_meta_file(meta)
     _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
 
     # For BOOK category, certain trackers (e.g. CAPYBARABR) require title, author, year and language.
@@ -1275,8 +1176,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
         meta = await prep.gather_prep(meta=meta, mode="cli")
         TrackerSetup(config=config).filter_unsupported_trackers(meta)
         meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
-        async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+        await write_meta_file(meta)
         _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
         try:
             confirm = await helper.get_confirmation(meta)
@@ -1315,7 +1215,6 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
             "1PTBA",
             "ASIANCINEMA",
             "AITHER",
-            "AMIGOSSHARE",
             "BJSHARE",
             "BRASILTRACKER",
             "CAPYBARABR",
@@ -1351,8 +1250,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                 status_dict["skip_upload"] = meta.unattended_audio_skip or meta.unattended_subtitle_skip
 
         await asyncio.sleep(0.2)
-        async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
-            await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+        await write_meta_file(meta)
         _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
         await asyncio.sleep(0.2)
 
@@ -1458,14 +1356,9 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
     from src.screenshot_overlays import overlays_active
 
     meta.frame_overlay = overlays_active(config["DEFAULT"])
-    tracker_status_map = cast(dict[str, dict[str, Any]], meta.tracker_status)
-    for tracker in ["AVISTAZ", "CINEMAZ", "PRIVATEHD"]:
-        upload_status = tracker_status_map.get(tracker, {}).get("upload", False)
-        if tracker in meta.trackers and meta.frame_overlay and upload_status is True:
-            meta.frame_overlay = False
-            logger.info("[yellow]AVISTAZ, CINEMAZ, and PRIVATEHD do not allow frame overlays. Frame overlay will be disabled for this upload.[/yellow]")
 
     bdmv_mi_created = False
+    tracker_status_map = cast(dict[str, dict[str, Any]], meta.tracker_status)
     for tracker in ["ANTHELION", "DIGITALCORE", "HAWKEUNO", "LOCADORA"]:
         upload_status = tracker_status_map.get(tracker, {}).get("upload", False)
         if tracker in trackers and upload_status is True and not bdmv_mi_created:
@@ -1955,8 +1848,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                         except Exception as e:
                             logger.error(f"[red]Error uploading book cover: {e}[/red]")
 
-            async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
-                await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+            await write_meta_file(meta)
             _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
 
             if "image_list" in meta and meta.image_list:
@@ -2043,8 +1935,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
     if meta.randomized >= 1 and not meta.mkbrr and not is_usenet_only:
         TORRENT_CREATOR.create_random_torrents(meta.base_dir, meta.uuid, meta.randomized, cast(str, meta.path))
 
-    async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
-        await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+    await write_meta_file(meta)
     _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
     return True
 
@@ -2420,7 +2311,9 @@ async def do_the_thing(base_dir: str) -> None:
             set_runtime_browse_roots(browse_roots)
 
             try:
-                _webui_server = cast(WebUIServer, create_server(app, host=host, port=port))
+                # Each execution stream occupies a worker while the upload runs.
+                # Leave capacity for polling, prompt responses and other sessions.
+                _webui_server = cast(WebUIServer, create_server(app, host=host, port=port, threads=16))
 
                 # Build clickable URL (use localhost for 0.0.0.0 display)
                 display_host = "localhost" if host == "0.0.0.0" else host  # noqa: S104
@@ -2614,22 +2507,12 @@ async def do_the_thing(base_dir: str) -> None:
 
                 meta_file = Path(base_dir) / "tmp" / Path(path).name / "meta.json"
 
-                keep_meta = config["DEFAULT"].get("keep_meta", False)
-
-                if (not keep_meta or meta.delete_meta) and Path(meta_file).exists():
+                if meta.delete_meta and meta_file.exists():
                     try:
                         meta_file.unlink()
                         logger.debug(f"[bold yellow]Found and deleted existing metadata file: {meta_file}")
                     except Exception as e:
                         logger.info(f"[bold red]Failed to delete metadata file {meta_file}: {e!s}")
-
-                if keep_meta and Path(meta_file).exists():
-                    async with aiofiles.open(meta_file, encoding="utf-8") as f:
-                        content = await f.read()
-                        saved_meta = cast(dict[str, Any], json.loads(content)) if content.strip() else {}
-                        logger.info("[yellow]Existing metadata file found, it holds cached values")
-                        await merge_meta(meta, saved_meta)
-                        _publish_webui_preview_target(path, meta.uuid or None)
 
             except Exception as e:
                 logger.info(f"[red]Exception: '{path}': {e}")
@@ -2753,38 +2636,165 @@ async def do_the_thing(base_dir: str) -> None:
 
                     explicit_usenet_post = "USENET" in trackers_upper or meta.usenet
                     eligible_usenet_trackers = [tracker for tracker in usenet_trackers if cast(Mapping[str, Any], meta.tracker_status.get(tracker, {})).get("upload", False)]
-                    need_usenet_post = explicit_usenet_post or len(eligible_usenet_trackers) > 0
+                    from src.usenetcreate import select_usenet_episode_indexers
 
-                    async def upload_usenet_flow(meta: Meta, usenet_trackers: list[str], need_usenet_post: bool, has_usenet_trackers: bool) -> None:
+                    requested_episode_only_trackers = {tracker.strip().upper() for tracker in meta.usenet_episodes_only if tracker.strip()}
+                    episode_usenet_trackers = select_usenet_episode_indexers(usenet_trackers, meta.tracker_status, requested_episode_only_trackers)
+                    usenet_cfg = config.get("USENET", {})
+                    pesto_season_active = (
+                        str(usenet_cfg.get("usenet_uploader", "nyuu")).lower() == "pesto"
+                        and bool(usenet_cfg.get("pesto_season_upload", False))
+                        and meta.category == "TV"
+                        and bool(meta.tv_pack)
+                        and bool(meta.path)
+                        and Path(meta.path).is_dir()
+                    )
+                    need_usenet_post = explicit_usenet_post or len(eligible_usenet_trackers) > 0 or (pesto_season_active and bool(episode_usenet_trackers))
+
+                    async def upload_usenet_flow(
+                        meta: Meta,
+                        selected_usenet_trackers: list[str],
+                        episode_usenet_trackers: list[str],
+                        pack_usenet_trackers: list[str],
+                        need_usenet_post: bool,
+                        has_usenet_trackers: bool,
+                        pesto_season_enabled: bool,
+                    ) -> None:
                         if need_usenet_post:
-                            from src.usenetcreate import prepare_and_upload_usenet
+                            from src.usenetcreate import (
+                                apply_episode_upload_summary,
+                                build_usenet_indexer_metas,
+                                prepare_and_upload_usenet,
+                                prepare_usenet_episode_screenshots,
+                                select_usenet_indexers_for_submission,
+                            )
 
+                            episode_artifact_dirs: set[Path] = set()
                             try:
+                                episodes_only_trackers = {tracker.strip().upper() for tracker in meta.usenet_episodes_only if tracker.strip()}
+                                if episodes_only_trackers:
+                                    selected_tracker_names = {tracker.strip().upper() for tracker in selected_usenet_trackers}
+                                    unknown_trackers = episodes_only_trackers - selected_tracker_names
+                                    if unknown_trackers:
+                                        raise ValueError(
+                                            f"--usenet-episodes-only contains indexers that are not selected for this upload: {', '.join(sorted(unknown_trackers))}"
+                                        )
+                                    if not pesto_season_enabled:
+                                        raise ValueError("--usenet-episodes-only requires an active Pesto season-pack upload")
+
                                 nzb_path = await prepare_and_upload_usenet(meta, config)
                                 if nzb_path:
                                     meta.nzb_path = nzb_path
                                     logger.info("[bold green]Usenet upload completed successfully!")
-                                    if usenet_trackers:
-                                        meta_usenet = meta.copy()
-                                        meta_usenet["trackers"] = usenet_trackers
-                                        # Meta.copy() is deep; keep results on the queue item's
-                                        # status map so its final summary can see this flow.
-                                        meta_usenet.tracker_status = meta.tracker_status
-                                        logger.info(f"[yellow]Processing uploads to Usenet indexers: {', '.join(usenet_trackers)}.....")
-                                        await process_trackers(
-                                            meta_usenet,
-                                            config,
-                                            client,
-                                            list(api_trackers),
-                                            tracker_class_map,
-                                            list(http_trackers),
-                                            list(other_api_trackers),
-                                            upload_target="usenet indexer",
+                                    if selected_usenet_trackers:
+                                        nzb_paths = meta.usenet_nzb_paths or [str(nzb_path)]
+                                        indexer_metas = await build_usenet_indexer_metas(
+                                            meta,
+                                            nzb_paths,
+                                            episode_usenet_trackers,
+                                            meta.usenet_pack_nzb_path,
                                         )
+                                        if meta.tv_pack:
+                                            logger.info(f"[yellow]Processing {len(indexer_metas)} NZB upload(s) to Usenet indexers: {', '.join(selected_usenet_trackers)}.....")
+                                        failed_episode_nzbs: dict[str, list[str]] = {tracker.upper(): [] for tracker in episode_usenet_trackers}
+                                        uploaded_episode_counts: dict[str, int] = {tracker.upper(): 0 for tracker in episode_usenet_trackers}
+                                        duplicate_episode_counts: dict[str, int] = {tracker.upper(): 0 for tracker in episode_usenet_trackers}
+                                        skipped_episode_counts: dict[str, int] = {tracker.upper(): 0 for tracker in episode_usenet_trackers}
+                                        episode_report: list[tuple[str, list[str]]] = []
+                                        for index, meta_usenet in enumerate(indexer_metas, start=1):
+                                            is_pack_submission = meta_usenet.usenet_is_pack
+                                            if not is_pack_submission:
+                                                episode_artifact_dirs.add(Path(meta_usenet.base_dir) / "tmp" / meta_usenet.uuid)
+                                            submission_trackers = select_usenet_indexers_for_submission(
+                                                pack_usenet_trackers if is_pack_submission else episode_usenet_trackers,
+                                                episodes_only_trackers,
+                                                is_pack=is_pack_submission,
+                                            )
+                                            meta_usenet["trackers"] = submission_trackers
+                                            if not is_pack_submission:
+                                                logger.info(f"[cyan]Submitting episode NZB {index}/{len(indexer_metas)}: {Path(meta_usenet.nzb_path).name}[/cyan]")
+                                                if submission_trackers:
+                                                    await TrackerStatusManager(config=config).process_all_trackers(meta_usenet)
+                                                    submission_trackers = [
+                                                        tracker
+                                                        for tracker in submission_trackers
+                                                        if cast(Mapping[str, Any], meta_usenet.tracker_status.get(tracker, {})).get("upload", False)
+                                                    ]
+                                                    meta_usenet.trackers = submission_trackers
+                                                    screenshot_trackers = [
+                                                        tracker
+                                                        for tracker in submission_trackers
+                                                        if getattr(tracker_class_map.get(tracker.upper()), "supports_screenshots", False)
+                                                    ]
+                                                    if screenshot_trackers and meta_usenet.screens:
+                                                        try:
+                                                            await prepare_usenet_episode_screenshots(meta_usenet, config)
+                                                        except Exception as screenshot_error:
+                                                            logger.error(f"[red]{meta_usenet.name}: episode screenshot preparation failed: {screenshot_error}[/red]")
+                                                            for tracker in screenshot_trackers:
+                                                                status = meta_usenet.tracker_status.setdefault(tracker.upper(), {})
+                                                                status["upload"] = True
+                                                                status["upload_success"] = False
+                                                                status["status_message"] = f"data error: episode screenshots failed: {screenshot_error}"
+                                                            submission_trackers = [tracker for tracker in submission_trackers if tracker not in screenshot_trackers]
+                                                            meta_usenet.trackers = submission_trackers
+                                            else:
+                                                if len(indexer_metas) > 1:
+                                                    logger.info(f"[cyan]Submitting season NZB {index}/{len(indexer_metas)}: {Path(meta_usenet.nzb_path).name}[/cyan]")
+                                            if submission_trackers:
+                                                await process_trackers(
+                                                    meta_usenet,
+                                                    config,
+                                                    client,
+                                                    list(api_trackers),
+                                                    tracker_class_map,
+                                                    list(http_trackers),
+                                                    list(other_api_trackers),
+                                                    upload_target="usenet indexer",
+                                                )
+                                                if is_pack_submission:
+                                                    for tracker in submission_trackers:
+                                                        meta.tracker_status.setdefault(tracker.upper(), {}).update(
+                                                            cast(Mapping[str, Any], meta_usenet.tracker_status.get(tracker, {}))
+                                                        )
+                                            elif is_pack_submission:
+                                                logger.info("[yellow]Skipping the season NZB for indexers selected by --usenet-episodes-only.[/yellow]")
+                                            if not is_pack_submission:
+                                                episode_results: list[str] = []
+                                                for tracker in episode_usenet_trackers:
+                                                    tracker_key = tracker.upper()
+                                                    episode_status = cast(Mapping[str, Any], meta_usenet.tracker_status.get(tracker_key, {}))
+                                                    if episode_status.get("upload", False) and not episode_status.get("upload_success", False):
+                                                        failed_episode_nzbs[tracker_key].append(Path(meta_usenet.nzb_path).name)
+                                                        episode_results.append(f"{tracker_key}=failed")
+                                                    elif episode_status.get("upload_success", False):
+                                                        uploaded_episode_counts[tracker_key] += 1
+                                                        episode_results.append(f"{tracker_key}=uploaded")
+                                                    elif episode_status.get("dupe", False):
+                                                        duplicate_episode_counts[tracker_key] += 1
+                                                        episode_results.append(f"{tracker_key}=duplicate")
+                                                    else:
+                                                        skipped_episode_counts[tracker_key] += 1
+                                                        episode_results.append(f"{tracker_key}=skipped")
+                                                episode_report.append((Path(meta_usenet.nzb_path).stem, episode_results))
+                                                logger.info(f"[bold cyan]Episode result:[/bold cyan] {Path(meta_usenet.nzb_path).stem} — {', '.join(episode_results)}")
+
+                                        apply_episode_upload_summary(
+                                            meta,
+                                            failed_episode_nzbs,
+                                            uploaded_episode_counts,
+                                            duplicate_episode_counts,
+                                            skipped_episode_counts,
+                                            episodes_only_trackers,
+                                        )
+                                        if episode_report:
+                                            logger.info("[bold cyan]Pesto episode upload summary:[/bold cyan]")
+                                            for episode_name, results in episode_report:
+                                                logger.info(f"  [cyan]{episode_name}[/cyan]: {', '.join(results)}")
                                 else:
                                     logger.info("[bold red]Usenet upload failed.[/bold red]")
                                     status_map = meta.tracker_status
-                                    for t in usenet_trackers:
+                                    for t in selected_usenet_trackers:
                                         status_map.setdefault(t, {})["status_message"] = "data error: Usenet upload failed, NZB missing"
                                         status_map[t]["upload"] = False
                             except Exception as e:
@@ -2793,9 +2803,17 @@ async def do_the_thing(base_dir: str) -> None:
 
                                 logger.info(traceback.format_exc())
                                 status_map = meta.tracker_status
-                                for t in usenet_trackers:
+                                for t in selected_usenet_trackers:
                                     status_map.setdefault(t, {})["status_message"] = f"data error: Usenet upload failed: {e}"
                                     status_map[t]["upload"] = False
+                            finally:
+                                if not meta.debug:
+                                    for artifact_dir in episode_artifact_dirs:
+                                        try:
+                                            if artifact_dir.is_dir():
+                                                await asyncio.to_thread(shutil.rmtree, artifact_dir)
+                                        except OSError as cleanup_error:
+                                            logger.warning(f"[yellow]Could not clean episode artifacts in '{artifact_dir}': {cleanup_error}[/yellow]")
                         elif has_usenet_trackers:
                             logger.info("[yellow]Skipping NNTP Usenet post because no Usenet indexers passed the upload checks.[/yellow]")
 
@@ -2846,11 +2864,22 @@ async def do_the_thing(base_dir: str) -> None:
 
                     async def run_usenet_flow(
                         meta: Meta = meta,
+                        selected_usenet_trackers: list[str] = usenet_trackers,
+                        episode_usenet_trackers: list[str] = episode_usenet_trackers,
                         eligible_usenet_trackers: list[str] = eligible_usenet_trackers,
                         need_usenet_post: bool = need_usenet_post,
                         has_usenet_trackers: bool = bool(usenet_trackers),
+                        pesto_season_enabled: bool = pesto_season_active,
                     ) -> None:
-                        await upload_usenet_flow(meta, eligible_usenet_trackers, need_usenet_post, has_usenet_trackers)
+                        await upload_usenet_flow(
+                            meta,
+                            selected_usenet_trackers,
+                            episode_usenet_trackers,
+                            eligible_usenet_trackers,
+                            need_usenet_post,
+                            has_usenet_trackers,
+                            pesto_season_enabled,
+                        )
 
                     async def run_torrent_flow(
                         bandwidth_control: bool,
@@ -2912,8 +2941,7 @@ async def do_the_thing(base_dir: str) -> None:
 
             # Persist and expose the completed item before user-managed hooks run.
             # Hooks may inspect the final tracker status and files have not yet been cleaned.
-            async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/meta.json", "w", encoding="utf-8") as f:
-                await f.write(json.dumps(meta.to_dict(), indent=4, cls=PathAwareEncoder))
+            await write_meta_file(meta)
             _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
             await run_post_upload_hooks(meta, config)
 
@@ -2951,10 +2979,10 @@ async def do_the_thing(base_dir: str) -> None:
         current_release_log_path.set(None)
 
     except Exception as e:
-        logger.info(f"[bold red]An unexpected error occurred: {e}")
+        logger.info(f"[bold red]An unexpected error occurred: {escape(str(e))}[/bold red]")
         if sanitize_meta:
             meta = await Redaction.clean_meta_for_export(meta)
-        logger.info(traceback.format_exc())
+        logger.info(traceback.format_exc(), extra={"markup": False})
         cleanup_manager.reset_terminal()
 
     finally:
@@ -3237,15 +3265,6 @@ def run() -> None:
             logger.info("[green]Shutdown complete[/green]")
 
         sys.exit(0)
-
-
-def run_config_generator() -> None:
-    import runpy
-    import sys
-
-    script_path = Path(__file__).with_name("config-generator.py")
-    sys.argv[0] = str(script_path)
-    runpy.run_path(str(script_path), run_name="__main__")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,7 @@ class Curupira:
     auth_type = "other_api"
     tracker = "CURUPIRA"
     display_name = "Curupira"
+    supports_screenshots = True
     banned_groups = (
         "4K4U",
         "afm72",
@@ -152,7 +153,7 @@ class Curupira:
 
         params: dict[str, str] = {}
 
-        category = meta.category.upper()
+        category = meta.category.upper() if not meta.is_sports else "SPORTS"
 
         if category == "TV":
             params["t"] = "tvsearch"
@@ -225,6 +226,9 @@ class Curupira:
         # Check if anime
         if meta.anime:
             return "5070"
+
+        if meta.is_sports:
+            return "5060"
 
         category = meta.category.upper()
         resolution = meta.resolution.lower()

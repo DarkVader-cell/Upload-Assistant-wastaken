@@ -116,7 +116,7 @@ def test_get_database_overview_extracts_synopsis():
     html = """
     <div class="box torrent_description">
         <div class="body">
-            <blockquote>Em busca de uma vida melhor, Lu Xiao Fan deixa o interior...</blockquote>
+            <blockquote>Uma personagem inventada chega a uma cidade fictícia...</blockquote>
             <blockquote class="center"><iframe class="youtube" src="http://example.com"></iframe></blockquote>
         </div>
     </div>
@@ -124,7 +124,7 @@ def test_get_database_overview_extracts_synopsis():
     soup = BeautifulSoup(html, "html.parser")
     tracker = object.__new__(BJShare)
     overview = tracker.get_database_overview(soup)
-    assert overview == "Em busca de uma vida melhor, Lu Xiao Fan deixa o interior..."  # noqa: S101
+    assert overview == "Uma personagem inventada chega a uma cidade fictícia..."  # noqa: S101
 
 
 def test_get_database_credits_extracts_creator_and_cast():

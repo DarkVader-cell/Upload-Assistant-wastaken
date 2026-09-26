@@ -23,6 +23,10 @@ from src.temp_paths import artwork_dir, dynamic_hdr_plots_dir, menu_screenshots_
 from src.tracker_images import (
     get_tracker_image_collection,
     has_tracker_image_collection,
+    image_matches_tag_policy,
+    image_tag_policy,
+    image_tags,
+    normalize_image_tags,
     set_tracker_image_collection,
 )
 from src.type_utils import to_int
@@ -40,6 +44,15 @@ class ImageHostPolicy:
 
 def _as_str(value: Any) -> str | None:
     return value if isinstance(value, str) else None
+
+
+def _deduplicate_image_records(images: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return unique image records in their original order."""
+    unique_images: list[dict[str, Any]] = []
+    for image in images:
+        if image not in unique_images:
+            unique_images.append(image)
+    return unique_images
 
 
 def has_restricted_image_hosts(
@@ -141,6 +154,7 @@ class RehostImagesManager:
         url_host_mapping: dict[str, str],
         img_host_index: int = 1,
         approved_image_hosts: list[str] | None = None,
+        required_image_tags: list[str] | None = None,
     ) -> tuple[list[dict[str, str]], bool, bool]:
         images, retry_mode, images_reuploaded = await _check_hosts(
             meta,
@@ -151,6 +165,8 @@ class RehostImagesManager:
             default_config=self.default_config,
             takescreens_manager=self.takescreens_manager,
             uploadscreens_manager=self.uploadscreens_manager,
+            tracker_config=self.config,
+            required_image_tags=required_image_tags,
         )
         if tracker != "covers":
             await _check_additional_image_collections(
@@ -163,7 +179,7 @@ class RehostImagesManager:
             )
         return images, retry_mode, images_reuploaded
 
-    async def check_policy(self, meta: Meta, tracker: str, policy: ImageHostPolicy) -> tuple[list[dict[str, str]], bool, bool]:
+    async def check_policy(self, meta: Meta, tracker: str, policy: ImageHostPolicy, required_image_tags: list[str] | None = None) -> tuple[list[dict[str, str]], bool, bool]:
         """Apply a tracker's declarative image-host policy."""
         return await self.check_hosts(
             meta,
@@ -171,6 +187,7 @@ class RehostImagesManager:
             url_host_mapping=dict(policy.url_host_mapping),
             img_host_index=policy.img_host_index,
             approved_image_hosts=list(policy.approved_image_hosts),
+            required_image_tags=required_image_tags,
         )
 
     async def handle_image_upload(
@@ -206,7 +223,13 @@ async def check_tracker_image_hosts(meta: Meta, tracker_class: Any) -> None:
     policy = getattr(tracker_class, "image_host_policy", None)
     rehost_manager = getattr(tracker_class, "rehost_images_manager", None)
     if isinstance(policy, ImageHostPolicy) and rehost_manager is not None:
-        await rehost_manager.check_policy(meta, tracker_class.tracker, policy)
+        required_tags = (
+            ["tonemapped"] if getattr(tracker_class, "requires_tonemapped_hdr_screenshots", False) and any(marker in meta.hdr for marker in ("HDR", "DV", "HLG")) else []
+        )
+        if required_tags:
+            await rehost_manager.check_policy(meta, tracker_class.tracker, policy, required_image_tags=required_tags)
+        else:
+            await rehost_manager.check_policy(meta, tracker_class.tracker, policy)
         return
 
     check_hosts = getattr(tracker_class, "check_image_hosts", None)
@@ -381,6 +404,8 @@ async def _check_additional_image_collections(
                     continue
                 replacement = dict(original)
                 replacement.update(uploaded_image)
+                if "tags" in original:
+                    replacement["tags"] = normalize_image_tags(original.get("tags"))
                 replacement["local_file_path"] = str(local_path)
                 updated_images[index] = replacement
             set_tracker_image_collection(meta, tracker, collection_name, updated_images)
@@ -397,6 +422,8 @@ async def _check_hosts(
     default_config: Mapping[str, Any] | None = None,
     takescreens_manager: TakeScreensManager | None = None,
     uploadscreens_manager: UploadScreensManager | None = None,
+    tracker_config: Mapping[str, Any] | None = None,
+    required_image_tags: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], bool, bool]:
     if default_config is None:
         raise ValueError("default_config is required")
@@ -412,6 +439,12 @@ async def _check_hosts(
 
     has_tracker_override = has_tracker_image_collection(meta, tracker, "screenshots")
     tracker_images = get_tracker_image_collection(meta, tracker, "screenshots")
+    whitelist, blacklist = image_tag_policy(tracker_config or {}, tracker, required_image_tags)
+
+    def compatible(images: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [image for image in images if image_matches_tag_policy(image, whitelist, blacklist)]
+
+    compatible_tracker_images = compatible(tracker_images)
 
     logger.debug(
         f"[cyan]check_hosts debug: tracker={tracker} meta.imghost={meta.imghost} approved_image_hosts={approved_image_hosts} "
@@ -419,7 +452,7 @@ async def _check_hosts(
     )
 
     # Check if we have main image_list but no tracker-specific images yet
-    if meta.image_list and not has_tracker_override:
+    if meta.image_list and not has_tracker_override and not (whitelist or blacklist):
         logger.debug(f"[yellow]Checking if existing images in meta.image_list can be used for {tracker}...")
         # Check if the URLs in image_list are from approved hosts
         approved_images: list[dict[str, str]] = []
@@ -494,6 +527,7 @@ async def _check_hosts(
             elif meta.debug:
                 logger.info(f"[red]URL '{raw_url}' from reuploaded_images.json is not recognized as an approved host.")
 
+    valid_reuploaded_images = compatible(valid_reuploaded_images)
     if valid_reuploaded_images:
         set_tracker_image_collection(meta, tracker, "screenshots", valid_reuploaded_images)
         if tracker == "covers":
@@ -504,9 +538,9 @@ async def _check_hosts(
 
     # Check if the tracker-specific key has valid images
     has_valid_images = False
-    if tracker_images:
+    if compatible_tracker_images:
         valid_hosts: list[bool] = []
-        for image in cast(list[dict[str, str]], tracker_images):
+        for image in cast(list[dict[str, str]], compatible_tracker_images):
             raw_url = _as_str(image.get("raw_url")) or ""
             netloc = urlparse(raw_url).netloc
             matched_host = await match_host(netloc, url_host_mapping.keys())
@@ -514,12 +548,13 @@ async def _check_hosts(
             valid_hosts.append(mapped_host in approved_image_hosts)
 
         # Then check if all are valid
-        if all(valid_hosts) and tracker_images:
+        if all(valid_hosts) and compatible_tracker_images:
             has_valid_images = True
 
     if has_valid_images:
         logger.info(f"[green]Using valid tracker screenshots for {tracker}.")
-        return get_tracker_image_collection(meta, tracker, "screenshots"), False, False
+        set_tracker_image_collection(meta, tracker, "screenshots", compatible_tracker_images)
+        return compatible_tracker_images, False, False
 
     logger.debug(f"[yellow]No valid images found for {tracker}, will attempt to reupload...")
 
@@ -545,6 +580,8 @@ async def _check_hosts(
             default_config=default_config,
             takescreens_manager=takescreens_manager,
             uploadscreens_manager=uploadscreens_manager,
+            tracker_config=tracker_config,
+            required_image_tags=required_image_tags,
         )
 
         if image_list:
@@ -578,6 +615,8 @@ async def _handle_image_upload(
     default_config: Mapping[str, Any] | None = None,
     takescreens_manager: TakeScreensManager | None = None,
     uploadscreens_manager: UploadScreensManager | None = None,
+    tracker_config: Mapping[str, Any] | None = None,
+    required_image_tags: list[str] | None = None,
 ) -> tuple[list[dict[str, str]], bool, bool]:
     if default_config is None:
         raise ValueError("default_config is required")
@@ -608,6 +647,30 @@ async def _handle_image_upload(
     base_dir = meta.base_dir
     folder_id = meta.uuid
     set_tracker_image_collection(meta, tracker, "screenshots", [])
+
+    whitelist, blacklist = image_tag_policy(tracker_config or {}, tracker, required_image_tags)
+    policy_enabled = bool(whitelist or blacklist)
+    incompatible_basenames: set[str] = set()
+    capture_tags = image_tags(meta)
+    cached_tags_by_basename: dict[str, list[str]] = {}
+    if policy_enabled:
+        for image in cast(list[dict[str, Any]], meta.image_list):
+            for url_key in ("raw_url", "img_url", "web_url"):
+                value = _as_str(image.get(url_key))
+                if value:
+                    basename = Path(urlparse(value).path).name
+                    if basename and "tags" in image:
+                        cached_tags_by_basename[basename] = normalize_image_tags(image.get("tags"))
+                    break
+            if image_matches_tag_policy(image, whitelist, blacklist):
+                continue
+            for url_key in ("raw_url", "img_url", "web_url"):
+                value = _as_str(image.get(url_key))
+                if value:
+                    basename = Path(urlparse(value).path).name
+                    if basename:
+                        incompatible_basenames.add(basename)
+                    break
 
     screenshot_path = screenshots_dir(base_dir, folder_id)
     logger.debug(f"[yellow]Searching for screenshots in {screenshot_path}...")
@@ -720,6 +783,8 @@ async def _handle_image_upload(
 
     # Ensure we have unique screenshots
     all_screenshots = list(set(all_screenshots))
+    if incompatible_basenames:
+        all_screenshots = [path for path in all_screenshots if Path(path).name not in incompatible_basenames]
 
     if tracker == "covers":
         multi_screens = len(all_screenshots)
@@ -731,6 +796,14 @@ async def _handle_image_upload(
 
         logger.debug(f"[yellow]Found {len(all_screenshots)} screenshots, need {needed_screenshots} more to reach {multi_screens} total.")
 
+        original_frame_overlay = meta.frame_overlay
+        if "overlay" in blacklist:
+            meta.frame_overlay = False
+        elif "overlay" in whitelist:
+            meta.frame_overlay = True
+        original_force_tonemap = meta.force_tonemap
+        if "tonemapped" in whitelist and any(marker in meta.hdr for marker in ("HDR", "DV", "HLG")):
+            meta.force_tonemap = True
         try:
             if meta.is_disc == "BDMV":
                 await takescreens_manager.disc_screenshots(
@@ -775,6 +848,11 @@ async def _handle_image_upload(
             import traceback
 
             logger.info(f"[dim]{traceback.format_exc()}[/dim]")
+        finally:
+            capture_tags = image_tags(meta)
+            if policy_enabled and ("overlay" in blacklist or "overlay" in whitelist):
+                meta.frame_overlay = original_frame_overlay
+            meta.force_tonemap = original_force_tonemap
 
     if not all_screenshots:
         logger.info("[red]No screenshots were generated or found. Please check the screenshot generation process.")
@@ -854,6 +932,9 @@ async def _handle_image_upload(
             return [], True, images_reuploaded
 
         uploaded_images, _ = await uploadscreens_manager.upload_screens(meta, multi_screens, current_upload_index, 0, multi_screens, all_screenshots, {}, retry_mode)
+        if policy_enabled:
+            for source, image in zip(all_screenshots, uploaded_images, strict=False):
+                image["tags"] = cached_tags_by_basename.get(Path(source).name, capture_tags)
         if uploaded_images:
             set_tracker_image_collection(meta, tracker, "screenshots", uploaded_images)
 
@@ -897,8 +978,7 @@ async def _handle_image_upload(
             except Exception:
                 existing_data = []
 
-            updated_data = existing_data + tracker_images
-            updated_data = [dict(s) for s in {tuple(d.items()) for d in updated_data}]
+            updated_data = _deduplicate_image_records(existing_data + tracker_images)
 
             if tracker == "covers" and "release_url" in meta:
                 for image in updated_data:

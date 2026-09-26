@@ -9,15 +9,16 @@ import urllib.parse
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import ParseResult
+from urllib.parse import ParseResult, urlsplit
 
 import aiofiles
 import httpx
 import langcodes
+from bs4 import BeautifulSoup, Comment, NavigableString, Tag
 from jinja2 import Template
 from langcodes.tag_parser import LanguageTagError
 
-from src.audible import resolve_audible_url
+from src.audible import build_audible_author_url, resolve_audible_url
 from src.bbcode import BBCODE
 from src.cogs.redaction import PathAwareEncoder
 from src.console import logger
@@ -70,6 +71,54 @@ def html_to_bbcode(text: str) -> str:
     return re.sub(r"<[^>]+>", "", converted_text)
 
 
+def _clean_game_requirements(value: str) -> str:
+    """Convert a Steam requirements block to clean BBCode."""
+    cleaned = html.unescape(html_to_bbcode(value))
+    cleaned = re.sub(r"<[^>]+>", "", cleaned).strip()
+    return re.sub(
+        r"^\[b\](?:Minimum|Recommended|Mínimo|Mínimos|Recomendado|Recomendados):?\[/b\]\s*",
+        "",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+
+
+def _parse_game_requirement_items(value: str) -> list[tuple[str, str, str]]:
+    """Return normalized key, display label, and value for each Steam requirement."""
+    cleaned = _clean_game_requirements(value)
+    if not cleaned:
+        return []
+
+    items: list[list[str]] = []
+    unlabeled_count = 0
+    label_counts: dict[str, int] = {}
+    item_pattern = re.compile(r"^\[b\](?P<label>.+?)(?::\s*)?\[/b\]\s*:?[ \t]*(?P<value>.*)$", re.IGNORECASE)
+
+    for raw_line in cleaned.splitlines():
+        is_list_item = bool(re.match(r"^\s*\*\s*", raw_line))
+        line = re.sub(r"^\s*\*\s*", "", raw_line).strip()
+        if not line:
+            continue
+        match = item_pattern.match(line)
+        if match:
+            label = _safe_game_field(match.group("label").rstrip(":").replace("*", "")).strip()
+            item_value = match.group("value").strip()
+            base_key = label.casefold()
+            occurrence = label_counts.get(base_key, 0)
+            label_counts[base_key] = occurrence + 1
+            key = f"label:{base_key}:{occurrence}"
+            items.append([key, label or "-", item_value or "-"])
+        elif is_list_item or not items:
+            items.append([f"unlabeled:{unlabeled_count}", "-", line])
+            unlabeled_count += 1
+        else:
+            items[-1][2] = f"{items[-1][2]}\n{line}"
+
+    if not items:
+        return [("details", "-", cleaned)]
+    return [(key, label, item_value) for key, label, item_value in items]
+
+
 def _safe_game_field(value: Any) -> str:
     text = re.sub(r"<[^>]+>", "", html.unescape(str(value or ""))).strip()
     return " ".join(text.replace("[", "").replace("]", "").split())
@@ -93,6 +142,41 @@ def _clean_description_text(value: Any) -> str:
 
     # Handle partially escaped payloads as well (for example, ``\\"text\\"``).
     return text.replace(r"\"", '"').replace(r"\/", "/")
+
+
+def _book_overview_to_bbcode(value: str) -> str:
+    """Preserve useful HTML formatting in book synopses from any source."""
+    soup = BeautifulSoup(_clean_description_text(value), "html.parser")
+
+    def render(node: Any) -> str:
+        if isinstance(node, Comment):
+            return ""
+        if isinstance(node, NavigableString):
+            return str(node)
+        if not isinstance(node, Tag) or node.name in {"script", "style", "template", "img"}:
+            return ""
+        if node.name == "br":
+            return "\n"
+        content = "".join(render(child) for child in node.children)
+        inline_tags = {"b": "b", "strong": "b", "i": "i", "em": "i", "u": "u", "s": "s", "strike": "s", "del": "s"}
+        if node.name in inline_tags and content.strip():
+            tag = inline_tags[node.name]
+            return f"[{tag}]{content}[/{tag}]"
+        if node.name == "a":
+            href = _safe_game_url(node.get("href"))
+            return f"[url={href}]{content}[/url]" if href and content.strip() else content
+        if node.name == "li":
+            return f"* {content.strip()}\n"
+        if node.name in {"p", "div", "ul", "ol"}:
+            return f"{content.strip()}\n\n"
+        if node.name in {"h1", "h2", "h3", "h4", "h5", "h6"} and content.strip():
+            return f"[b]{content.strip()}[/b]\n\n"
+        if node.name == "blockquote" and content.strip():
+            return f"[quote]{content.strip()}[/quote]\n\n"
+        return content
+
+    converted = "".join(render(child) for child in soup.contents)
+    return re.sub(r"\n{3,}", "\n\n", converted).strip()
 
 
 def _safe_game_url(value: Any) -> str:
@@ -661,7 +745,7 @@ class DescriptionBuilder:
                 "[h2]screenshots[/h2]",
                 "[h3]screenshots[/h3]",
                 "[b]screenshots[/b]",
-            }:
+            } and "screenshot_header" in self.tracker_config:
                 return ""
             if screenheader:
                 return screenheader
@@ -802,19 +886,13 @@ class DescriptionBuilder:
         desc_parts.append("[/center]\n")
         return "".join(desc_parts)
 
-    def _build_book_desc_section(self, meta: Meta, header_size: int = 0, table: bool = True, underline: bool = False, bullet: str = "") -> str:
+    def _build_book_desc_section(self, meta: Meta, table: bool = True, underline: bool = False, bullet: str = "") -> str:
         """Build the BBCode table or list for BOOK-category uploads."""
         if self.tracker in ("TORRENTLEECH", "IMMORTALSEED", "IPTORRENTS", "SPEEDAPP"):
             table = False
-            header_size = -1
-        elif self.tracker in ("BJSHARE", "BRASILTRACKER", "AMIGOSSHARE"):
-            if not header_size:
-                header_size = 3
-            if self.tracker == "AMIGOSSHARE":
-                table = False
 
-        header = "[h2]" if not header_size else f"[size={header_size}][b]"
-        header_end = "[/h2]" if not header_size else "[/b][/size]\n"
+        header = "[h2]"
+        header_end = "[/h2]"
 
         asin = meta.asin
         author = meta.author
@@ -837,39 +915,59 @@ class DescriptionBuilder:
         str_narrator = labels["narrator"]
         str_overview = labels["overview"]
         str_publisher = labels["publisher"]
+        str_service = labels["service"]
         str_technical_details = labels["technical_details"]
         str_year = labels["year"]
 
         if overview:
-            overview = html_to_bbcode(overview)
-            overview = re.sub(r"<[^>]+>", "", overview).strip()
-            overview = _clean_description_text(overview)
+            overview = _book_overview_to_bbcode(overview)
+
+        audible_url = ""
+        if asin:
+            with contextlib.suppress(ValueError):
+                audible_url = resolve_audible_url(
+                    asin,
+                    explicit_url=meta.audible_url,
+                    domain=self.config.get("DEFAULT", {}).get("audible_domain", ""),
+                )
 
         # Collect key-value pairs
         fields: list[tuple[str, str]] = []
         if author:
-            fields.append((str_author, author))
+            author_display = author
+            audible_authors = meta.audible_authors
+            author_names = [item["name"] for item in audible_authors if item.get("name")]
+            if meta.audiobook and audible_url and author_names and author in (author_names[0], ", ".join(author_names)):
+                try:
+                    domain = (urlsplit(audible_url).hostname or "").removeprefix("www.")
+                    author_display = ", ".join(
+                        f"[url={build_audible_author_url(item['asin'], domain)}]{item['name']}[/url]" if item.get("asin") else item["name"] for item in audible_authors
+                    )
+                except ValueError, KeyError:
+                    pass
+            fields.append((str_author, author_display))
         if book_translator:
             fields.append((str_book_translator, book_translator))
         if narrator:
             fields.append((str_narrator, narrator))
         if publisher:
             fields.append((str_publisher, publisher))
+        service = meta.service_longname or meta.service
+        if service:
+            fields.append((str_service, service))
         if isbn:
             fields.append((str_isbn, isbn))
         if asin:
             asin_display = asin
-            try:
-                audible_url = resolve_audible_url(
-                    asin,
-                    explicit_url=meta.audible_url,
-                    domain=self.config.get("DEFAULT", {}).get("audible_domain", ""),
-                )
-                if audible_url:
-                    asin_display = f"[url={audible_url}]{asin}[/url]"
-            except ValueError:
-                pass
+            if audible_url:
+                asin_display = f"[url={audible_url}]{asin}[/url]"
             fields.append((str_asin, asin_display))
+        if meta.audiobook and meta.audible_rating_average is not None and meta.audible_rating_count:
+            score = f"{meta.audible_rating_average:.1f}"
+            if self.language == "pt-BR":
+                score = score.replace(".", ",")
+            rating_display = f"{score}/5 ({meta.audible_rating_count} {labels['audible_ratings']})"
+            fields.append((labels["audible_rating"], rating_display))
         if edition:
             fields.append((str_edition, edition))
         if year:
@@ -890,9 +988,6 @@ class DescriptionBuilder:
             if underline:
                 header = "[b][u]"
                 header_end = "[/u][/b]\n"
-            elif header_size == -1:
-                header = "[b]"
-                header_end = "[/b]\n"
 
             if fields:
                 final_book_parts.append(f"{header}{str_technical_details}{header_end}")
@@ -918,12 +1013,9 @@ class DescriptionBuilder:
         if underline:
             header = "[b][u]"
             header_end = "[/u][/b]\n"
-        elif header_size == -1:
-            header = "[b]"
-            header_end = "[/b]\n"
         else:
-            header = "[h2]" if not header_size else f"[size={header_size}][b]"
-            header_end = "[/h2]" if not header_size else "[/b][/size]\n"
+            header = "[h2]"
+            header_end = "[/h2]"
 
         if book_parts:
             final_book_parts.append(f"{header}{str_technical_details}{header_end}" + "\n".join(book_parts))
@@ -933,20 +1025,15 @@ class DescriptionBuilder:
 
         return "\n\n".join(final_book_parts)
 
-    def _build_game_desc_section(self, meta: Meta, header_size: int = 0, table: bool = True) -> str:
+    def _build_game_desc_section(self, meta: Meta, table: bool = True) -> str:
         """Build the beautiful BBCode layout for GAME-category uploads."""
         if meta.category != "GAME":
             return ""
 
         game_parts: list[str] = []
 
-        if self.tracker == "TORRENTLEECH" and not header_size:
-            header_size = 1
-        elif self.tracker in ("BJSHARE", "BRASILTRACKER") and not header_size:
-            header_size = 3
-
-        header = "[h2]" if not header_size else f"[size={header_size}][b]"
-        header_end = "[/h2]" if not header_size else "[/b][/size]\n"
+        header = "[h2]"
+        header_end = "[/h2]"
 
         use_pt_br = self.language == "pt-BR"
         str_technical_details = "Technical Details" if not use_pt_br else "Detalhes Técnicos"
@@ -1112,35 +1199,30 @@ class DescriptionBuilder:
         req_rec = meta.requirements_recommended
 
         if req_min or req_rec:
-            import html
-
             header_title = f"{str_system_requirements}"
             game_parts.append(f"{header}{header_title}{header_end}")
 
             col_min_header = f"{str_minimum}"
             col_rec_header = f"{str_recommended}"
 
-            clean_min = ""
-            if req_min:
-                clean_min = html_to_bbcode(req_min)
-                clean_min = html.unescape(clean_min)
-                clean_min = re.sub(r"<[^>]+>", "", clean_min).strip()
-                clean_min = re.sub(r"^\[b\](Minimum|Mínimo):\[/b\]\s*", "", clean_min, flags=re.IGNORECASE)
-
-            clean_rec = ""
-            if req_rec:
-                clean_rec = html_to_bbcode(req_rec)
-                clean_rec = html.unescape(clean_rec)
-                clean_rec = re.sub(r"<[^>]+>", "", clean_rec).strip()
-                clean_rec = re.sub(r"^\[b\](Recommended|Recomendado):\[/b\]\s*", "", clean_rec, flags=re.IGNORECASE)
+            clean_min = _clean_game_requirements(req_min) if req_min else ""
+            clean_rec = _clean_game_requirements(req_rec) if req_rec else ""
 
             if table:
-                clean_min = clean_min or "-"
-                clean_rec = clean_rec or "-"
+                min_items = _parse_game_requirement_items(req_min) if req_min else []
+                rec_items = _parse_game_requirement_items(req_rec) if req_rec else []
+                min_by_key = {key: (label, value) for key, label, value in min_items}
+                rec_by_key = {key: (label, value) for key, label, value in rec_items}
+                row_keys = list(min_by_key)
+                row_keys.extend(key for key in rec_by_key if key not in min_by_key)
 
                 table_lines = ["[table]"]
-                table_lines.append(f"[tr][td][b]{col_min_header}[/b][/td][td][b]{col_rec_header}[/b][/td][/tr]")
-                table_lines.append(f"[tr][td]{clean_min}[/td][td]{clean_rec}[/td][/tr]")
+                table_lines.append(f"[tr][td][b]{game_labels['hardware']}[/b][/td][td][b]{col_min_header}[/b][/td][td][b]{col_rec_header}[/b][/td][/tr]")
+                for key in row_keys:
+                    min_label, min_value = min_by_key.get(key, ("", "-"))
+                    rec_label, rec_value = rec_by_key.get(key, ("", "-"))
+                    label = min_label or rec_label or "-"
+                    table_lines.append(f"[tr][td][b]{label}[/b][/td][td]{min_value}[/td][td]{rec_value}[/td][/tr]")
                 table_lines.append("[/table]")
                 game_parts.append("\n".join(table_lines))
             else:
@@ -1155,13 +1237,19 @@ class DescriptionBuilder:
         # 4. Supported Languages
         languages = meta.languages
         if languages and isinstance(languages, dict):
+            support_labels = game_labels["language_support_types"]
+
+            def localized_support(support: Any) -> str:
+                cleaned_support = _safe_game_field(support)
+                return support_labels.get(cleaned_support.casefold(), cleaned_support)
+
             if table:
                 table_rows = []
                 table_rows.append(f"[tr][td][b]{str_language}[/b][/td][td][b]{str_support}[/b][/td][/tr]")
 
                 for lang, support in sorted(languages.items()):
                     lang = (lang or "").strip() or "-"
-                    support_str = ", ".join(support).strip() or "-"
+                    support_str = ", ".join(localized_support(value) for value in support).strip() or "-"
 
                     table_rows.append(f"[tr][td]{lang}[/td][td]{support_str}[/td][/tr]")
 
@@ -1172,14 +1260,14 @@ class DescriptionBuilder:
                 # Simple BBCode format without table
                 simple_lang_lines = []
                 for lang, support in sorted(languages.items()):
-                    support_str = ", ".join(support)
+                    support_str = ", ".join(localized_support(value) for value in support)
                     simple_lang_lines.append(f"[b]{lang}[/b]: {support_str}")
                 simple_section = f"{header}{str_official_supported_languages}{header_end}\n" + "\n".join(simple_lang_lines) + "\n"
                 game_parts.append(simple_section)
 
         return "\n".join(part for part in game_parts if part.strip())
 
-    def _build_music_desc_section(self, meta: Meta, header_size: int = 0, table: bool = True) -> str:
+    def _build_music_desc_section(self, meta: Meta, table: bool = True) -> str:
         """Build a tracker-neutral BBCode summary for MUSIC-category uploads."""
         if meta.category != "MUSIC" or not isinstance(meta.music_release, dict):
             return ""
@@ -1200,13 +1288,8 @@ class DescriptionBuilder:
         if not fields_data and not tracks and not external_ids:
             return ""
 
-        if self.tracker == "TORRENTLEECH" and not header_size:
-            header_size = 1
-        elif self.tracker in ("BJSHARE", "BRASILTRACKER", "SPEEDAPP") and not header_size:
-            header_size = 3
-
-        header = "[h2]" if not header_size else f"[size={header_size}][b]"
-        header_end = "[/h2]" if not header_size else "[/b][/size]\n"
+        header = "[h2]"
+        header_end = "[/h2]"
         use_pt_br = self.language == "pt-BR"
 
         def value(name: str, fallback: Any = "") -> Any:
@@ -1346,12 +1429,12 @@ class DescriptionBuilder:
         screenshots: bool = True,
         tonemapped_header: bool = True,
         tv_info: bool = True,
-        ua_signature: bool = True,
+        ua_signature: bool = True,  # ci: ua_signature v4.4
         user_description: bool = True,
         music: bool = True,
         dynamic_hdr_plot: bool = True,
         approved_image_hosts: list[str] | None = None,
-        signature: str = "",
+        signature: str = "",  # ci: ua_signature v4.4
         desc_header: str = "",
     ) -> str:
         apply_saved_draft(meta)
@@ -1571,16 +1654,11 @@ class DescriptionBuilder:
         audio_spectrogram_section = await self.get_audio_spectrogram_section(meta) if audio_spectrogram else ""
         dynamic_hdr_plot_section = await self.get_dynamic_hdr_plot_section(meta) if dynamic_hdr_plot else ""
         custom_signature_section = await self.get_custom_signature(meta) if custom_signature else ""
-        if ua_signature:
-            if not signature:
-                script_signature = meta.ua_signature
-                if script_signature:
-                    signature = f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{script_signature}[/size][/url][/right]"
-            ua_signature_section = signature
-        else:
-            ua_signature_section = ""
 
-        other_sections = [*desc_parts, menu_section, tonemapped_section, audio_spectrogram_section, dynamic_hdr_plot_section, custom_signature_section, ua_signature_section]
+        # Signatures are footers, not content sections. Ignoring them here lets
+        # the standalone-header setting work in normal runs, where UA always
+        # supplies ``meta.ua_signature``.
+        other_sections = [*desc_parts, menu_section, tonemapped_section, audio_spectrogram_section, dynamic_hdr_plot_section]
         include_screenshot_header = not (self._get_bool_config("hide_screenshot_header_if_only_section", True) and not any(part.strip() for part in other_sections))
 
         # Menu Screenshots
@@ -1605,21 +1683,17 @@ class DescriptionBuilder:
         if custom_signature:
             desc_parts.append(custom_signature_section)
 
-        # UA Signature
-        desc_parts.append(ua_signature_section)
-
         description_str: str = "\n".join(part for part in desc_parts if part.strip())
-
-        # Formatting
-        description_str = self.tracker_specific_formats(self.tracker, description_str)
 
         if meta.debug:
             desc_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[{self.tracker}]DESCRIPTION.txt"
             logger.debug(f"DEBUG: Saving final description to [yellow]{desc_file}[/yellow]")
             async with aiofiles.open(desc_file, "w", encoding="utf-8") as description_file:
-                await description_file.write(description_str)
+                await description_file.write(self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip())))  # fmt: off
 
-        return description_str
+        # fmt: off
+        return self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip()))  # ci: ua_signature v4.4
+        # fmt: on
 
     async def _check_saved_pack_image_links(self, meta: Meta, approved_image_hosts: list[str]) -> dict[str, Any]:
         pack_images_file = Path(meta.base_dir) / "tmp" / meta.uuid / "pack_image_links.json"
@@ -2072,6 +2146,7 @@ class DescriptionBuilder:
                                     meta,
                                     multi_screens,
                                     True,
+                                    cleanup_after_capture=False,
                                     capture_group=f"FILE_{i}",
                                 )
                                 await asyncio.sleep(0.1)
@@ -2263,6 +2338,7 @@ class DescriptionBuilder:
         if tracker in {"ANTHELION", "BJSHARE", "BRASILTRACKER", "GREATPOSTERWALL"}:
             description = bbcode.clamp_size_tags(description)
             description = bbcode.convert_named_colors(description)
+            description = bbcode.convert_headings_to_sizes(description)
 
         if tracker == "BRASILTRACKER":
             description = bbcode.remove_img_resize(description)

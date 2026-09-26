@@ -38,6 +38,7 @@ import web_ui.auth as auth_mod
 from src.webui_progress import PROGRESS_STDOUT_PREFIX
 from src.prompt_sound import PROMPT_SOUND_STDOUT_MARKER
 from src.app_paths import CODE_DIR, DATA_DIR, STATE_DIR
+from src.args import cli_argument_catalog
 from src.external_tools import EXTERNAL_TOOL_KEYS, check_external_tools
 from src.manual_metadata import (
     parse_detached_metadata_request,
@@ -1048,21 +1049,20 @@ def _token_is_valid(token: str) -> bool:
 
 
 def _validate_upload_assistant_args(args: Sequence[object]) -> list[str]:
-    """Validate upload-assistant arguments to avoid command-injection.
+    """Validate upload-assistant arguments before passing them as argv values.
 
-    Rejects arguments containing nulls, newlines, or common shell metacharacters.
-    Returns the original args if they pass validation, otherwise raises ValueError.
+    The WebUI launches the controller without a shell, so shell punctuation is
+    valid data. Keep rejecting controls and arguments that are unsafe or
+    unsupported for the WebUI.
     """
     safe_args: list[str] = []
-    # Disallow characters that enable shell injection or command chaining.
-    forbidden = set(";&|$`><*?~!\n\r\x00")
     for a in args:
         if not isinstance(a, str):
             raise ValueError("Invalid arg type")
         if a == "--paths-from-stdin":
             raise ValueError("--paths-from-stdin is only available in CLI mode")
-        if any(ch in a for ch in forbidden):
-            raise ValueError("Invalid characters in arg")
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in a):
+            raise ValueError("Invalid control character in arg")
         # Disallow arguments that are just parent-directory references
         if a == ".." or a == ".":
             raise ValueError("Invalid arg")
@@ -1280,6 +1280,7 @@ def _spawn_webui_upload_process(command: list[str], base_dir: Path, env: dict[st
     return (
         subprocess.Popen(  # lgtm[py/command-line-injection]  # noqa: S603
             command,
+            shell=False,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -1396,6 +1397,16 @@ def _stringify_preview_value(value: object) -> str:
 def _stringify_optional_id(value: object) -> str:
     text = _stringify_preview_value(value)
     return "" if text in {"", "0"} else text
+
+
+def _extract_preview_imdb_id(meta_data: Mapping[str, object]) -> str:
+    """Format IMDb title IDs without losing zeros or truncating newer IDs."""
+    for key in ("imdb_id", "imdb_tt", "imdb"):
+        value = _stringify_optional_id(meta_data.get(key))
+        match = re.fullmatch(r"(?:tt)?([0-9]+)", value, re.IGNORECASE)
+        if match and match[1].strip("0"):
+            return f"tt{match[1].zfill(7)}"
+    return ""
 
 
 def _set_process_awaiting_input(session_id: str, waiting: bool, input_type: str = "text") -> None:
@@ -1924,6 +1935,7 @@ def _extract_preview_detail_sections(meta_data: Mapping[str, object], music: Map
                 ("translator", "Translator", meta_data.get("book_translator")),
                 ("series", "Series", series_display),
                 ("publisher", "Publisher", meta_data.get("publisher") or meta_data.get("book_publisher")),
+                ("service", "Service", meta_data.get("service_longname") or meta_data.get("service")),
                 ("language", "Language", meta_data.get("book_language")),
                 ("isbn", "ISBN", meta_data.get("isbn") or meta_data.get("book_isbn")),
                 ("asin", "ASIN", meta_data.get("asin") or meta_data.get("book_asin")),
@@ -2106,13 +2118,15 @@ def _resolve_execution_preview_meta(session_id: str) -> tuple[str, Path | None, 
     return execution_path, None, None
 
 
-def _subprocess_prompt_type(buffer: str) -> str | None:
+def _subprocess_prompt_type(buffer: str, previous_type: str | None = None) -> str | None:
     last_line = buffer.splitlines()[-1] if buffer else ""
     stripped = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", last_line).strip()
     if not stripped:
         return None
     if stripped.startswith(PROGRESS_STDOUT_PREFIX):
         return None
+    if stripped == ">":
+        return previous_type or "text"
     lowered = stripped.lower()
     if "running:" in lowered:
         return None
@@ -2160,8 +2174,14 @@ def _subprocess_progress_event(chunk: str) -> dict[str, object] | None:
     return event if isinstance(event, dict) else None
 
 
-def _should_flush_subprocess_output(buffer: str, char: str) -> bool:
-    return char == "\n" or (len(buffer) > 512 and not buffer.lstrip().startswith(PROGRESS_STDOUT_PREFIX))
+def _should_flush_subprocess_output(buffer: str, char: str, *, idle: bool = False) -> bool:
+    if char == "\n" or (len(buffer) > 512 and not buffer.lstrip().startswith(PROGRESS_STDOUT_PREFIX)):
+        return True
+    # Wait for a pause in output before flushing unterminated prompts. Checking
+    # each character would split ordinary lines at their first colon/question mark.
+    if idle and not re.search(r"\x1b(?:\[[0-?]*[ -/]*)?$", buffer):
+        return _subprocess_prompt_type(buffer) is not None
+    return False
 
 
 def _append_metadata_source(
@@ -2194,12 +2214,13 @@ def _extract_metadata_sources(meta_data: Mapping[str, object]) -> list[MetadataS
 
     category = _stringify_preview_value(meta_data.get("category")).upper()
     tmdb_value = _stringify_optional_id(meta_data.get("tmdb_id")) or _stringify_optional_id(meta_data.get("tmdb"))
-    imdb_value = _stringify_optional_id(meta_data.get("imdb_id")) or _stringify_optional_id(meta_data.get("imdb_tt")) or _stringify_optional_id(meta_data.get("imdb"))
+    imdb_value = _extract_preview_imdb_id(meta_data)
     tvdb_value = _stringify_optional_id(meta_data.get("tvdb_id")) or _stringify_optional_id(meta_data.get("tvdb"))
     tvmaze_value = _stringify_optional_id(meta_data.get("tvmaze_id")) or _stringify_optional_id(meta_data.get("tvmaze"))
     mal_value = _stringify_optional_id(meta_data.get("mal_id")) or _stringify_optional_id(meta_data.get("mal"))
     douban_value = _stringify_optional_id(meta_data.get("douban_id"))
     igdb_value = _stringify_optional_id(meta_data.get("igdb_id"))
+    igdb_url = _stringify_preview_value(meta_data.get("igdb_url"))
     steam_url = _stringify_preview_value(meta_data.get("steam_url"))
     openlibrary_value = (
         _stringify_preview_value(meta_data.get("openlibrary"))
@@ -2225,14 +2246,13 @@ def _extract_metadata_sources(meta_data: Mapping[str, object]) -> list[MetadataS
         )
 
     if category in {"MOVIE", "TV"} and imdb_value:
-        imdb_id = imdb_value if imdb_value.startswith("tt") else f"tt{imdb_value}"
         _append_metadata_source(
             sources,
             seen_keys,
             "imdb",
             "IMDb",
-            imdb_id,
-            f"https://www.imdb.com/title/{quote(imdb_id)}/",
+            imdb_value,
+            f"https://www.imdb.com/title/{quote(imdb_value)}/",
         )
 
     if category == "TV" and tvdb_value:
@@ -2283,7 +2303,7 @@ def _extract_metadata_sources(meta_data: Mapping[str, object]) -> list[MetadataS
             "igdb",
             "IGDB",
             igdb_value,
-            f"https://www.igdb.com/search?type=1&q={quote(igdb_value)}",
+            igdb_url if _is_http_url(igdb_url) else f"https://www.igdb.com/search?type=1&q={quote(igdb_value)}",
         )
 
     if category == "GAME" and steam_url:
@@ -2469,6 +2489,130 @@ def _music_preview_from_meta(meta_data: Mapping[str, object]) -> dict[str, objec
     }
 
 
+def _preview_media_track_value(track: Mapping[str, object], *keys: str) -> str:
+    """Return the first useful MediaInfo value across common key variants."""
+    for key in keys:
+        value = track.get(key)
+        # Missing MediaInfo fields may be saved as empty dictionaries.
+        text = _stringify_preview_value(value) if isinstance(value, (str, int, float)) else ""
+        if text:
+            return text
+
+    folded = {str(key).casefold(): value for key, value in track.items()}
+    for key in keys:
+        value = folded.get(key.casefold())
+        text = _stringify_preview_value(value) if isinstance(value, (str, int, float)) else ""
+        if text:
+            return text
+
+    return ""
+
+
+def _preview_track_flag(track: Mapping[str, object], *keys: str) -> bool:
+    value = _preview_media_track_value(track, *keys).strip().casefold()
+    return value in {"yes", "true", "1", "y"}
+
+
+def _extract_preview_media_tracks(
+    meta_data: Mapping[str, object],
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Extract display-safe audio and subtitle tracks from saved MediaInfo data."""
+    mediainfo = meta_data.get("mediainfo")
+    raw_tracks: list[Mapping[str, object]] = []
+
+    if isinstance(mediainfo, Mapping):
+        media = mediainfo.get("media")
+        if isinstance(media, Mapping):
+            tracks = media.get("track")
+            if isinstance(tracks, Sequence) and not isinstance(tracks, (str, bytes, bytearray)):
+                raw_tracks.extend(track for track in tracks if isinstance(track, Mapping))
+
+        if not raw_tracks:
+            for key in ("tracks", "track"):
+                tracks = mediainfo.get(key)
+                if isinstance(tracks, Sequence) and not isinstance(tracks, (str, bytes, bytearray)):
+                    raw_tracks.extend(track for track in tracks if isinstance(track, Mapping))
+                    if raw_tracks:
+                        break
+    elif isinstance(mediainfo, Sequence) and not isinstance(mediainfo, (str, bytes, bytearray)):
+        raw_tracks.extend(track for track in mediainfo if isinstance(track, Mapping))
+
+    audio_tracks: list[dict[str, object]] = []
+    subtitle_tracks: list[dict[str, object]] = []
+
+    for track in raw_tracks:
+        track_type = _preview_media_track_value(
+            track,
+            "@type",
+            "track_type",
+            "TrackType",
+            "type",
+        ).casefold()
+
+        if track_type == "audio":
+            target = audio_tracks
+        elif track_type in {"text", "subtitle", "subtitles"}:
+            target = subtitle_tracks
+        else:
+            continue
+
+        title = _preview_media_track_value(track, "Title", "title", "TrackTitle")
+        language = _preview_media_track_value(
+            track,
+            "Language_String",
+            "Language",
+            "language",
+            "Language_String1",
+        )
+        format_name = _preview_media_track_value(
+            track,
+            "Format_Commercial_IfAny",
+            "Format",
+            "format",
+            "CodecID",
+            "codec_id",
+            "codec",
+        )
+        channels = _preview_media_track_value(
+            track,
+            "ChannelLayout",
+            "ChannelLayout_Original",
+            "Channels",
+            "channels",
+            "Channel(s)",
+        )
+        bitrate = _preview_media_track_value(
+            track,
+            "BitRate_String",
+            "BitRate",
+            "bitrate",
+            "bit_rate",
+        )
+        if bitrate.isdigit():
+            bitrate = f"{round(int(bitrate) / 1000)} kbps"
+
+        service_kind = _preview_media_track_value(track, "ServiceKind", "service_kind")
+        hearing_impaired = _preview_track_flag(track, "HearingImpaired", "hearing_impaired")
+        commentary = "commentary" in title.casefold() or "commentary" in service_kind.casefold()
+
+        target.append(
+            {
+                "index": len(target) + 1,
+                "language": language,
+                "title": title,
+                "format": format_name,
+                "channels": channels,
+                "bitrate": bitrate,
+                "default": _preview_track_flag(track, "Default", "default"),
+                "forced": _preview_track_flag(track, "Forced", "forced"),
+                "hearing_impaired": hearing_impaired,
+                "commentary": commentary,
+            }
+        )
+
+    return audio_tracks, subtitle_tracks
+
+
 def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: str, preview_session_id: str = "") -> ExecutionPreview:
     title = _stringify_preview_value(meta_data.get("title")) or _stringify_preview_value(meta_data.get("name"))
     original_title = _stringify_preview_value(meta_data.get("original_title"))
@@ -2496,6 +2640,7 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
     if audiobook_bitrate.isdigit():
         audiobook_bitrate = f"{audiobook_bitrate} kbps"
     tv_pack_raw = _stringify_preview_value(meta_data.get("tv_pack")).lower()
+    audio_tracks, subtitle_tracks = _extract_preview_media_tracks(meta_data)
     tracker_uploads: list[dict[str, str]] = []
     tracker_status = meta_data.get("tracker_status")
     if isinstance(tracker_status, Mapping):
@@ -2520,7 +2665,7 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
         "source": _stringify_preview_value(meta_data.get("source")),
         "resolution": _stringify_preview_value(meta_data.get("resolution")),
         "tmdb": _stringify_optional_id(meta_data.get("tmdb_id")) or _stringify_optional_id(meta_data.get("tmdb")),
-        "imdb": (_stringify_optional_id(meta_data.get("imdb_id")) or _stringify_optional_id(meta_data.get("imdb_tt")) or _stringify_optional_id(meta_data.get("imdb"))),
+        "imdb": _extract_preview_imdb_id(meta_data),
         "metadata_sources": _extract_metadata_sources(meta_data),
         "poster_url": poster_url,
         "overview": _stringify_preview_value(meta_data.get("overview")),
@@ -2528,7 +2673,9 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
         "name": _stringify_preview_value(meta_data.get("name")),
         "status": "ready",
         "audio": _stringify_preview_value(meta_data.get("audio")),
-        "service": _stringify_preview_value(meta_data.get("service_longname")),
+        "audio_tracks": audio_tracks,
+        "subtitle_tracks": subtitle_tracks,
+        "service": _stringify_preview_value(meta_data.get("service_longname") or meta_data.get("service")),
         "networks": networks,
         "season": _stringify_preview_value(meta_data.get("season")),
         "episode": _stringify_preview_value(meta_data.get("episode")),
@@ -2607,6 +2754,8 @@ def _find_execution_preview(session_id: str) -> ExecutionPreview | None:
         "name": "",
         "status": "waiting",
         "audio": "",
+        "audio_tracks": [],
+        "subtitle_tracks": [],
         "service": "",
         "networks": [],
         "season": "",
@@ -2819,6 +2968,8 @@ class ExecutionPreview(TypedDict, total=False):
     name: str
     status: str
     audio: str
+    audio_tracks: list[dict[str, object]]
+    subtitle_tracks: list[dict[str, object]]
     service: str
     networks: list[str]
     season: str
@@ -4075,6 +4226,7 @@ def index():
             "index.html",
             app_version=APP_VERSION,
             csrf_token=_ensure_csrf_token(),
+            cli_arguments=cli_argument_catalog(),
         )
     except Exception as e:
         console.print(f"Error loading template: {e}", markup=False)
@@ -6995,6 +7147,7 @@ def reset_execution_description():
 
 
 @app.route("/api/execution_screenshots/<screenshot_id>/image")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def execution_screenshot_image(screenshot_id: str):
     """Serve one reviewed local screenshot after resolving it through its session."""
     session_id = str(request.args.get("session_id", "")).strip()
@@ -7322,37 +7475,21 @@ def execute_command():
                 if not Path(str(base_dir)).is_absolute():
                     base_dir = str(Path(str(base_dir)).resolve())
 
-                # Extra validation for the constructed command to guard
-                # against command-injection and to make validation explicit
-                # for static analysis tools.
+                # Validate the constructed argv structure and the values that carry
+                # security meaning. Shell punctuation is valid data when passed as
+                # an argv value to a subprocess that does not invoke a shell.
                 try:
-                    # Ensure command is a list of strings
-                    command = _validate_upload_assistant_args(command)
+                    if not isinstance(command, list) or not all(isinstance(arg, str) for arg in command):
+                        raise ValueError("Invalid command structure")
+                    if len(command) < 4 or command[0] != sys.executable or command[1] != "-u" or command[3] != validated_path:
+                        raise ValueError("Invalid command structure")
 
-                    # Re-assert the execution path is safe
-                    try:
-                        _assert_safe_resolved_path(command[3] if len(command) > 3 else command[-1])
-                    except Exception:
-                        # Fallback: validated_path is expected at position 3 for subprocess
-                        try:
-                            _assert_safe_resolved_path(validated_path)
-                        except Exception as err:
-                            raise ValueError("Invalid execution path") from err
+                    _assert_safe_resolved_path(validated_path)
 
-                    # Ensure the upload_script is the expected script under the repo
-                    try:
-                        expected_script = os.path.realpath(str(CODE_DIR / "upload.py"))
-                        script_real = os.path.realpath(command[2])
-                        if script_real != expected_script:
-                            raise ValueError("Invalid script path")
-                    except IndexError as err:
-                        raise ValueError("Invalid command structure") from err
-
-                    # Disallow shell metacharacters in any argument
-                    forbidden = set(";&|$`><*?~!\n\r\x00")
-                    for a in command:
-                        if any(ch in a for ch in forbidden):
-                            raise ValueError("Invalid characters in command argument")
+                    expected_script = os.path.realpath(str(CODE_DIR / "upload.py"))
+                    script_real = os.path.realpath(command[2])
+                    if script_real != expected_script:
+                        raise ValueError("Invalid script path")
                 except Exception as err:
                     console.print(f"Refusing to run unsafe command: {err}", markup=False)
                     _discard_session_state(session_id, process_state)
@@ -7454,51 +7591,59 @@ def execute_command():
 
                     while process.poll() is None or not output_queue.empty():
                         has_output, output = _read_output(output_queue)
+                        previous_prompt_type = str(process_state.get("input_type") or "text") if process_state.get("awaiting_input") else None
                         if has_output and output is not None:
                             output_type, char = output
                             if output_type not in buffers:
                                 buffers[output_type] = ""
                             buffers[output_type] += char
-                            prompt_type = _subprocess_prompt_type(buffers[output_type])
-                            if prompt_type:
-                                _set_process_awaiting_input_if_current(session_id, process_state, True, prompt_type)
+                            prompt_type = _subprocess_prompt_type(buffers[output_type], previous_prompt_type)
 
-                            # Flush on newline or when buffer grows large
-                            if _should_flush_subprocess_output(buffers[output_type], char):
-                                if buffers[output_type].strip() == PROMPT_SOUND_STDOUT_MARKER:
-                                    buffers[output_type] = ""
-                                    yield f"data: {json.dumps({'type': 'prompt_sound'})}\n\n"
-                                    continue
-                                if not prompt_type:
-                                    _set_process_awaiting_input_if_current(session_id, process_state, False)
-                                chunk = buffers[output_type]
-                                buffers[output_type] = ""
-
-                                progress_event = _subprocess_progress_event(chunk)
-                                if progress_event is not None:
-                                    _set_process_progress_if_current(session_id, process_state, progress_event)
-                                    yield f"data: {json.dumps({'type': 'progress', 'data': progress_event})}\n\n"
-                                    continue
-
-                                # Convert to HTML fragment. If helper missing, escape and wrap in <pre>
-                                try:
-                                    if ansi_to_html:
-                                        html_fragment = ansi_to_html(chunk)
-                                    else:
-                                        import html as _html
-
-                                        html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
-
-                                    yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
-                                except Exception as e:
-                                    console.print(f"HTML conversion error: {e}", markup=False)
-                                    import html as _html
-
-                                    html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
-                                    yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
+                            if not _should_flush_subprocess_output(buffers[output_type], char):
+                                continue
                         else:
-                            # keepalive to keep the SSE connection alive
-                            yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+                            # cli_ui writes its input marker without a newline.
+                            # Flush it when output has been idle for the queue timeout.
+                            pending_type = next((kind for kind, buffer in buffers.items() if _should_flush_subprocess_output(buffer, "", idle=True)), None)
+                            if pending_type is None:
+                                yield f"data: {json.dumps({'type': 'keepalive'})}\n\n"
+                                continue
+                            output_type = pending_type
+                            prompt_type = _subprocess_prompt_type(buffers[output_type], previous_prompt_type)
+
+                        if buffers[output_type].strip() == PROMPT_SOUND_STDOUT_MARKER:
+                            buffers[output_type] = ""
+                            yield f"data: {json.dumps({'type': 'prompt_sound'})}\n\n"
+                            continue
+                        if prompt_type:
+                            _set_process_awaiting_input_if_current(session_id, process_state, True, prompt_type)
+                        else:
+                            _set_process_awaiting_input_if_current(session_id, process_state, False)
+                        chunk = buffers[output_type]
+                        buffers[output_type] = ""
+
+                        progress_event = _subprocess_progress_event(chunk)
+                        if progress_event is not None:
+                            _set_process_progress_if_current(session_id, process_state, progress_event)
+                            yield f"data: {json.dumps({'type': 'progress', 'data': progress_event})}\n\n"
+                            continue
+
+                        # Convert to HTML fragment. If helper missing, escape and wrap in <pre>
+                        try:
+                            if ansi_to_html:
+                                html_fragment = ansi_to_html(chunk)
+                            else:
+                                import html as _html
+
+                                html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
+
+                            yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
+                        except Exception as e:
+                            console.print(f"HTML conversion error: {e}", markup=False)
+                            import html as _html
+
+                            html_fragment = f"<pre>{_html.escape(chunk)}</pre>"
+                            yield f"data: {json.dumps({'type': 'html', 'data': html_fragment, 'origin': output_type})}\n\n"
 
                     # Flush remaining buffers as HTML
                     for t, remaining in list(buffers.items()):
