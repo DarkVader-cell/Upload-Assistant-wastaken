@@ -43,6 +43,7 @@ class TVChaosUK:
     image_host_policy = ImageHostPolicy(
         {
             "ibb.co": "imgbb",
+            "ptscreens.com": "ptscreens",
             "imgbox.com": "imgbox",
             "pixhost.to": "pixhost",
             "imagebam.com": "bam",

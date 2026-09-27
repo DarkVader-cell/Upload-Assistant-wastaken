@@ -73,6 +73,7 @@ class BEYONDHD:
             "ibb.co": "imgbb",
             "pixhost.to": "pixhost",
             "imgbox.com": "imgbox",
+            "ptscreens.com": "ptscreens",
             "beyondhd.co": "bhd",
             "imagebam.com": "bam",
         },

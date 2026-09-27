@@ -98,6 +98,7 @@ class GreatPosterWall:
         "kshare.club": "kshare",
         "pixhost.to": "pixhost",
         "imgbox.com": "imgbox",
+        "ptscreens.com": "ptscreens",
         "img.pterclub.com": "pterclub",
         "s3.pterclub.com": "pterclub",
         "yes.ilikeshots.club": "ilikeshots",

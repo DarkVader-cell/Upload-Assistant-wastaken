@@ -44,6 +44,7 @@ class CathodeRayTube:
             "ptpimg.me": "ptpimg",
             "catbox.moe": "catbox",
             "ibb.co": "imgbb",
+            "ptscreens.com": "ptscreens",
             "postimg.cc": "postimages",
             "iili.io": "freeimage",
             "imgbox.com": "imgbox",
