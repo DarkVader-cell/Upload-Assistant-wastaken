@@ -67,7 +67,7 @@ class BEYONDHD:
         "x0r",
         "YIFY",
     )
-    approved_image_hosts = ("imgbox", "imgbb", "pixhost", "bhd", "bam")
+    approved_image_hosts = ("imgbox", "imgbb", "ptscreens", "pixhost", "bhd", "bam")
     image_host_policy = ImageHostPolicy(
         {
             "ibb.co": "imgbb",

@@ -39,7 +39,7 @@ class TVChaosUK:
     source_flag = "TVCHAOS"
     signature = ""
     banned_groups = ()
-    approved_image_hosts = ("imgbb", "imgbox", "pixhost", "bam", "onlyimage")
+    approved_image_hosts = ("imgbb", "ptscreens", "imgbox", "pixhost", "bam", "onlyimage")
     image_host_policy = ImageHostPolicy(
         {
             "ibb.co": "imgbb",

@@ -38,7 +38,7 @@ class CathodeRayTube:
     requires_tonemapped_hdr_screenshots = True
     banned_groups: tuple[str, ...] = ()
     auth_token: ClassVar[str] = ""
-    approved_image_hosts = ("ptpimg", "catbox", "imgbb", "postimages", "freeimage", "imgbox")
+    approved_image_hosts = ("ptpimg", "catbox", "imgbb", "ptscreens", "postimages", "freeimage", "imgbox")
     image_host_policy = ImageHostPolicy(
         {
             "ptpimg.me": "ptpimg",

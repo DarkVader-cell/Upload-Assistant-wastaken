@@ -91,7 +91,7 @@ class GreatPosterWall:
         "Xiaomi",
         "YIFY",
     )
-    approved_image_hosts = ("kshare", "pixhost", "pterclub", "ilikeshots", "imgbox")
+    approved_image_hosts = ("kshare", "pixhost", "pterclub", "ilikeshots", "imgbox", "imgbb", "ptscreens")
     can_rehost_unapproved_images = True
     torrent_url = f"{base_url}/torrents.php?torrentid="
     url_host_mapping: ClassVar = {

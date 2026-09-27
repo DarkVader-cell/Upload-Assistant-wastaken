@@ -18,6 +18,7 @@ from src.rehostimages import (
     select_common_image_host,
 )
 from src.tracker_images import get_tracker_image_collection, has_tracker_image_collection
+from src.trackersetup import tracker_class_map
 from src.uploadscreens import _image_upload_timeout
 
 
@@ -46,6 +47,19 @@ class _PolicyTracker:
 
     def __init__(self) -> None:
         self.rehost_images_manager = AsyncMock()
+
+
+def test_all_declared_tracker_image_host_policies_accept_configured_hosts() -> None:
+    missing: list[str] = []
+    for tracker_name in tracker_class_map:
+        tracker_class = tracker_class_map[tracker_name]
+        approved = set(getattr(tracker_class, "approved_image_hosts", ()) or ())
+        policy = getattr(tracker_class, "image_host_policy", None)
+        approved.update(getattr(policy, "approved_image_hosts", ()) or ())
+        if approved and not {"imgbb", "ptscreens"}.issubset(approved):
+            missing.append(str(tracker_name))
+
+    assert not missing, f"Trackers missing configured image hosts: {missing}"
 
 
 def test_deduplicates_tagged_image_records() -> None:
