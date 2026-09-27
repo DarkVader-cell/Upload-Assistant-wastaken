@@ -2244,12 +2244,9 @@ async def do_the_thing(base_dir: str) -> None:
 
     meta.ua_name = "Upload-Assistant"
     meta.current_version = await update_notification()
-
-    signature = f"Shared with {meta.ua_name}"
-    if meta.current_version:
-        signature += f" {meta.current_version}"
-    signature += " (fork)"
-    meta.ua_signature = signature
+    # Do not add an automatic Upload-Assistant attribution to future
+    # descriptions. Explicit user/tracker signatures remain independent.
+    meta.ua_signature = ""
     meta.base_dir = base_dir
 
     cleanup_only = any(arg in ("--cleanup", "-cleanup") for arg in sys.argv) and len(sys.argv) <= 2
