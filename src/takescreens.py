@@ -1970,7 +1970,16 @@ async def screenshots(
         logger.debug(f"[cyan]Collected frame information for {len(frame_info_results)} frames")
 
     num_tasks = num_capture
-    num_workers = min(num_tasks, task_limit)
+    # FFmpeg creates additional decoder/filter threads even when its codec
+    # thread count is capped.  Running several screenshot processes at once
+    # can exhaust the container PID limit and leave us with zero image files.
+    # Keep screenshot capture conservative by default, while allowing a
+    # deliberate override for deployments with more headroom.
+    try:
+        screenshot_limit = max(1, int(default_config.get("screenshot_process_limit", 1) or 1))
+    except TypeError, ValueError:
+        screenshot_limit = 1
+    num_workers = min(num_tasks, task_limit, screenshot_limit)
 
     test_time = str(ss_times[0] if ss_times else 0)
     hdr_tonemap = await determine_tonemapping(w_sar, h_sar, width, height, path, test_time, test_image_path, loglevel, meta)
@@ -2207,7 +2216,13 @@ async def screenshots(
     if remaining_retakes:
         logger.info(f"[red]The following images could not be retaken successfully: {remaining_retakes}[/red]")
 
-    logger.debug(f"[green]Successfully processed {len(valid_results)} screenshots.")
+    if len(valid_results) < num_capture:
+        logger.warning(
+            f"[yellow]Captured {len(valid_results)}/{num_capture} screenshots; "
+            "failed FFmpeg captures will not be sent to an image host.[/yellow]"
+        )
+    else:
+        logger.debug(f"[green]Successfully processed {len(valid_results)} screenshots.")
 
     if meta.debug:
         finish_time = time.time()

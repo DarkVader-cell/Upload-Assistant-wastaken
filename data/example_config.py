@@ -306,6 +306,9 @@ config: dict[str, Any] = {
         # Maximum number of FFmpeg processes that can run at once.
         # The effective limit is the lower of this value and the number of screenshots.
         "process_limit": "4",
+        # Limit concurrent screenshot captures independently of other FFmpeg work.
+        # Keep this at 1 in containers with a low PID limit.
+        "screenshot_process_limit": "1",
         # Set to True to reduce CPU usage by applying an additional FFmpeg limit.
         "ffmpeg_limit": False,
         # FFmpeg compression level for screenshots (0-9).
