@@ -6305,6 +6305,7 @@ def config_update():
         return jsonify({"success": False, "error": "Provide between 1 and 1000 configuration updates"}), 400
 
     config_path = STATE_DIR / "data" / "config.py"
+    _ensure_config_file_for_write(config_path)
     original_bytes = config_path.read_bytes()
     source = original_bytes.decode("utf-8")
     example_config = _load_config_from_file(CODE_DIR / "data" / "example_config.py") or {}

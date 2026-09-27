@@ -117,6 +117,14 @@ def test_invalid_later_field_leaves_entire_batch_unsaved(batch_config, invalid):
     assert records == []
 
 
+def test_config_update_bootstraps_a_missing_runtime_config(batch_config):
+    config_path, _, _, _ = batch_config
+    config_path.unlink()
+
+    assert post_updates([{"path": ["DEFAULT", "screens"], "value": 8}])[1] == 200
+    assert server._load_config_from_file(config_path)["DEFAULT"]["screens"] == 8
+
+
 def test_missing_tracker_creation_and_falsy_values_save_together(batch_config):
     config_path, _, _, _ = batch_config
     config_path.write_text("config = {'DEFAULT': {'screens': 6}, 'TRACKERS': {}}\n", encoding="utf-8")
