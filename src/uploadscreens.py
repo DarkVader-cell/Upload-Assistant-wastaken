@@ -10,6 +10,7 @@ import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import urlparse
 
 import aiofiles
 import httpx
@@ -136,6 +137,29 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
                     return {"status": "failed", "reason": "Imgbox upload failed. No valid URLs returned."}
             except Exception as e:
                 return {"status": "failed", "reason": f"Error during Imgbox upload: {e!s}"}
+
+        elif img_host == "catbox":
+            data = {"reqtype": "fileupload"}
+            userhash = config.get("DEFAULT", {}).get("catbox_userhash", "").strip()
+            if userhash:
+                data["userhash"] = userhash
+            try:
+                async with httpx.AsyncClient() as client, aiofiles.open(image, "rb") as img_file:
+                    response = await client.post(
+                        "https://catbox.moe/user/api.php",
+                        data=data,
+                        files={"fileToUpload": (Path(image).name, await img_file.read())},
+                        timeout=timeout,
+                    )
+                url = response.text.strip()
+                parsed = urlparse(url)
+                if response.status_code != 200 or parsed.scheme != "https" or parsed.hostname != "files.catbox.moe" or not parsed.path.strip("/"):
+                    return {"status": "failed", "reason": f"Catbox upload failed (HTTP {response.status_code})"}
+                return {"status": "success", "img_url": url, "raw_url": url, "web_url": url, "local_file_path": image}
+            except httpx.TimeoutException:
+                return {"status": "failed", "reason": "Catbox request timed out"}
+            except httpx.RequestError as e:
+                return {"status": "failed", "reason": f"Catbox request failed: {e}"}
 
         elif img_host == "imgbb":
             url = "https://api.imgbb.com/1/upload"
@@ -626,6 +650,56 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
                 logger.error(f"[red]Unexpected error with ShareX image host: {e!s}[/red]")
                 return {"status": "failed", "reason": f"Unexpected error: {e!s}"}
 
+        elif img_host == "samaritano":
+            url = "https://img.samaritano.cc/api/v1/images"
+            api_key = config.get("TRACKERS", {}).get("SAMARITANO", {}).get("image_host_api_key")
+
+            if not isinstance(api_key, str) or not api_key.strip():
+                logger.info("[red]Samaritano image host API key not found in config (image_host_api_key).[/red]")
+                return {"status": "failed", "reason": "Missing Samaritano image host API key"}
+
+            try:
+                headers = {"Authorization": f"Bearer {api_key.strip()}"}
+                async with httpx.AsyncClient() as client, aiofiles.open(image, "rb") as img_file:
+                    files = {"file": (Path(image).name, await img_file.read())}
+                    response = await client.post(url, headers=headers, files=files, timeout=timeout)
+
+                if response.status_code not in (200, 201):
+                    logger.info(f"[yellow]Samaritano image host upload failed with status {response.status_code}.[/yellow]")
+                    return {"status": "failed", "reason": f"Samaritano upload failed: HTTP {response.status_code}"}
+
+                response_data = response.json()
+                if not isinstance(response_data, dict):
+                    return {"status": "failed", "reason": "Invalid Samaritano response"}
+
+                raw_url = response_data.get("url")
+                if not isinstance(raw_url, str) or not raw_url.strip():
+                    logger.info("[yellow]Samaritano image host response missing URL.[/yellow]")
+                    return {"status": "failed", "reason": "No URL in Samaritano response"}
+
+                raw_url = raw_url.strip()
+                thumbnail_url = response_data.get("thumbnail_url")
+                img_url = thumbnail_url.strip() if isinstance(thumbnail_url, str) and thumbnail_url.strip() else raw_url
+                return {
+                    "status": "success",
+                    "img_url": img_url,
+                    "raw_url": raw_url,
+                    "web_url": raw_url,
+                    "local_file_path": image,
+                }
+            except httpx.TimeoutException:
+                logger.info("[red]Request to Samaritano image host timed out.[/red]")
+                return {"status": "failed", "reason": "Request timed out"}
+            except httpx.RequestError as e:
+                logger.info(f"[red]Request to Samaritano image host failed with error: {e}[/red]")
+                return {"status": "failed", "reason": str(e)}
+            except ValueError as e:
+                logger.info(f"[red]Invalid JSON response from Samaritano image host: {e}[/red]")
+                return {"status": "failed", "reason": "Invalid JSON response"}
+            except Exception as e:
+                logger.error(f"[red]Unexpected error with Samaritano image host: {e!s}[/red]")
+                return {"status": "failed", "reason": f"Unexpected error: {e!s}"}
+
         elif img_host == "lostimg":
             url = "https://lostimg.cc/api/v1/images"
             try:
@@ -683,6 +757,32 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
 
     except Exception as e:
         return {"status": "failed", "reason": str(e)}
+
+
+async def upload_image_task_with_stats(args: Sequence[Any]) -> dict[str, Any]:
+    """Record a direct image-host upload outside UploadScreensManager."""
+    image_path = Path(str(args[0]))
+    started = time.monotonic()
+    try:
+        result = await upload_image_task(args)
+    except Exception:
+        await record_event_async("api", service=str(args[1]), operation="image_upload", outcome="error", duration_ms=(time.monotonic() - started) * 1000)
+        raise
+
+    success = result.get("status") == "success"
+    bytes_count = 0
+    if success:
+        with contextlib.suppress(OSError):
+            bytes_count = image_path.stat().st_size
+    await record_event_async(
+        "api",
+        service=str(args[1]),
+        operation="image_upload",
+        outcome="success" if success else "error",
+        duration_ms=(time.monotonic() - started) * 1000,
+        bytes_count=bytes_count,
+    )
+    return result
 
 
 async def _upload_screens(
@@ -827,7 +927,8 @@ async def _upload_screens(
             # process-global ``cwd`` race between concurrent uploads.
             image_glob = [str(path) for path in registered_screens]
         else:
-            image_patterns = ["*.png", ".[!.]*.png"]
+            suffixes = ("png", "jpg", "jpeg") if meta.category == "BOOK" else ("png",)
+            image_patterns = [pattern for suffix in suffixes for pattern in (f"*.{suffix}", f".[!.]*.{suffix}")]
             image_glob = []
             for pattern in image_patterns:
                 glob_results = await asyncio.to_thread(lambda p=pattern: [str(path) for path in screenshot_path.glob(p)])
@@ -866,7 +967,7 @@ async def _upload_screens(
         # Sort images by numeric suffix
         def extract_numeric_suffix(filename: str) -> float:
             """Return the numeric screenshot suffix for stable ordering."""
-            match = re.search(r"-(\d+)\.png$", filename)
+            match = re.search(r"-(\d+)\.(?:png|jpe?g)$", filename, re.IGNORECASE)
             return int(match.group(1)) if match else float("inf")
 
         image_glob.sort(key=extract_numeric_suffix)

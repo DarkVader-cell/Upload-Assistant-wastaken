@@ -38,6 +38,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "image_upload_concurrency": (str, int),
     "image_upload_delay": (str, float, int),
     "imgbb_api": (str,),
+    "catbox_userhash": (str,),
     "lostimg_api": (str,),
     "lensdump_api": (str,),
     "ptscreens_api": (str,),
@@ -169,6 +170,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
 
 # Valid image hosts
 VALID_IMAGE_HOSTS = [
+    "catbox",
     "imgbb",
     "imgbox",
     "pixhost",
@@ -744,6 +746,7 @@ def _validate_trackers_section(trackers: dict[str, Any], active_trackers: list[s
             "sticky",
             "exclusive",
             "exact_match_only",
+            "force_rehost_images",
         ]
         for field in bool_fields:
             if field in tracker_config_dict:

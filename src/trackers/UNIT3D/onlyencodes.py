@@ -228,6 +228,7 @@ class OnlyEncodes(UNIT3D):
         }
 
     async def get_name(self, meta: Meta) -> dict[str, str]:
+        # Keep the TMDB title and year from the generated name for OnlyEncodes.
         oe_name = meta.name
         resolution = meta.resolution
         video_encode = meta.video_encode

@@ -34,6 +34,14 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
         self._tracker_comment_hosts: dict[str, tuple[str, ...]] | None = None
 
     @staticmethod
+    def _client_infohash(candidate: str | Path, torrent: Torrent) -> str:
+        """Keep the client's hash when its exported torrent is named by infohash."""
+        candidate_stem = Path(candidate).stem.strip().lower()
+        if re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", candidate_stem):
+            return candidate_stem
+        return str(torrent.infohash)
+
+    @staticmethod
     def _matches_tracker_host(host: str, tracker_hosts: dict[str, tuple[str, ...]]) -> str | None:
         for tracker_name, domains in tracker_hosts.items():
             if any(host == domain or host.endswith(f".{domain}") for domain in domains):
@@ -183,6 +191,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
 
         logger.debug(f"[cyan]DEBUG: Clients to inject into: {inject_clients}[/cyan]")
 
+        clients_config = self.config.get("TORRENT_CLIENTS", {})
         for client_name in inject_clients:
             client_to_skip = self.config["TRACKERS"][tracker].get("client_to_skip", [])
             if client_name in client_to_skip:
@@ -191,11 +200,11 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
             if client_name == "none" or not client_name:
                 continue
 
-            if client_name not in self.config["TORRENT_CLIENTS"]:
+            if client_name not in clients_config:
                 logger.info(f"[bold red]Torrent client '{client_name}' not found in config.")
                 continue
 
-            client = self.config["TORRENT_CLIENTS"][client_name]
+            client = clients_config[client_name]
             torrent_client = client["torrent_client"]
             await self.inject_delay(meta, tracker, client_name)
 
@@ -285,7 +294,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
         original_client = meta.client
         try:
             for client_name in client_names:
-                if client_name not in self.config["TORRENT_CLIENTS"]:
+                if client_name not in self.config.get("TORRENT_CLIENTS", {}):
                     logger.info(f"[yellow]Client '{client_name}' not found in TORRENT_CLIENTS config, skipping...")
                     continue
                 meta.client = client_name
@@ -308,7 +317,12 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
                             continue
                         torrent = Torrent.read(candidate)
                         has_subs = any(Path(str(file)).suffix.casefold() in SUBTITLE_EXTENSIONS for file in torrent.files)
-                        entry = manifest.register(candidate, "base_subs" if has_subs else "base", f"client:{client_name}")
+                        entry = manifest.register(
+                            candidate,
+                            "base_subs" if has_subs else "base",
+                            f"client:{client_name}",
+                            client_infohash=self._client_infohash(candidate, torrent),
+                        )
                         managed = str(manifest.entry_path(entry))
                         if managed not in paths:
                             paths.append(managed)
@@ -337,6 +351,7 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
         chosen = entries[0]
         if chosen.origin.startswith("client:"):
             meta.reuse_torrent_client = chosen.origin.removeprefix("client:")
+        meta.reuse_torrent_infohash = chosen.client_infohash
         return str(manifest.entry_path(chosen))
 
     async def _find_existing_torrent(self, meta: Meta) -> str | None:

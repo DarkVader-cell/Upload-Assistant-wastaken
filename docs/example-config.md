@@ -11,8 +11,10 @@ The checkout is read-only for runtime settings. If a legacy `data/config.py` rem
 - The Web UI creates the user config from `data/example_config.py` on first start and continues to the configuration page.
 - The first CLI upload command creates the same file and stops. Edit the generated user-owned `config.py`, then run the command again.
 - Help commands such as `ua --help` do not create configuration files.
-- On later starts, missing settings are added recursively from `data/example_config.py`. Existing values and custom keys are never replaced or removed. When settings are added, the previous file is retained beside it as a timestamped `config.py.backup-*` file.
+- On later starts, missing general settings are added from `data/example_config.py`. Existing values and custom keys are never replaced or removed. `TRACKERS`, `TORRENT_CLIENTS`, `DEFAULT.metadata_cache_services`, and `DEFAULT.tag_overrides` are left untouched, including omitted sections and options. These contain user-selected entries and optional overrides; copying examples into them could change inherited behavior. Add new tracker/client options manually when needed. The legacy `embed_dupe_links` setting and omitted `USENET.pesto_obfuscation_mode` also retain their existing fallback behavior. When settings are added, the previous file is retained beside it as a timestamped `config.py.backup-*` file.
 - Automatic updates require the `config` assignment to contain literal Python values. Configurations containing expressions continue to load normally, but are left unchanged with a warning because they cannot be migrated without executing user code.
+
+If an earlier automatic update restored options you deliberately removed, restore the last good `config.py.backup-*` after installing the fix, preserving any later edits you want to keep. The updater does not remove existing entries automatically because it cannot distinguish restored examples from settings you chose yourself.
 
 `DEFAULT.stats_enabled` controls collection of privacy-preserving daily aggregates for the Web UI Stats workspace. It defaults to `False`; setting it to `True` enables collection and display. Disabling it again hides existing statistics without deleting them.
 
@@ -71,12 +73,14 @@ Important gotchas:
 
 Order matters: `img_host_1` is primary, later hosts are fallbacks.
 
-- `img_host_1`..`img_host_5` (str): Image host names. Valid examples include `imgbb`, `imgbox`, `pixhost`, `lensdump`, `ptscreens`, `onlyimage`, `dalexni`, `zipline`, `midnightscene`, `passtheimage`, `seedpool_cdn`, `utppm`, `lostimg`.
+- `img_host_1`..`img_host_5` (str): Image host names. Valid examples include `catbox`, `imgbb`, `imgbox`, `pixhost`, `lensdump`, `ptscreens`, `onlyimage`, `dalexni`, `zipline`, `midnightscene`, `passtheimage`, `seedpool_cdn`, `utppm`, `lostimg`.
 - `smart_image_host_selection` (bool, default `true`): Before uploads begin, prefer the first configured host accepted by every selected tracker that declares an image-host policy. Set it to `false` to retain the former per-tracker selection behavior. If there is no common host, normal per-tracker fallback and rehosting behavior is retained.
 - `image_upload_concurrency` (int): Maximum number of image uploads running at once. Set to `0` to use the image host default.
 - `image_upload_delay` (float): Minimum delay in seconds between starting image uploads.
 
 ### Image host credentials
+
+- `catbox_userhash` (str): Optional Catbox userhash. Leave blank for anonymous uploads.
 
 - `imgbb_api` (str): API key for imgbb.
 - `lostimg_api` (str): API key for lostimg.

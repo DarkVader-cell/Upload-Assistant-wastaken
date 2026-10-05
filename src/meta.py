@@ -212,6 +212,8 @@ class Meta:
     client: str | None = None
     combined_genres: list[str] | str = field(default_factory=list)
     comic: bool = False
+    content_duration_category: str = ""
+    content_duration_seconds: float | None = None
     comparison_groups: dict[str, dict[str, Any]] | list[dict[str, Any]] = field(default_factory=dict)
     comparison_index: int | None = None
     comparison: str | None = None
@@ -525,6 +527,8 @@ class Meta:
     release_date: str = ""
     release_dates: dict[str, Any] | None = None
     release_url: str = ""
+    release_subheader: str = ""
+    release_subheader_url: str = ""
     remove_trackers: list[str] | bool = False
     repack: str = ""
     requested_trackers: list[str] | None = None
@@ -536,6 +540,7 @@ class Meta:
     retrieved_aka: str | None = None
     retry_count: int = 0
     reuse_torrent_client: str | None = None
+    reuse_torrent_infohash: str | None = None
     reuse_torrent_path: str | None = None
     cross_seed_source_path: str | None = None
     rtorrent_label: str | None = None

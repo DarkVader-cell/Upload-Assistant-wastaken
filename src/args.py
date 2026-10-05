@@ -42,7 +42,7 @@ MUSIC_RELEASE_TYPE_CHOICES = (
 
 PATHS_FROM_STDIN_OPTION = "--paths-from-stdin"
 WEBUI_UNSUPPORTED_OPTIONS = {"--help", "--webui", PATHS_FROM_STDIN_OPTION}
-TRACKER_CONFIGURATION_KEYS = ("api_key", "auth_key", "username", "password", "passkey", "cookie_file", "cookies", "ApiUser", "bioma_api_key", "ptgen_api")
+TRACKER_CONFIGURATION_KEYS = ("api_key", "auth_key", "username", "password", "passkey", "cookie_file", "cookies", "ApiUser", "bioma_api_key", "image_host_api_key", "ptgen_api")
 
 
 def _has_configured_value(options: Mapping[str, Any]) -> bool:
@@ -400,6 +400,7 @@ class Args:
 
         imghost_completer = make_dict_completer(
             {
+                "catbox": "Catbox",
                 "imgbb": "ImgBB",
                 "imgbox": "Imgbox",
                 "pixhost": "Pixhost",
@@ -880,6 +881,7 @@ class Args:
             required=False,
             help="Image Host",
             choices=[
+                "catbox",
                 "imgbb",
                 "imgbox",
                 "pixhost",
