@@ -2387,6 +2387,8 @@ class DescriptionBuilder:
             return f"[img]{raw_url}[/img]"
         if self.tracker == "HDTORRENTS":
             return f"<a href='{raw_url}'><img src='{img_url}' height=137></a> "
+        if self.tracker == "BEYONDHD":
+            return f"[url={web_url}][img=350x350]{raw_url}[/img][/url] "
         if self.tracker == "TORRENTLEECH":
             return f'<a href="{web_url}"><img src="{img_url}" style="max-width: 350px;"></a>  '
         if self.tracker == "FUNFILE":

@@ -67,16 +67,19 @@ class BEYONDHD:
         "x0r",
         "YIFY",
     )
-    approved_image_hosts = ("imgbox", "imgbb", "pixhost", "bhd", "bam", "passtheimage")
+    # BHD accepts these public hosts for screenshots. Imgbox remains listed for
+    # compatibility, but is currently disabled by the runtime host availability
+    # rules. slow.pics is accepted for screenshots and comparisons, but has no
+    # automatic Upload Assistant upload backend.
+    approved_image_hosts = ("imgbox", "imgbb", "pixhost", "passtheimage", "slowpics")
     image_host_policy = ImageHostPolicy(
         {
             "ibb.co": "imgbb",
+            "imgbb.com": "imgbb",
             "pixhost.to": "pixhost",
             "imgbox.com": "imgbox",
-            "ptscreens.com": "ptscreens",
-            "beyondhd.co": "bhd",
-            "imagebam.com": "bam",
             "passtheima.ge": "passtheimage",
+            "slow.pics": "slowpics",
         },
         approved_image_hosts,
     )

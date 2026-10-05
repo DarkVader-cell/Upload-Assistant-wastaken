@@ -1230,7 +1230,9 @@ const ApplicationRail = ({
           onClick={onOpenOperations}
           title="Open unattended operations"
         >
-          <span className="text-sm font-bold" aria-hidden="true">◉</span>
+          <span className="text-sm font-bold" aria-hidden="true">
+            ◉
+          </span>
           <span>Operations</span>
         </button>
         <button
@@ -1757,7 +1759,7 @@ function AudionutsUAGUI() {
     useState(false);
   const [failedFavicons, setFailedFavicons] = useState(new Set());
   const [isExecuting, setIsExecuting] = useState(false);
-  const [isOutputExpanded, setIsOutputExpanded] = useState(false);
+  const [, setIsOutputExpanded] = useState(false);
   const [showExecutionPreview, setShowExecutionPreview] = useState(false);
   const [isTerminalView, setIsTerminalView] = useState(false);
   const [expandedFolders, setExpandedFolders] = useState(
@@ -1809,7 +1811,8 @@ function AudionutsUAGUI() {
   );
   const [executionScreenshots, setExecutionScreenshots] = useState([]);
   const [executionDescription, setExecutionDescription] = useState(null);
-  const [trackerDescriptionSelection, setTrackerDescriptionSelection] = useState("");
+  const [trackerDescriptionSelection, setTrackerDescriptionSelection] =
+    useState("");
   const [descriptionDraft, setDescriptionDraft] = useState("");
   const [descriptionView, setDescriptionView] = useState("edit");
   const [descriptionVersion, setDescriptionVersion] = useState(0);
@@ -2227,7 +2230,6 @@ function AudionutsUAGUI() {
   const fileBrowserSearchTimer = useRef(null);
   const fileBrowserSearchCompletion = useRef(null);
   const fileBrowserSearchQuery = useRef("");
-  const fileBrowserSearchController = useRef(null);
   const fileBrowserSearchId = useRef(0);
 
   // Preserve the desktop file browser scroll position while the
@@ -2270,7 +2272,9 @@ function AudionutsUAGUI() {
   const loadDetachedJobs = useCallback(async () => {
     setOperationsLoading(true);
     try {
-      const response = await apiFetch(`${API_BASE}/qui/status?limit=200`, { cache: "no-store" });
+      const response = await apiFetch(`${API_BASE}/qui/status?limit=200`, {
+        cache: "no-store",
+      });
       const data = await response.json().catch(() => null);
       if (response.ok && data?.success) {
         setDetachedJobs(Array.isArray(data.jobs) ? data.jobs : []);
@@ -2284,7 +2288,9 @@ function AudionutsUAGUI() {
 
   const loadRuntimeHealth = useCallback(async () => {
     try {
-      const response = await apiFetch(`${API_BASE}/runtime/health`, { cache: "no-store" });
+      const response = await apiFetch(`${API_BASE}/runtime/health`, {
+        cache: "no-store",
+      });
       const data = await response.json().catch(() => null);
       if (response.ok && data?.success) setRuntimeHealth(data);
     } catch (error) {
@@ -2322,14 +2328,18 @@ function AudionutsUAGUI() {
       const controller = new AbortController();
       quiEventsAbortControllerRef.current = controller;
       try {
-        const response = await apiFetch(`${API_BASE}/qui/events?cursor=${quiCursorRef.current}&wait=20`, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
+        const response = await apiFetch(
+          `${API_BASE}/qui/events?cursor=${quiCursorRef.current}&wait=20`,
+          {
+            cache: "no-store",
+            signal: controller.signal,
+          },
+        );
         const data = await response.json().catch(() => null);
         if (response.ok && data?.success) {
           quiCursorRef.current = Number(data.cursor) || quiCursorRef.current;
-          if (Array.isArray(data.events) && data.events.length) await loadDetachedJobs();
+          if (Array.isArray(data.events) && data.events.length)
+            await loadDetachedJobs();
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -2373,14 +2383,22 @@ function AudionutsUAGUI() {
   // Keep the selected unattended log live. Previously the log only changed
   // after repeatedly clicking the button, and every opened log stayed visible.
   useEffect(() => {
-    if (!activeLogJobId || (!operationsOpen && activePanel !== "operations")) return undefined;
+    if (!activeLogJobId || (!operationsOpen && activePanel !== "operations"))
+      return undefined;
     const refreshLog = async () => {
       try {
-        const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(activeLogJobId)}?bytes=30000`, { cache: "no-store" });
+        const response = await apiFetch(
+          `${API_BASE}/qui/log/${encodeURIComponent(activeLogJobId)}?bytes=30000`,
+          { cache: "no-store" },
+        );
         const data = await response.json().catch(() => null);
         if (response.ok && data?.success) {
           const nextLog = data.log || "";
-          setOperationLog((previous) => previous[activeLogJobId] === nextLog ? previous : ({ ...previous, [activeLogJobId]: nextLog }));
+          setOperationLog((previous) =>
+            previous[activeLogJobId] === nextLog
+              ? previous
+              : { ...previous, [activeLogJobId]: nextLog },
+          );
         }
       } catch (error) {
         console.debug("Failed to refresh unattended log:", error);
@@ -2398,7 +2416,10 @@ function AudionutsUAGUI() {
   const operationRequest = async (url, options = {}) => {
     const response = await apiFetch(url, {
       ...options,
-      headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+      headers: {
+        "Content-Type": "application/json",
+        ...(options.headers || {}),
+      },
     });
     const data = await response.json().catch(() => null);
     if (!response.ok || !data?.success) {
@@ -2413,7 +2434,19 @@ function AudionutsUAGUI() {
       if (!/^https?:\/\//i.test(part)) return part;
       const trailing = part.match(/[),.;!?]+$/)?.[0] || "";
       const href = trailing ? part.slice(0, -trailing.length) : part;
-      return <span key={index}><a href={href} target="_blank" rel="noreferrer" className="text-sky-400 underline hover:text-sky-300">{href}</a>{trailing}</span>;
+      return (
+        <span key={index}>
+          <a
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sky-400 underline hover:text-sky-300"
+          >
+            {href}
+          </a>
+          {trailing}
+        </span>
+      );
     });
   };
 
@@ -2427,7 +2460,11 @@ function AudionutsUAGUI() {
     try {
       await operationRequest(`${API_BASE}/qui/submit`, {
         method: "POST",
-        body: JSON.stringify({ paths, args: customArgs, append_unattended: true }),
+        body: JSON.stringify({
+          paths,
+          args: customArgs,
+          append_unattended: true,
+        }),
       });
       setOperationsOpen(true);
       setActivePanel("operations");
@@ -2441,17 +2478,27 @@ function AudionutsUAGUI() {
     try {
       if (action === "log") {
         setActiveLogJobId(jobId);
-        const response = await apiFetch(`${API_BASE}/qui/log/${encodeURIComponent(jobId)}?bytes=30000`, { cache: "no-store" });
+        const response = await apiFetch(
+          `${API_BASE}/qui/log/${encodeURIComponent(jobId)}?bytes=30000`,
+          { cache: "no-store" },
+        );
         const data = await response.json().catch(() => null);
-        if (!response.ok || !data?.success) throw new Error(data?.error || "Unable to load log");
-        setOperationLog((previous) => ({ [jobId]: data.log || "", ...previous }));
+        if (!response.ok || !data?.success)
+          throw new Error(data?.error || "Unable to load log");
+        setOperationLog((previous) => ({
+          [jobId]: data.log || "",
+          ...previous,
+        }));
         setOperationsOpen(true);
         setActivePanel("operations");
       } else {
-        await operationRequest(`${API_BASE}/qui/${action}/${encodeURIComponent(jobId)}`, {
-          method: "POST",
-          body: JSON.stringify(body),
-        });
+        await operationRequest(
+          `${API_BASE}/qui/${action}/${encodeURIComponent(jobId)}`,
+          {
+            method: "POST",
+            body: JSON.stringify(body),
+          },
+        );
         await loadDetachedJobs();
       }
     } catch (error) {
@@ -2461,52 +2508,119 @@ function AudionutsUAGUI() {
 
   const renderOperationsPanel = (overlay = false) => {
     const panel = (
-      <div className={`${overlay ? "w-full max-w-6xl max-h-[90vh] overflow-y-auto" : "h-full overflow-y-auto"} rounded-xl border p-4 ${isDarkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"}`}>
+      <div
+        className={`${overlay ? "w-full max-w-6xl max-h-[90vh] overflow-y-auto" : "h-full overflow-y-auto"} rounded-xl border p-4 ${isDarkMode ? "bg-gray-800 border-gray-700 text-gray-100" : "bg-white border-gray-200 text-gray-900"}`}
+      >
         <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>
             <h2 className="text-lg font-bold">Unattended Operations</h2>
-            <p className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-              Live control for queued uploads, blocked prompts, retries, and logs. Polls every 2.5 seconds while open.
+            <p
+              className={`text-xs mt-1 ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
+            >
+              Live control for queued uploads, blocked prompts, retries, and
+              logs. Polls every 2.5 seconds while open.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={submitUnattendedSelection} className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700">
+            <button
+              onClick={submitUnattendedSelection}
+              className="rounded-md bg-purple-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-purple-700"
+            >
               Queue selected ({selectedPaths.length || (selectedPath ? 1 : 0)})
             </button>
-            <button onClick={() => { loadDetachedJobs(); loadReleaseHistory(); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>
+            <button
+              onClick={() => {
+                loadDetachedJobs();
+                loadReleaseHistory();
+              }}
+              className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}
+            >
               {operationsLoading ? "Refreshing…" : "Refresh"}
             </button>
-            {overlay && <button onClick={() => { setOperationsOpen(false); setActivePanel("main"); }} className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}>Close</button>}
+            {overlay && (
+              <button
+                onClick={() => {
+                  setOperationsOpen(false);
+                  setActivePanel("main");
+                }}
+                className={`rounded-md border px-3 py-1.5 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-gray-50"}`}
+              >
+                Close
+              </button>
+            )}
           </div>
         </div>
         {runtimeHealth && (
-          <div className={`mb-4 grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2 lg:grid-cols-4 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
-            <div><span className="block opacity-60">Runtime</span><span className={`font-semibold ${runtimeHealth.status === "healthy" ? "text-emerald-500" : "text-amber-500"}`}>{runtimeHealth.status}</span></div>
-            <div><span className="block opacity-60">Artifact reuse</span><span className="font-semibold">{runtimeHealth.cache?.artifacts?.entries || 0} releases / {runtimeHealth.cache?.artifacts?.objects || 0} objects</span></div>
-            <div><span className="block opacity-60">Resumable stages</span><span className="font-semibold">{runtimeHealth.checkpoints?.completed_stages || 0} checkpoints</span></div>
-            <div><span className="block opacity-60">Providers</span><span className="font-semibold">{Object.keys(runtimeHealth.scheduler?.providers || {}).length} observed</span></div>
-            <div className="sm:col-span-2 lg:col-span-4"><span className="opacity-60">External tools: </span><span>{Object.entries(runtimeHealth.tools || {}).map(([name, available]) => `${name}:${available ? "ok" : "missing"}`).join(" · ")}</span></div>
+          <div
+            className={`mb-4 grid gap-2 rounded-lg border p-3 text-xs sm:grid-cols-2 lg:grid-cols-4 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}
+          >
+            <div>
+              <span className="block opacity-60">Runtime</span>
+              <span
+                className={`font-semibold ${runtimeHealth.status === "healthy" ? "text-emerald-500" : "text-amber-500"}`}
+              >
+                {runtimeHealth.status}
+              </span>
+            </div>
+            <div>
+              <span className="block opacity-60">Artifact reuse</span>
+              <span className="font-semibold">
+                {runtimeHealth.cache?.artifacts?.entries || 0} releases /{" "}
+                {runtimeHealth.cache?.artifacts?.objects || 0} objects
+              </span>
+            </div>
+            <div>
+              <span className="block opacity-60">Resumable stages</span>
+              <span className="font-semibold">
+                {runtimeHealth.checkpoints?.completed_stages || 0} checkpoints
+              </span>
+            </div>
+            <div>
+              <span className="block opacity-60">Providers</span>
+              <span className="font-semibold">
+                {Object.keys(runtimeHealth.scheduler?.providers || {}).length}{" "}
+                observed
+              </span>
+            </div>
+            <div className="sm:col-span-2 lg:col-span-4">
+              <span className="opacity-60">External tools: </span>
+              <span>
+                {Object.entries(runtimeHealth.tools || {})
+                  .map(
+                    ([name, available]) =>
+                      `${name}:${available ? "ok" : "missing"}`,
+                  )
+                  .join(" · ")}
+              </span>
+            </div>
           </div>
         )}
         <section className="mb-5">
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2">
             <div>
               <h3 className="text-sm font-bold">Release history</h3>
-              <p className={`text-[11px] ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>
-                Persistent across restarts · {releaseHistoryStats?.entries || 0} recorded · {releaseHistoryStats?.completed || 0} completed
+              <p
+                className={`text-[11px] ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
+              >
+                Persistent across restarts · {releaseHistoryStats?.entries || 0}{" "}
+                recorded · {releaseHistoryStats?.completed || 0} completed
               </p>
             </div>
             <div className="flex flex-1 flex-wrap justify-end gap-2 sm:flex-none">
               <input
                 value={releaseHistorySearch}
-                onChange={(event) => setReleaseHistorySearch(event.target.value)}
+                onChange={(event) =>
+                  setReleaseHistorySearch(event.target.value)
+                }
                 placeholder="Search name, path, tracker, or job ID"
                 aria-label="Search release history"
                 className={`min-w-[220px] flex-1 rounded border px-2 py-1.5 text-xs sm:w-72 ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
               />
               <select
                 value={releaseHistoryStatus}
-                onChange={(event) => setReleaseHistoryStatus(event.target.value)}
+                onChange={(event) =>
+                  setReleaseHistoryStatus(event.target.value)
+                }
                 aria-label="Filter release history by status"
                 className={`rounded border px-2 py-1.5 text-xs ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
               >
@@ -2521,60 +2635,117 @@ function AudionutsUAGUI() {
             </div>
           </div>
           {!releaseHistory.length ? (
-            <div className={`rounded-lg border border-dashed p-4 text-center text-xs ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>
+            <div
+              className={`rounded-lg border border-dashed p-4 text-center text-xs ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}
+            >
               No matching release history.
             </div>
           ) : (
             <div className="max-h-72 space-y-2 overflow-y-auto pr-1">
               {releaseHistory.map((item) => {
                 const historyStatus = String(item.status || "unknown");
-                const trackerNames = Array.isArray(item.successful_trackers) && item.successful_trackers.length
-                  ? item.successful_trackers
-                  : Array.isArray(item.trackers) ? item.trackers : [];
-                const trackerUploads = Array.isArray(item.tracker_uploads) ? item.tracker_uploads : [];
+                const trackerNames =
+                  Array.isArray(item.successful_trackers) &&
+                  item.successful_trackers.length
+                    ? item.successful_trackers
+                    : Array.isArray(item.trackers)
+                      ? item.trackers
+                      : [];
+                const trackerUploads = Array.isArray(item.tracker_uploads)
+                  ? item.tracker_uploads
+                  : [];
                 return (
-                  <div key={item.id} className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-gray-700 bg-gray-900/70" : "border-gray-200 bg-gray-50"}`}>
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border px-3 py-2 ${isDarkMode ? "border-gray-700 bg-gray-900/70" : "border-gray-200 bg-gray-50"}`}
+                  >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${historyStatus === "completed" ? "bg-emerald-500/20 text-emerald-400" : historyStatus === "failed" || historyStatus === "cancelled" ? "bg-rose-500/20 text-rose-400" : "bg-amber-500/20 text-amber-400"}`}>{historyStatus}</span>
-                          <strong className="truncate text-xs">{item.release_name || item.source_path || item.id}</strong>
-                          {(item.category || item.media_type || item.resolution) && <span className="text-[10px] opacity-60">{[item.category, item.media_type, item.resolution].filter(Boolean).join(" · ")}</span>}
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${historyStatus === "completed" ? "bg-emerald-500/20 text-emerald-400" : historyStatus === "failed" || historyStatus === "cancelled" ? "bg-rose-500/20 text-rose-400" : "bg-amber-500/20 text-amber-400"}`}
+                          >
+                            {historyStatus}
+                          </span>
+                          <strong className="truncate text-xs">
+                            {item.release_name || item.source_path || item.id}
+                          </strong>
+                          {(item.category ||
+                            item.media_type ||
+                            item.resolution) && (
+                            <span className="text-[10px] opacity-60">
+                              {[item.category, item.media_type, item.resolution]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          )}
                         </div>
-                        <p className="mt-1 truncate font-mono text-[10px] opacity-60" title={item.source_path}>{item.source_path}</p>
+                        <p
+                          className="mt-1 truncate font-mono text-[10px] opacity-60"
+                          title={item.source_path}
+                        >
+                          {item.source_path}
+                        </p>
                       </div>
                       <div className="text-right text-[10px] opacity-60">
-                        <div>{new Date(Number(item.updated_at) * 1000).toLocaleString()}</div>
-                        {trackerNames.length > 0 && <div>{trackerNames.join(" · ")}</div>}
+                        <div>
+                          {new Date(
+                            Number(item.updated_at) * 1000,
+                          ).toLocaleString()}
+                        </div>
+                        {trackerNames.length > 0 && (
+                          <div>{trackerNames.join(" · ")}</div>
+                        )}
                       </div>
                     </div>
                     {trackerUploads.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5 text-[10px]">
-                        {trackerUploads.map((upload) => (
+                        {trackerUploads.map((upload) =>
                           upload.url ? (
-                            <a key={`${item.id}-${upload.tracker}`} href={upload.url} target="_blank" rel="noreferrer" className="rounded border border-blue-500/40 px-1.5 py-0.5 text-blue-400 hover:bg-blue-500/10" title={upload.name || upload.url}>
-                              {upload.tracker}{upload.name ? ` · ${upload.name}` : ""}
+                            <a
+                              key={`${item.id}-${upload.tracker}`}
+                              href={upload.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="rounded border border-blue-500/40 px-1.5 py-0.5 text-blue-400 hover:bg-blue-500/10"
+                              title={upload.name || upload.url}
+                            >
+                              {upload.tracker}
+                              {upload.name ? ` · ${upload.name}` : ""}
                             </a>
                           ) : (
-                            <span key={`${item.id}-${upload.tracker}`} className="rounded border px-1.5 py-0.5 opacity-75" title={upload.name || upload.tracker}>
-                              {upload.tracker}{upload.name ? ` · ${upload.name}` : ""}
+                            <span
+                              key={`${item.id}-${upload.tracker}`}
+                              className="rounded border px-1.5 py-0.5 opacity-75"
+                              title={upload.name || upload.tracker}
+                            >
+                              {upload.tracker}
+                              {upload.name ? ` · ${upload.name}` : ""}
                             </span>
-                          )
-                        ))}
+                          ),
+                        )}
                       </div>
                     )}
-                    {item.job_id && (historyStatus === "failed" || historyStatus === "interrupted") && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          onClick={() => performJobAction(item.job_id, "retry")}
-                          className="rounded bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
-                        >Continue upload</button>
-                        <button
-                          onClick={() => performJobAction(item.job_id, "log")}
-                          className={`rounded border px-2 py-1 text-[11px] ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}
-                        >Open log</button>
-                      </div>
-                    )}
+                    {item.job_id &&
+                      (historyStatus === "failed" ||
+                        historyStatus === "interrupted") && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            onClick={() =>
+                              performJobAction(item.job_id, "retry")
+                            }
+                            className="rounded bg-blue-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-blue-700"
+                          >
+                            Continue upload
+                          </button>
+                          <button
+                            onClick={() => performJobAction(item.job_id, "log")}
+                            className={`rounded border px-2 py-1 text-[11px] ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}
+                          >
+                            Open log
+                          </button>
+                        </div>
+                      )}
                   </div>
                 );
               })}
@@ -2583,7 +2754,11 @@ function AudionutsUAGUI() {
         </section>
         <h3 className="mb-2 text-sm font-bold">Live unattended jobs</h3>
         {!detachedJobs.length ? (
-          <div className={`rounded-lg border border-dashed p-8 text-center text-sm ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}>No unattended jobs yet.</div>
+          <div
+            className={`rounded-lg border border-dashed p-8 text-center text-sm ${isDarkMode ? "border-gray-700 text-gray-400" : "border-gray-300 text-gray-500"}`}
+          >
+            No unattended jobs yet.
+          </div>
         ) : (
           <div className="space-y-3">
             {detachedJobs.map((job) => {
@@ -2594,65 +2769,239 @@ function AudionutsUAGUI() {
               const draft = operationDrafts[job.id] ?? job.args ?? "";
               const releaseDraft = operationMetadata[job.id] || {};
               return (
-                <div key={job.id} className={`rounded-lg border p-3 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}>
+                <div
+                  key={job.id}
+                  className={`rounded-lg border p-3 ${isDarkMode ? "border-gray-700 bg-gray-900" : "border-gray-200 bg-gray-50"}`}
+                >
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status === "completed" ? "bg-emerald-500/20 text-emerald-400" : status === "failed" || status === "cancelled" ? "bg-rose-500/20 text-rose-400" : status.startsWith("waiting") ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}>{status}</span>
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${status === "completed" ? "bg-emerald-500/20 text-emerald-400" : status === "failed" || status === "cancelled" ? "bg-rose-500/20 text-rose-400" : status.startsWith("waiting") ? "bg-amber-500/20 text-amber-400" : "bg-blue-500/20 text-blue-400"}`}
+                        >
+                          {status}
+                        </span>
                         <span className="text-xs font-mono">{job.id}</span>
-                        {job.queue_position && <span className="text-[11px] opacity-60">queue #{job.queue_position}</span>}
+                        {job.queue_position && (
+                          <span className="text-[11px] opacity-60">
+                            queue #{job.queue_position}
+                          </span>
+                        )}
                       </div>
-                      <p className="mt-1 break-all text-sm font-medium">{job.source_path}</p>
-                      <p className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}>{job.message || ""}</p>
-                      {job.progress && (job.progress.percent !== undefined || job.progress.stage) && (
-                        <div className="mt-2">
-                          <div className="mb-1 flex justify-between text-[11px] opacity-70"><span>{job.progress.stage || "progress"}</span><span>{job.progress.percent !== undefined ? `${job.progress.percent}%` : ""}</span></div>
-                          {job.progress.percent !== undefined && <div className={`h-1.5 overflow-hidden rounded-full ${isDarkMode ? "bg-gray-700" : "bg-gray-200"}`}><div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.max(0, Math.min(100, Number(job.progress.percent) || 0))}%` }} /></div>}
-                        </div>
-                      )}
+                      <p className="mt-1 break-all text-sm font-medium">
+                        {job.source_path}
+                      </p>
+                      <p
+                        className={`mt-1 text-xs ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
+                      >
+                        {job.message || ""}
+                      </p>
+                      {job.progress &&
+                        (job.progress.percent !== undefined ||
+                          job.progress.stage) && (
+                          <div className="mt-2">
+                            <div className="mb-1 flex justify-between text-[11px] opacity-70">
+                              <span>{job.progress.stage || "progress"}</span>
+                              <span>
+                                {job.progress.percent !== undefined
+                                  ? `${job.progress.percent}%`
+                                  : ""}
+                              </span>
+                            </div>
+                            {job.progress.percent !== undefined && (
+                              <div
+                                className={`h-1.5 overflow-hidden rounded-full ${isDarkMode ? "bg-gray-700" : "bg-gray-200"}`}
+                              >
+                                <div
+                                  className="h-full bg-purple-500 transition-all"
+                                  style={{
+                                    width: `${Math.max(0, Math.min(100, Number(job.progress.percent) || 0))}%`,
+                                  }}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      <button onClick={() => performJobAction(job.id, "log")} className={`rounded border px-2 py-1 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}>Log</button>
-                      {job.can_retry && <button onClick={() => performJobAction(job.id, "retry")} className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700">Continue upload</button>}
-                      {job.can_cancel && <button onClick={() => performJobAction(job.id, "cancel")} className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-700">Cancel</button>}
+                      <button
+                        onClick={() => performJobAction(job.id, "log")}
+                        className={`rounded border px-2 py-1 text-xs ${isDarkMode ? "border-gray-600 hover:bg-gray-700" : "border-gray-300 hover:bg-white"}`}
+                      >
+                        Log
+                      </button>
+                      {job.can_retry && (
+                        <button
+                          onClick={() => performJobAction(job.id, "retry")}
+                          className="rounded bg-blue-600 px-2 py-1 text-xs text-white hover:bg-blue-700"
+                        >
+                          Continue upload
+                        </button>
+                      )}
+                      {job.can_cancel && (
+                        <button
+                          onClick={() => performJobAction(job.id, "cancel")}
+                          className="rounded bg-rose-600 px-2 py-1 text-xs text-white hover:bg-rose-700"
+                        >
+                          Cancel
+                        </button>
+                      )}
                     </div>
                   </div>
                   {editable && (
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <input value={draft} onChange={(event) => setOperationDrafts((previous) => ({ ...previous, [job.id]: event.target.value }))} className={`min-w-[240px] flex-1 rounded border px-2 py-1.5 text-xs font-mono ${isDarkMode ? "border-gray-600 bg-gray-800 text-gray-100" : "border-gray-300 bg-white text-gray-900"}`} aria-label={`Arguments for ${job.id}`} />
-                      <button onClick={() => performJobAction(job.id, "update", { args: draft, append_unattended: true })} className="rounded bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700">Save settings{status === "failed" || status === "interrupted" ? " & retry" : ""}</button>
+                      <input
+                        value={draft}
+                        onChange={(event) =>
+                          setOperationDrafts((previous) => ({
+                            ...previous,
+                            [job.id]: event.target.value,
+                          }))
+                        }
+                        className={`min-w-[240px] flex-1 rounded border px-2 py-1.5 text-xs font-mono ${isDarkMode ? "border-gray-600 bg-gray-800 text-gray-100" : "border-gray-300 bg-white text-gray-900"}`}
+                        aria-label={`Arguments for ${job.id}`}
+                      />
+                      <button
+                        onClick={() =>
+                          performJobAction(job.id, "update", {
+                            args: draft,
+                            append_unattended: true,
+                          })
+                        }
+                        className="rounded bg-purple-600 px-3 py-1.5 text-xs text-white hover:bg-purple-700"
+                      >
+                        Save settings
+                        {status === "failed" || status === "interrupted"
+                          ? " & retry"
+                          : ""}
+                      </button>
                     </div>
                   )}
-                  {prompt && (status === "waiting_for_input" || status === "waiting_for_metadata") && (
-                    <div className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}>
-                      <p className="text-xs font-semibold">Input required</p>
-                      <p className="mt-1 whitespace-pre-wrap text-xs">{prompt.text || "Metadata IDs are required to continue."}</p>
-                      <div className="mt-2 flex gap-2">
-                        <input value={operationInput[job.id] || ""} onChange={(event) => setOperationInput((previous) => ({ ...previous, [job.id]: event.target.value }))} onKeyDown={(event) => { if (event.key === "Enter") performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] }); }} className={`flex-1 rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`} placeholder={prompt.input_type === "yes_no" ? "y or n" : "Enter response"} />
-                        <button onClick={() => performJobAction(job.id, status === "waiting_for_metadata" ? "metadata" : "input", { input: operationInput[job.id] })} className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Send</button>
-                      </div>
-                    </div>
-                  )}
-                  {releaseMetadata && status === "waiting_for_release_metadata" && (
-                    <div className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}>
-                      <p className="text-xs font-semibold">Release-name metadata required</p>
-                      <p className="mt-1 text-xs">{releaseMetadata.name || releaseMetadata.title || job.source_path}</p>
-                      {Array.isArray(releaseMetadata.fields) && releaseMetadata.fields.map((field) => (
-                        <label key={field} className="mt-2 block text-xs font-medium">
-                          <span>{field === "year" ? "Release year" : "Resolution"}</span>
+                  {prompt &&
+                    (status === "waiting_for_input" ||
+                      status === "waiting_for_metadata") && (
+                      <div
+                        className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}
+                      >
+                        <p className="text-xs font-semibold">Input required</p>
+                        <p className="mt-1 whitespace-pre-wrap text-xs">
+                          {prompt.text ||
+                            "Metadata IDs are required to continue."}
+                        </p>
+                        <div className="mt-2 flex gap-2">
                           <input
-                            value={releaseDraft[field] ?? releaseMetadata.values?.[field] ?? ""}
-                            onChange={(event) => setOperationMetadata((previous) => ({ ...previous, [job.id]: { ...(previous[job.id] || {}), [field]: event.target.value } }))}
-                            placeholder={field === "year" ? "YYYY" : "1080p"}
-                            className={`mt-1 block w-full rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`}
+                            value={operationInput[job.id] || ""}
+                            onChange={(event) =>
+                              setOperationInput((previous) => ({
+                                ...previous,
+                                [job.id]: event.target.value,
+                              }))
+                            }
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter")
+                                performJobAction(
+                                  job.id,
+                                  status === "waiting_for_metadata"
+                                    ? "metadata"
+                                    : "input",
+                                  { input: operationInput[job.id] },
+                                );
+                            }}
+                            className={`flex-1 rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`}
+                            placeholder={
+                              prompt.input_type === "yes_no"
+                                ? "y or n"
+                                : "Enter response"
+                            }
                           />
-                          {releaseMetadata.issues?.[field] && <span className="mt-1 block font-normal opacity-70">{releaseMetadata.issues[field]}</span>}
-                        </label>
-                      ))}
-                      <button onClick={() => performJobAction(job.id, "release_metadata", { ...(releaseMetadata.values || {}), ...releaseDraft })} className="mt-3 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">Rebuild title and continue</button>
-                    </div>
+                          <button
+                            onClick={() =>
+                              performJobAction(
+                                job.id,
+                                status === "waiting_for_metadata"
+                                  ? "metadata"
+                                  : "input",
+                                { input: operationInput[job.id] },
+                              )
+                            }
+                            className="rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                          >
+                            Send
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  {releaseMetadata &&
+                    status === "waiting_for_release_metadata" && (
+                      <div
+                        className={`mt-3 rounded-lg border p-3 ${isDarkMode ? "border-amber-700/60 bg-amber-950/30" : "border-amber-200 bg-amber-50"}`}
+                      >
+                        <p className="text-xs font-semibold">
+                          Release-name metadata required
+                        </p>
+                        <p className="mt-1 text-xs">
+                          {releaseMetadata.name ||
+                            releaseMetadata.title ||
+                            job.source_path}
+                        </p>
+                        {Array.isArray(releaseMetadata.fields) &&
+                          releaseMetadata.fields.map((field) => (
+                            <label
+                              key={field}
+                              className="mt-2 block text-xs font-medium"
+                            >
+                              <span>
+                                {field === "year"
+                                  ? "Release year"
+                                  : "Resolution"}
+                              </span>
+                              <input
+                                value={
+                                  releaseDraft[field] ??
+                                  releaseMetadata.values?.[field] ??
+                                  ""
+                                }
+                                onChange={(event) =>
+                                  setOperationMetadata((previous) => ({
+                                    ...previous,
+                                    [job.id]: {
+                                      ...(previous[job.id] || {}),
+                                      [field]: event.target.value,
+                                    },
+                                  }))
+                                }
+                                placeholder={
+                                  field === "year" ? "YYYY" : "1080p"
+                                }
+                                className={`mt-1 block w-full rounded border px-2 py-1.5 text-sm ${isDarkMode ? "border-gray-600 bg-gray-800" : "border-gray-300 bg-white"}`}
+                              />
+                              {releaseMetadata.issues?.[field] && (
+                                <span className="mt-1 block font-normal opacity-70">
+                                  {releaseMetadata.issues[field]}
+                                </span>
+                              )}
+                            </label>
+                          ))}
+                        <button
+                          onClick={() =>
+                            performJobAction(job.id, "release_metadata", {
+                              ...(releaseMetadata.values || {}),
+                              ...releaseDraft,
+                            })
+                          }
+                          className="mt-3 rounded bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700"
+                        >
+                          Rebuild title and continue
+                        </button>
+                      </div>
+                    )}
+                  {activeLogJobId === job.id && operationLog[job.id] && (
+                    <pre
+                      className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}
+                    >
+                      {renderLogWithLinks(operationLog[job.id])}
+                    </pre>
                   )}
-                  {activeLogJobId === job.id && operationLog[job.id] && <pre className={`mt-3 max-h-56 overflow-auto rounded p-3 text-[11px] ${isDarkMode ? "bg-black text-gray-300" : "bg-gray-900 text-gray-200"}`}>{renderLogWithLinks(operationLog[job.id])}</pre>}
                 </div>
               );
             })}
@@ -2661,7 +3010,11 @@ function AudionutsUAGUI() {
       </div>
     );
     if (!overlay) return panel;
-    return <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">{panel}</div>;
+    return (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+        {panel}
+      </div>
+    );
   };
 
   const richOutputRef = useRef(null);
@@ -3673,14 +4026,22 @@ function AudionutsUAGUI() {
 
   const regenerateExecutionScreenshots = async (group = "main") => {
     if (!sessionId || screenshotActionId) return;
-    if (!window.confirm(`Regenerate every screenshot in ${group === "main" ? "this file" : `the ${group} group`}?`)) return;
+    if (
+      !window.confirm(
+        `Regenerate every screenshot in ${group === "main" ? "this file" : `the ${group} group`}?`,
+      )
+    )
+      return;
     setScreenshotActionId(`regenerate:${group}`);
     try {
-      const response = await apiFetch(`${API_BASE}/execution_screenshots/regenerate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: sessionId, group }),
-      });
+      const response = await apiFetch(
+        `${API_BASE}/execution_screenshots/regenerate`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id: sessionId, group }),
+        },
+      );
       const data = await response.json().catch(() => null);
       if (!response.ok || !data?.success) {
         window.alert(data?.error || "Could not regenerate screenshots.");
@@ -5739,18 +6100,23 @@ function AudionutsUAGUI() {
     const sources = Array.isArray(executionDescription?.sources)
       ? executionDescription.sources
       : [];
-    const trackerDescriptions = Array.isArray(executionDescription?.tracker_descriptions)
+    const trackerDescriptions = Array.isArray(
+      executionDescription?.tracker_descriptions,
+    )
       ? executionDescription.tracker_descriptions
       : [];
-    const selectedTrackerDescription = trackerDescriptions.find(
-      (item) => item.tracker === trackerDescriptionSelection,
-    ) || trackerDescriptions[0];
+    const selectedTrackerDescription =
+      trackerDescriptions.find(
+        (item) => item.tracker === trackerDescriptionSelection,
+      ) || trackerDescriptions[0];
     const copyTrackerDescription = async (content) => {
       try {
         await navigator.clipboard.writeText(content || "");
         window.alert("Tracker BBCode copied to the clipboard.");
       } catch (_error) {
-        window.alert("Clipboard access failed; select and copy the text manually.");
+        window.alert(
+          "Clipboard access failed; select and copy the text manually.",
+        );
       }
     };
     return (
@@ -5806,25 +6172,42 @@ function AudionutsUAGUI() {
           >
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className={`text-xs font-bold uppercase tracking-wide ${isDarkMode ? "text-emerald-300" : "text-emerald-800"}`}>Tracker BBCode</p>
-                <p className="mt-1 text-[11px] opacity-70">Copy the exact tracker-specific description after screenshots or tracker formatting changes.</p>
+                <p
+                  className={`text-xs font-bold uppercase tracking-wide ${isDarkMode ? "text-emerald-300" : "text-emerald-800"}`}
+                >
+                  Tracker BBCode
+                </p>
+                <p className="mt-1 text-[11px] opacity-70">
+                  Copy the exact tracker-specific description after screenshots
+                  or tracker formatting changes.
+                </p>
               </div>
               {selectedTrackerDescription && (
                 <button
-                  onClick={() => copyTrackerDescription(selectedTrackerDescription.content)}
+                  onClick={() =>
+                    copyTrackerDescription(selectedTrackerDescription.content)
+                  }
                   className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700"
-                >Copy BBCode</button>
+                >
+                  Copy BBCode
+                </button>
               )}
             </div>
             {trackerDescriptions.length ? (
               <>
                 <select
                   value={selectedTrackerDescription?.tracker || ""}
-                  onChange={(event) => setTrackerDescriptionSelection(event.target.value)}
+                  onChange={(event) =>
+                    setTrackerDescriptionSelection(event.target.value)
+                  }
                   className={`mb-2 w-full rounded border px-2 py-1.5 text-xs ${isDarkMode ? "border-gray-600 bg-gray-900" : "border-gray-300 bg-white"}`}
                   aria-label="Select tracker-specific BBCode"
                 >
-                  {trackerDescriptions.map((item) => <option key={item.tracker} value={item.tracker}>{item.tracker}</option>)}
+                  {trackerDescriptions.map((item) => (
+                    <option key={item.tracker} value={item.tracker}>
+                      {item.tracker}
+                    </option>
+                  ))}
                 </select>
                 <textarea
                   readOnly
@@ -5834,7 +6217,10 @@ function AudionutsUAGUI() {
                 />
               </>
             ) : (
-              <p className="text-xs opacity-70">Tracker-specific description files will appear here after the upload stage generates them.</p>
+              <p className="text-xs opacity-70">
+                Tracker-specific description files will appear here after the
+                upload stage generates them.
+              </p>
             )}
           </section>
           <section className="flex min-h-[24rem] flex-1 flex-col">
@@ -5996,11 +6382,18 @@ function AudionutsUAGUI() {
               </button>
               <button
                 onClick={() => regenerateExecutionScreenshots("main")}
-                disabled={isWorking || !executionScreenshots.some((item) => (item.group || "main") === "main")}
+                disabled={
+                  isWorking ||
+                  !executionScreenshots.some(
+                    (item) => (item.group || "main") === "main",
+                  )
+                }
                 className="rounded-md border border-purple-500 px-2 py-1 text-xs text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
                 title="Regenerate every screenshot for this file"
               >
-                {screenshotActionId === "regenerate:main" ? "Regenerating…" : "Regenerate file"}
+                {screenshotActionId === "regenerate:main"
+                  ? "Regenerating…"
+                  : "Regenerate file"}
               </button>
             </div>
           </div>
@@ -6035,11 +6428,15 @@ function AudionutsUAGUI() {
                         </button>
                         {group !== "main" && (
                           <button
-                            onClick={() => regenerateExecutionScreenshots(group)}
+                            onClick={() =>
+                              regenerateExecutionScreenshots(group)
+                            }
                             disabled={isWorking}
                             className="rounded-md border border-purple-500 px-2 py-1 normal-case tracking-normal text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
                           >
-                            {screenshotActionId === `regenerate:${group}` ? "Regenerating…" : "Regenerate group"}
+                            {screenshotActionId === `regenerate:${group}`
+                              ? "Regenerating…"
+                              : "Regenerate group"}
                           </button>
                         )}
                       </div>
@@ -6159,7 +6556,9 @@ function AudionutsUAGUI() {
                                       className="px-2 py-1 text-xs rounded-md bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                                       title={`Delete and automatically refill ${screenshot.filename}`}
                                     >
-                                      {refilling ? "Refilling…" : "Delete + refill"}
+                                      {refilling
+                                        ? "Refilling…"
+                                        : "Delete + refill"}
                                     </button>
                                   )}
                                   {screenshot.source === "replacement" && (
@@ -7341,7 +7740,11 @@ function AudionutsUAGUI() {
             ),
             isExecuting ? "Media" : "Arguments",
           )}
-          {navButton("operations", <span className="text-sm font-bold">◉</span>, "Operations")}
+          {navButton(
+            "operations",
+            <span className="text-sm font-bold">◉</span>,
+            "Operations",
+          )}
           {isExecuting &&
             navButton(
               "screenshots",

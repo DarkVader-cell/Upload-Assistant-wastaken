@@ -98,6 +98,18 @@ def test_tracker_specific_formats_only_clamps_gazelle_descriptions() -> None:
     assert builder.tracker_specific_formats("HDTORRENTS", "[size=16]Text[/size]") == "[size=16]Text[/size]"
 
 
+def test_beyondhd_screenshots_use_square_bbcode_thumbnail_dimensions() -> None:
+    builder = object.__new__(DescriptionBuilder)
+
+    builder.tracker = "BEYONDHD"
+    builder.tracker_config = {}
+    builder.config = {"DEFAULT": {}}
+    assert builder.format_screenshot(
+        "https://ibb.co/111111",
+        "https://i.ibb.co/LdPdC7v6/Screenshot-2.png",
+    ) == "[url=https://ibb.co/111111][img=350x350]https://i.ibb.co/LdPdC7v6/Screenshot-2.png[/img][/url] "
+
+
 def test_tracker_specific_formats_converts_colors_for_gazelle_trackers() -> None:
     builder = object.__new__(DescriptionBuilder)
     description = "[color=skyblue]Text[/color]"

@@ -955,24 +955,6 @@ const apiFetch =
     return response;
   });
 
-const readApiResponse = async (response, fallbackMessage, allowedStatuses = []) => {
-  const text = await response.text();
-  let data = null;
-  try {
-    data = text ? JSON.parse(text) : {};
-  } catch (error) {
-    const statusMessage =
-      response.status === 429
-        ? "Too many configuration requests. Please wait a moment and retry."
-        : text || `${fallbackMessage} (HTTP ${response.status})`;
-    throw new Error(statusMessage);
-  }
-  if (!response.ok && !allowedStatuses.includes(response.status)) {
-    throw new Error(data?.error || data?.message || fallbackMessage);
-  }
-  return data || {};
-};
-
 // Use shared loader when available; otherwise provide a no-op fallback.
 const loadCsrfToken =
   (typeof window !== "undefined" && window.loadCsrfToken) || (async () => {});

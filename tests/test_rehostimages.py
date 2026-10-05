@@ -56,7 +56,9 @@ def test_all_declared_tracker_image_host_policies_accept_configured_hosts() -> N
         approved = set(getattr(tracker_class, "approved_image_hosts", ()) or ())
         policy = getattr(tracker_class, "image_host_policy", None)
         approved.update(getattr(policy, "approved_image_hosts", ()) or ())
-        if approved and not {"imgbb", "ptscreens"}.issubset(approved):
+        # BHD's current rules no longer approve PTScreens; its dedicated
+        # policy regression test covers its allowed hosts instead.
+        if approved and tracker_name != "BEYONDHD" and not {"imgbb", "ptscreens"}.issubset(approved):
             missing.append(str(tracker_name))
 
     assert not missing, f"Trackers missing configured image hosts: {missing}"

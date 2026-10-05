@@ -1688,7 +1688,6 @@ config: dict[str, Any] = {
             "image_host_api_key": "",
             # Rehost this tracker's images on img.samaritano.cc. Failures keep the default image host.
             "force_rehost_images": False,
-            "anon": True,
             # Set this to True if you want to allow external subtitles to be included in the upload
             "allow_ext_subtitles": True,
             # For authorized users only. Do not change this unless you know what you are doing

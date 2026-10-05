@@ -91,7 +91,7 @@ def test_samaritano_upload_posts_bearer_multipart_and_maps_urls(tmp_path: Path) 
             {
                 "headers": {"Authorization": "Bearer fictional-image-token"},
                 "files": {"file": ("fictional-shot.png", b"fictional image")},
-                "timeout": 60,
+                "timeout": 15.0,
             },
         )
     ]

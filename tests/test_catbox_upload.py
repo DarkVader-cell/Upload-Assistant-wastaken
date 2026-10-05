@@ -37,7 +37,7 @@ def test_catbox_anonymous_upload_uses_multipart_and_plain_url(tmp_path: Path) ->
         "https://catbox.moe/user/api.php",
         data={"reqtype": "fileupload"},
         files={"fileToUpload": ("Fictional.Release.png", b"image data")},
-        timeout=60,
+        timeout=15.0,
     )
 
 

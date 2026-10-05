@@ -7,6 +7,12 @@ from src.trackerhandle import should_inject_uploaded_torrent
 from src.trackers.beyondhd import BEYONDHD, format_bhd_imdb_id
 
 
+def test_beyondhd_approves_current_image_hosts() -> None:
+    assert BEYONDHD.approved_image_hosts == ("imgbox", "imgbb", "pixhost", "passtheimage", "slowpics")
+    assert BEYONDHD.image_host_policy.url_host_mapping["passtheima.ge"] == "passtheimage"
+    assert BEYONDHD.image_host_policy.url_host_mapping["slow.pics"] == "slowpics"
+
+
 def test_beyondhd_imdb_ids_are_zero_padded_or_use_the_no_id_sentinel() -> None:
     assert format_bhd_imdb_id(12345) == "0012345"
     assert format_bhd_imdb_id("tt1234567") == "1234567"
