@@ -289,7 +289,6 @@ def test_upload_screens_falls_back_in_configured_order_when_first_host_fails(tmp
         }
         with (
             patch("src.uploadscreens.screenshots_dir", return_value=tmp_path),
-            patch("src.uploadscreens.os.chdir"),
             patch("src.uploadscreens.Path.cwd", return_value=tmp_path),
             patch("src.uploadscreens.upload_image_task", new=fake_upload),
         ):
@@ -320,7 +319,6 @@ def test_upload_screens_skips_disabled_imgbox(tmp_path: Path) -> None:
         config = {"DEFAULT": {"img_host_1": "imgbox", "img_host_2": "ptscreens", "image_upload_delay": 0}, "TRACKERS": {}}
         with (
             patch("src.uploadscreens.screenshots_dir", return_value=tmp_path),
-            patch("src.uploadscreens.os.chdir"),
             patch("src.uploadscreens.Path.cwd", return_value=tmp_path),
             patch("src.uploadscreens.upload_image_task", new=fake_upload),
         ):
@@ -356,7 +354,6 @@ def test_upload_screens_resolves_fallback_from_selected_host_slot(tmp_path: Path
         }
         with (
             patch("src.uploadscreens.screenshots_dir", return_value=tmp_path),
-            patch("src.uploadscreens.os.chdir"),
             patch("src.uploadscreens.Path.cwd", return_value=tmp_path),
             patch("src.uploadscreens.upload_image_task", new=fake_upload),
         ):

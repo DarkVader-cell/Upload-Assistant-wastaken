@@ -4,7 +4,6 @@ import base64
 import contextlib
 import gc
 import math
-import os
 import re
 import time
 from collections.abc import Awaitable, Callable, Sequence

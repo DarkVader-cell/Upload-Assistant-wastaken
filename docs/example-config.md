@@ -76,7 +76,10 @@ Order matters: `img_host_1` is primary, later hosts are fallbacks.
 - `img_host_1`..`img_host_5` (str): Image host names. Valid examples include `catbox`, `imgbb`, `imgbox`, `pixhost`, `lensdump`, `ptscreens`, `onlyimage`, `dalexni`, `zipline`, `midnightscene`, `passtheimage`, `seedpool_cdn`, `utppm`, `lostimg`.
 - `smart_image_host_selection` (bool, default `true`): Before uploads begin, prefer the first configured host accepted by every selected tracker that declares an image-host policy. Set it to `false` to retain the former per-tracker selection behavior. If there is no common host, normal per-tracker fallback and rehosting behavior is retained.
 - `image_upload_concurrency` (int): Maximum number of image uploads running at once. Set to `0` to use the image host default.
+- `image_upload_timeout` (float, default `15`): Per-host request timeout in seconds. Values are bounded to 5–60 seconds so an unavailable host falls back promptly.
 - `image_upload_delay` (float): Minimum delay in seconds between starting image uploads.
+
+**BeyondHD:** use ImgBB (`ibb.co`), Pixhost, PassTheImage (`passtheima.ge`), or slow.pics for existing screenshots and comparisons. Imgbox remains recognized but is currently disabled for automatic uploads. BHD screenshots are emitted as lossless PNGs with linked `350x350` BBCode thumbnails; slow.pics is accepted as an existing source but has no automatic upload backend.
 
 ### Image host credentials
 

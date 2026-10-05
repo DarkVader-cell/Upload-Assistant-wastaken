@@ -145,7 +145,7 @@ While an upload is active, the workspace changes from setup controls to live run
 ### Execution status
 
 - The page header shows the current state and selected path.
-- **Execution Output** streams the Upload Assistant console.
+- **Execution Output** streams the Upload Assistant console. Use **View terminal** to expand it into a focused terminal view; choose **Back to preparation** to return to the setup workspace after reviewing output.
 - **Binary Progress** reports progress from external tools when available.
 - **Now Processing** uses a poster-first live summary with provider identifiers, technical release details, overview, and category-specific metadata for movies, TV, books, music, games, and adult releases.
 - **Kill** terminates the active run.
