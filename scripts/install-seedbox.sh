@@ -8,6 +8,7 @@ FORCE_UPDATE=0
 PYENV_ROOT_DEFAULT="${HOME}/.pyenv"
 PYENV_GIT_REF="v2.6.7"
 PYENV_REPO_URL="https://github.com/pyenv/pyenv.git"
+REPO_URL="https://github.com/DarkVader-cell/Upload-Assistant-wastaken.git"
 
 usage() {
     cat <<'EOF'
@@ -20,6 +21,7 @@ Options:
   --python VERSION        Python version for pyenv (default: 3.14.0)
   --skip-pyenv-install    Fail instead of installing pyenv automatically
   --force-update          Recreate .venv and reinstall packages
+  --repo-url URL          Repository to clone for a new checkout (default: fork)
   -h, --help              Show this help
 EOF
 }
@@ -94,7 +96,7 @@ clone_or_update_repo() {
 
     if [ ! -d "${UA_DIR}/.git" ]; then
         log "Cloning Upload Assistant into ${UA_DIR}"
-        git clone https://github.com/wastaken7/Upload-Assistant.git "$UA_DIR"
+        git clone "$REPO_URL" "$UA_DIR"
         return
     fi
 
@@ -176,6 +178,11 @@ while [ "$#" -gt 0 ]; do
         --force-update)
             FORCE_UPDATE=1
             shift
+            ;;
+        --repo-url)
+            [ "$#" -ge 2 ] || fail "--repo-url requires a URL"
+            REPO_URL="$2"
+            shift 2
             ;;
         -h|--help)
             usage

@@ -18,6 +18,7 @@
 
 [Install tips for Unraid](unraid.md)
 
+[Portable instance installer](instance-installer.md)
 [Seedbox / Linux Install](seedbox.md)
 [Windows Install](windows-install.md)
 
