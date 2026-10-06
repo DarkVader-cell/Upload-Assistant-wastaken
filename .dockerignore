@@ -40,11 +40,22 @@ benchmarks
 # Runtime artifacts that should not leak into the build context
 tmp
 docker-data
+.pi
+.bootstrap-venv
+**/.bootstrap-venv
+**/*.ua-bundle
+**/config.py.backup*
+**/config.py.bak*
 *.torrent
 *.log
 **/*.log
 
 # Host configuration, credentials, and mutable application state
+.env
+.env.*
+**/*.ua-bundle
+**/*passphrase*
+**/.ua-token*
 data/config.py
 data/access_log.log
 data/session_secret

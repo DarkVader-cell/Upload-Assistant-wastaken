@@ -20,11 +20,13 @@ ENV PYTHONDONTWRITEBYTECODE=1
 RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
-RUN pip install --no-cache-dir --upgrade pip==25.3 wheel==0.45.1 requests==2.32.5
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip==25.3 wheel==0.45.1 requests==2.32.5
 
 WORKDIR /build
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install -r requirements.txt \
     && rm -rf /venv/lib/python*/site-packages/pip \
         /venv/lib/python*/site-packages/pip-*.dist-info \
     && find /venv -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
@@ -66,7 +68,7 @@ RUN python3 -c "import asyncio; from bin.get_mediainfo import MediaInfoBinaryMan
 RUN rm -rf /Upload-Assistant/defaults \
     && mkdir -p /Upload-Assistant/defaults \
     && cp -a data /Upload-Assistant/defaults/ \
-    && find /Upload-Assistant/defaults/ -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    && find /Upload-Assistant/defaults/ -type d -name "__pycache__" -exec rm -rf {} +
 
 # Download only the required mkbrr binary (requires full repo for src imports)
 RUN python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"

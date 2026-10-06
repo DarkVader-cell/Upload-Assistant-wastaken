@@ -2,12 +2,16 @@
 # Bootstrap a self-contained Upload Assistant instance on a new Linux host.
 # Docker is the default because it needs no host Python toolchain or root access.
 set -euo pipefail
+umask 077
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 IMAGE_DEFAULT="ghcr.io/darkvader-cell/upload-assistant-wastaken:latest"
 REPO_DEFAULT="https://github.com/DarkVader-cell/Upload-Assistant-wastaken.git"
 MODE="docker"
+INSTALL_DEPS=0
+BUNDLE=""
+BUNDLE_PASSPHRASE_FILE=""
 INSTALL_DIR="${HOME}/upload-assistant"
 BROWSE_ROOT=""
 WEBUI_PORT="5000"
@@ -31,6 +35,9 @@ Required:
   --browse-root PATH             Host directory containing media to browse/upload.
 
 Options:
+  --install-dependencies         Install Debian/Ubuntu prerequisites using root/sudo.
+  --import-bundle PATH           Import encrypted selected settings before starting.
+  --bundle-passphrase-file PATH  Private passphrase file; otherwise prompt securely.
   --mode docker|standalone       Installation mode (default: docker).
   --install-dir PATH             Instance directory (default: ~/upload-assistant).
   --webui-port PORT              Host Web UI port in Docker mode (default: 5000).
@@ -55,6 +62,9 @@ require_command() { command -v "$1" >/dev/null 2>&1 || fail "Required command no
 
 while [ "$#" -gt 0 ]; do
     case "$1" in
+        --install-dependencies) INSTALL_DEPS=1; shift ;;
+        --import-bundle) BUNDLE="${2:?--import-bundle requires a path}"; shift 2 ;;
+        --bundle-passphrase-file) BUNDLE_PASSPHRASE_FILE="${2:?--bundle-passphrase-file requires a path}"; shift 2 ;;
         --mode) MODE="${2:?--mode requires a value}"; shift 2 ;;
         --install-dir) INSTALL_DIR="${2:?--install-dir requires a path}"; shift 2 ;;
         --browse-root) BROWSE_ROOT="${2:?--browse-root requires a path}"; shift 2 ;;
@@ -85,6 +95,29 @@ fi
 if [ "$PROMPT_PROWLARR_KEY" -eq 1 ] && [ -n "$PROWLARR_KEY_FILE" ]; then
     fail "Use either --prompt-prowlarr-api-key or --prowlarr-api-key-file, not both"
 fi
+
+if [ "$INSTALL_DEPS" -eq 1 ]; then
+    [ -r /etc/os-release ] || fail "Cannot detect operating system"
+    source /etc/os-release
+    case "${ID:-}" in debian|ubuntu) ;; *) fail "Automatic dependencies support Debian/Ubuntu only" ;; esac
+    privilege=()
+    if [ "$(id -u)" -ne 0 ]; then require_command sudo; privilege=(sudo); fi
+    "${privilege[@]}" apt-get update
+    packages=(git ca-certificates curl python3 python3-venv ffmpeg)
+    if [ "$MODE" = docker ]; then
+        compose_package=""
+        for candidate in docker-compose-v2 docker-compose-plugin; do
+            if apt-cache show "$candidate" >/dev/null 2>&1; then compose_package="$candidate"; break; fi
+        done
+        [ -n "$compose_package" ] || fail "No Compose v2 package in configured repositories; configure Docker's official repository first"
+        packages+=(docker.io "$compose_package")
+    else
+        packages+=(build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev libffi-dev liblzma-dev libncurses-dev xz-utils)
+    fi
+    "${privilege[@]}" apt-get install -y "${packages[@]}"
+    if [ "$MODE" = docker ]; then "${privilege[@]}" systemctl enable --now docker; fi
+fi
+if [ -n "$BUNDLE_PASSPHRASE_FILE" ] && [ -z "$BUNDLE" ]; then fail "--bundle-passphrase-file requires --import-bundle"; fi
 
 INSTALL_DIR="$(mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR" && pwd)"
 BROWSE_ROOT="$(cd "$BROWSE_ROOT" && pwd)"
@@ -182,6 +215,16 @@ PY
     fi
 }
 
+import_bundle() {
+    local python_bin="$1" config_path="$2"
+    [ -n "$BUNDLE" ] || return 0
+    local bundle_script="$SCRIPT_DIR/config-bundle.py"
+    [ -f "$bundle_script" ] || fail "Run this installer from a checkout containing scripts/config-bundle.py"
+    local args=(import --config "$config_path" --bundle "$BUNDLE")
+    if [ -n "$BUNDLE_PASSPHRASE_FILE" ]; then args+=(--passphrase-file "$BUNDLE_PASSPHRASE_FILE"); fi
+    "$python_bin" "$bundle_script" "${args[@]}"
+}
+
 install_docker() {
     require_command docker
     require_command python3
@@ -205,6 +248,11 @@ install_docker() {
     configure_config "$app_dir" python3
     cp "$app_dir/data/config.py" "$INSTALL_DIR/data/config.py"
     chmod 600 "$INSTALL_DIR/data/config.py"
+    if [ -n "$BUNDLE" ]; then
+        python3 -m venv "$INSTALL_DIR/.bootstrap-venv"
+        "$INSTALL_DIR/.bootstrap-venv/bin/python" -m pip install 'cryptography==50.0.0'
+        import_bundle "$INSTALL_DIR/.bootstrap-venv/bin/python" "$INSTALL_DIR/data/config.py"
+    fi
     cat >"$INSTALL_DIR/.env" <<EOF
 UA_IMAGE=$IMAGE
 UA_STATE_DIR=$INSTALL_DIR
@@ -250,6 +298,7 @@ install_standalone() {
     local app_dir="$INSTALL_DIR/app"
     bash "$SCRIPT_DIR/install-seedbox.sh" --ua-dir "$app_dir" --repo-url "$REPO_URL"
     configure_config "$app_dir" "$app_dir/.venv/bin/python" "$INSTALL_DIR"
+    import_bundle "$app_dir/.venv/bin/python" "$INSTALL_DIR/data/config.py"
     cat >"$INSTALL_DIR/run-ua.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail

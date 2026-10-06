@@ -2,7 +2,9 @@
 
 `scripts/install-instance.sh` bootstraps a new Linux Upload Assistant instance with a persistent Web UI, a mounted media root, and optionally Prowlarr credential fallback. It is designed for a new homelab host, VPS, or seedbox without copying an existing instance's configuration or secrets.
 
-The default Docker mode needs Docker Engine, Docker Compose v2, Git, and Python 3.11 or newer for configuration bootstrapping. It runs the published fork image, so the application’s Python 3.14 environment is supplied by the container. Docker access must already be configured. The script intentionally does **not** install Docker: package installation and daemon policy are host-specific and should remain under the administrator's control.
+Use `--install-dependencies` to provision Debian/Ubuntu packages with root/sudo, and `--import-bundle` to reuse selected encrypted settings from another instance. See [configuration bundles](config-bundles.md) for export, security, and limitations.
+
+The default Docker mode needs Docker Engine, Docker Compose v2, Git, and Python 3.11 or newer for configuration bootstrapping. It runs the published fork image, so the application’s Python 3.14 environment is supplied by the container. Docker access must already be configured. Dependency installation is opt-in and currently supports Debian/Ubuntu only. Docker access must be explicitly configured; no root-equivalent group membership is granted silently.
 
 ## Docker installation
 
@@ -63,4 +65,4 @@ This invokes `scripts/install-seedbox.sh`, uses the fork repository by default, 
 "$HOME/upload-assistant/run-ua.sh" /mnt/seeding --webui 0.0.0.0:5000
 ```
 
-Configure torrent clients, mount/path mappings, trackers, and image-host credentials in the Web UI or `data/config.py` after installation. Never copy another host's config or credential files to bootstrap a new machine.
+Configure torrent clients, mount/path mappings, trackers, and image-host credentials in the Web UI or `data/config.py` after installation. Use an explicitly selected encrypted export rather than copying another host's entire config or runtime state.
