@@ -2,7 +2,7 @@
 
 `scripts/install-instance.sh` bootstraps a new Linux Upload Assistant instance with a persistent Web UI, a mounted media root, and optionally Prowlarr credential fallback. It is designed for a new homelab host, VPS, or seedbox without copying an existing instance's configuration or secrets.
 
-The default Docker mode needs Docker Engine plus Docker Compose v2. It runs the published fork image, so it does not require a host Python installation or root access. The script intentionally does **not** install Docker: package installation and daemon policy are host-specific and should remain under the administrator's control.
+The default Docker mode needs Docker Engine, Docker Compose v2, Git, and Python 3.11 or newer for configuration bootstrapping. It runs the published fork image, so the application’s Python 3.14 environment is supplied by the container. Docker access must already be configured. The script intentionally does **not** install Docker: package installation and daemon policy are host-specific and should remain under the administrator's control.
 
 ## Docker installation
 
@@ -57,10 +57,10 @@ For a user-space Python/pyenv installation instead of Docker:
   --install-dir "$HOME/upload-assistant"
 ```
 
-This invokes `scripts/install-seedbox.sh`, uses the fork repository by default, and creates `app/run-ua.sh`. Start the Web UI with:
+This invokes `scripts/install-seedbox.sh`, uses the fork repository by default, and creates an instance-level `run-ua.sh` that sets `UA_DATA_DIR` to the instance directory. Start the Web UI with:
 
 ```bash
-"$HOME/upload-assistant/app/run-ua.sh" --webui 0.0.0.0:5000
+"$HOME/upload-assistant/run-ua.sh" /mnt/seeding --webui 0.0.0.0:5000
 ```
 
 Configure torrent clients, mount/path mappings, trackers, and image-host credentials in the Web UI or `data/config.py` after installation. Never copy another host's config or credential files to bootstrap a new machine.

@@ -7654,7 +7654,9 @@ def execute_command():
                         _terminate_process_tree(process)
                         raise RuntimeError("Execution session was replaced before subprocess startup completed")
 
-                    output_queue: queue.Queue[tuple[str, str]] = queue.Queue()
+                    from web_ui.services.output_queue import TerminalOutputQueue
+
+                    output_queue = TerminalOutputQueue()
 
                     if isinstance(process, _ConPtyProcess):
                         # A pseudo terminal combines stdout and stderr into one ANSI stream.
@@ -7665,7 +7667,7 @@ def execute_command():
                                     # the pipe reader. ConPTY can return a whole prompt plus
                                     # its trailing input marker in one read.
                                     for char in process.read(1024):
-                                        output_queue.put(("stdout", char))
+                                        output_queue.write("stdout", char)
                             except EOFError:
                                 pass
                             except Exception as err:
@@ -7684,7 +7686,7 @@ def execute_command():
                                     chunk = stdout.read(1)
                                     if not chunk:
                                         break
-                                    output_queue.put(("stdout", chunk))
+                                    output_queue.write("stdout", chunk)
                             except Exception as err:
                                 console.print(f"stdout read error: {err}", markup=False)
 
@@ -7698,7 +7700,7 @@ def execute_command():
                                     chunk = stderr.read(1)
                                     if not chunk:
                                         break
-                                    output_queue.put(("stderr", chunk))
+                                    output_queue.write("stderr", chunk)
                             except Exception as err:
                                 console.print(f"stderr read error: {err}", markup=False)
 
@@ -7815,6 +7817,8 @@ def execute_command():
 
                     yield f"data: {json.dumps({'type': 'exit', 'code': exit_code})}\n\n"
                 finally:
+                    if "output_queue" in locals():
+                        output_queue.close()
                     with contextlib.suppress(Exception):
                         if process is not None and process.poll() is None:
                             _terminate_process_tree(process)

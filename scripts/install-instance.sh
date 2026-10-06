@@ -107,10 +107,11 @@ elif [ -n "$PROWLARR_KEY_FILE" ]; then
 fi
 
 configure_config() {
-    local app_dir="$1" python_bin="$2" config_path="$1/data/config.py"
+    local app_dir="$1" python_bin="$2" state_dir="${3:-$1}"
+    local config_path="$state_dir/data/config.py"
     local template="$app_dir/data/example_config.py"
     [ -f "$template" ] || fail "Bundled example config is missing: $template"
-    mkdir -p "$app_dir/data"
+    mkdir -p "$state_dir/data"
     if [ ! -f "$config_path" ]; then
         log "Creating initial configuration"
         cp "$template" "$config_path"
@@ -183,6 +184,8 @@ PY
 
 install_docker() {
     require_command docker
+    require_command python3
+    python3 -c 'import sys; raise SystemExit(sys.version_info < (3, 11))' || fail "Bootstrap requires Python 3.11 or newer"
     docker compose version >/dev/null 2>&1 || fail "Docker Compose v2 is required"
     mkdir -p "$INSTALL_DIR/data" "$INSTALL_DIR/tmp" "$INSTALL_DIR/webui-auth"
     local app_dir="$INSTALL_DIR/bootstrap"
@@ -214,7 +217,6 @@ EOF
 services:
   upload-assistant:
     image: ${UA_IMAGE}
-    container_name: upload-assistant
     restart: unless-stopped
     ports:
       - "${UA_WEBUI_PORT}:5000"
@@ -246,9 +248,17 @@ EOF
 
 install_standalone() {
     local app_dir="$INSTALL_DIR/app"
-    "$SCRIPT_DIR/install-seedbox.sh" --ua-dir "$app_dir" --repo-url "$REPO_URL"
-    configure_config "$app_dir" "$app_dir/.venv/bin/python"
-    log "Standalone runner: $app_dir/run-ua.sh --webui 0.0.0.0:$WEBUI_PORT"
+    bash "$SCRIPT_DIR/install-seedbox.sh" --ua-dir "$app_dir" --repo-url "$REPO_URL"
+    configure_config "$app_dir" "$app_dir/.venv/bin/python" "$INSTALL_DIR"
+    cat >"$INSTALL_DIR/run-ua.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+INSTANCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export UA_DATA_DIR="$INSTANCE_DIR"
+exec "$INSTANCE_DIR/app/run-ua.sh" "$@"
+EOF
+    chmod +x "$INSTALL_DIR/run-ua.sh"
+    log "Standalone runner: $INSTALL_DIR/run-ua.sh '$BROWSE_ROOT' --webui 0.0.0.0:$WEBUI_PORT"
 }
 
 case "$MODE" in
