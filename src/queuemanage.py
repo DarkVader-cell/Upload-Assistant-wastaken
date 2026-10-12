@@ -15,6 +15,7 @@ import click
 from src.console import logger
 from src.meta import Meta
 from src.queue_policy import should_prompt_for_queue_edits
+from src.webui_paths import is_generated_queue_path, read_generated_queue, subprocess_roots
 
 type QueueItem = dict[str, Any]
 type QueueList = list[str] | list[QueueItem]
@@ -457,7 +458,8 @@ class QueueManager:
                 log_file = await QueueManager.get_log_file(base_dir, queue_name)
                 processed_files = await QueueManager.load_processed_files(log_file)
 
-                lines = await _read_text_lines(path)
+                generated_queue = subprocess_roots() is not None and is_generated_queue_path(path)
+                lines = await asyncio.to_thread(read_generated_queue, path) if generated_queue else await _read_text_lines(path)
                 queue = []
                 for line in lines:
                     line_stripped = line.strip()
@@ -465,10 +467,10 @@ class QueueManager:
                         continue
 
                     try:
-                        args_list = shlex.split(line_stripped, posix=False)
+                        args_list = shlex.split(line_stripped, posix=generated_queue)
                         cleaned_args = []
                         for arg in args_list:
-                            if (arg.startswith('"') and arg.endswith('"')) or (arg.startswith("'") and arg.endswith("'")):
+                            if not generated_queue and ((arg.startswith('"') and arg.endswith('"')) or (arg.startswith("'") and arg.endswith("'"))):
                                 arg = arg[1:-1]
                             cleaned_args.append(arg)
 
@@ -482,6 +484,8 @@ class QueueManager:
                         if line_stripped not in processed_files and item_path not in processed_files:
                             queue.append(queue_item)
                     except ValueError as e:
+                        if generated_queue:
+                            raise ValueError("Invalid WebUI queue contents") from e
                         logger.error(f"[red]Error parsing line (shlex) in queue file: {line_stripped}. Error: {e}[/red]")
                     except Exception as e:
                         logger.error(f"[red]Unexpected error processing line in queue file: {line_stripped}. Error: {e}[/red]")

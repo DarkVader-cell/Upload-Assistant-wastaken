@@ -10,7 +10,7 @@
     book: "book-open",
     changelog: "history",
     config: "sliders-horizontal",
-    "file-structure": "folder-tree",
+    "file-structure": "folder",
     gamepad: "gamepad-2",
     help: "circle-help",
     logout: "log-out",
@@ -221,6 +221,14 @@
       : true;
   }
 
+  function setUAThemeMode(isDarkMode) {
+    const mode = isDarkMode ? "dark" : "light";
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.uaMode = mode;
+    }
+    uaStorage.set(THEME_KEY, mode);
+  }
+
   function getUAStoredColorTheme() {
     const stored = uaStorage.get(COLOR_THEME_KEY);
     if (stored === "dark") {
@@ -312,6 +320,7 @@
   }
 
   async function uaApiFetch(url, options = {}, retryOnAuthFail = true) {
+    if (window.UAScreenshotMode) return window.UAScreenshotMode.apiFetch();
     await loadCsrfToken();
     const headers = { ...(options.headers || {}) };
     if (uaCsrfToken) headers["X-CSRF-Token"] = uaCsrfToken;
@@ -2018,6 +2027,7 @@
     window.UAHelpResourceGroups =
       window.UAHelpResourceGroups || UA_HELP_RESOURCE_GROUPS;
     window.getUAStoredTheme = window.getUAStoredTheme || getUAStoredTheme;
+    window.setUAThemeMode = window.setUAThemeMode || setUAThemeMode;
     window.getUAStoredColorTheme =
       window.getUAStoredColorTheme || getUAStoredColorTheme;
     window.setUAColorTheme = window.setUAColorTheme || setUAColorTheme;

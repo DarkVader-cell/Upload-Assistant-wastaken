@@ -138,6 +138,7 @@ class TrackerStatusManager:
                 "PTFANS",
                 "PTGTK",
                 "PTZONE",
+                "QINGWA",
                 "RAILGUNPT",
                 "XINGYUNGEPT",
             ]

@@ -28,6 +28,14 @@ python upload.py "/path/to/media" --webui 127.0.0.1:5000
 
 Open <http://127.0.0.1:5000> in a browser. The address defaults to `127.0.0.1:5000`; include `HOST:PORT` only when overriding it.
 
+### Screenshot mode
+
+To capture the current interface for documentation, sign in normally and open the Upload page with `?screenshot=1`, for example `http://127.0.0.1:5000/?screenshot=1`.
+
+This browser-only demo shows the fictional **The Automation Menace (1968)** release with frozen FFmpeg, mkbrr, Usenet, spectrogram, and HDR progress. It does not start an upload, run external tools, load your files or tracker configuration, or send API actions. Existing uploads in other tabs continue normally. Authentication is still required.
+
+Use **Choose poster** and **Choose backdrop** to select your fictional artwork (PNG, JPEG, or WebP, up to 4 MiB per image). The backdrop appears behind the poster. Both images stay in your browser and are remembered there independently when storage is available. The demo includes ten subtitle languages with different flags. Choose the theme and resize the panels normally, then click **Hide controls (H)** before taking the screenshot. Press **H** outside a text field to bring the controls back. **Exit demo**, or removing the query parameter, returns to the normal app.
+
 ### Browse roots
 
 Browse roots define the parts of the filesystem visible in the File Browser. They do not grant access to unrelated directories.
@@ -105,6 +113,14 @@ The File Browser lists only content inside the configured browse roots. Use it t
 - select all currently listed entries.
 
 Normal browsing shows non-hidden files and folders inside the permitted roots so that video, disc, book, game, ISO, and other supported upload types remain available. The separate description-file picker is limited to `.txt`, `.nfo`, and `.md` files.
+
+Listings and searches omit dot-prefixed entries, Windows entries marked Hidden or System, and known system folders such as `$RECYCLE.BIN` and `System Volume Information`. Searches do not descend into those folders.
+
+You can also type or paste paths into **Upload paths** on desktop or mobile. Use server paths, one file or folder per line. Enter adds a line; use the execution button to start. One path runs individually, and multiple paths create a WebUI queue. Blank lines and duplicate paths are ignored, surrounding quotes are accepted, and each queue item can have its own arguments. The limit is 1,000 paths per upload.
+
+The server validates the complete selection before starting, and reports the invalid item (or original text line). Paths must exist inside the configured browse roots. Upload folders are inspected for escaping file links and reject directory links and Windows junctions. Local description, comparison, disc menu, poster and banner paths also use the permitted roots. Additional content paths belong in the path field, not in Additional Arguments.
+
+For text queues, paste their paths into **Upload paths** instead of selecting a `.txt` or `.log` queue file. Only temporary queues issued by the running WebUI are accepted outside the content roots; their contents are checked for modifications and their items are revalidated by the upload process. Ordinary CLI queue handling is unchanged. These checks constrain WebUI inputs; OS permissions remain the boundary against concurrent filesystem changes by other server processes or users.
 
 File browsing has no hourly or daily request quota. Folder listings and recursive searches use minute-based limits, while listing the configured roots is exempt. See [Request limits](#request-limits) for the allowances used throughout the WebUI.
 
