@@ -7067,6 +7067,14 @@ def browse_search():
             if item_type == "file" and file_filter == "desc" and Path(name.lower()).suffix not in SUPPORTED_DESC_EXTS:
                 continue
             full_path = Path(str(indexed_item["path"]))
+            # Check the candidate only after matching its name, and reject
+            # entries beneath hidden/system directories as well as the entry.
+            root = next((candidate for candidate in (Path(path).resolve() for path in roots) if full_path.is_relative_to(candidate)), None)
+            if root is None:
+                continue
+            relative_parts = full_path.relative_to(root).parts
+            if not relative_parts or any(_is_hidden_browse_entry(root.joinpath(*relative_parts[:index])) for index in range(1, len(relative_parts) + 1)):
+                continue
             try:
                 _assert_safe_resolved_path(full_path)
             except ValueError:

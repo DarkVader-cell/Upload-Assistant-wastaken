@@ -43,7 +43,7 @@ def test_thrimg_upload_returns_trimmed_urls(tmp_path: Path) -> None:
         "https://slike.torrenthr.org/api/1/upload",
         data={"key": "test-key"},
         files={"source": ("Fictional.Release.png", b"image data")},
-        timeout=60,
+        timeout=15.0,
     )
 
 

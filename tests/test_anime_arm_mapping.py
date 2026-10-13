@@ -81,6 +81,7 @@ def test_arm_http_errors_are_not_cached(tmp_path, status):
 def anime_response(mal=123, title="Astral Journey"):
     return httpx.Response(
         200,
+        request=httpx.Request("POST", "https://graphql.anilist.co"),
         json={
             "data": {
                 "Page": {
@@ -125,7 +126,7 @@ def test_manual_mal_bypasses_arm(tmp_path):
 @pytest.mark.parametrize("arm_mal", [0, 123])
 def test_missing_arm_or_anilist_mapping_falls_back_to_title(tmp_path, arm_mal):
     meta = Meta(base_dir=str(tmp_path), category="TV", tmdb_id=345, filename="Astral.Journey.S02E01.mkv")
-    empty = httpx.Response(200, json={"data": {"Page": {"media": []}}})
+    empty = httpx.Response(200, json={"data": {"Page": {"media": []}}}, request=httpx.Request("POST", "https://graphql.anilist.co"))
     responses = [empty, anime_response(mal=234)] if arm_mal else [anime_response(mal=234)]
     with (
         patch("src.tmdb._get_arm_mal_id", new=AsyncMock(return_value=arm_mal)),

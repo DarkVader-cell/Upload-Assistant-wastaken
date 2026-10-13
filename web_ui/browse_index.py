@@ -12,6 +12,7 @@ import os
 import re
 import select
 import sqlite3
+import stat
 import struct
 import threading
 import time
@@ -19,6 +20,17 @@ from pathlib import Path
 from typing import Any
 
 _SEARCH_SEP_RE = re.compile(r"[\s.\-_]+")
+
+
+def _visible_entry(path: Path) -> bool:
+    if path.name.startswith(".") or path.name.casefold() in {"$recycle.bin", "system volume information"}:
+        return False
+    try:
+        attributes = getattr(path.stat(follow_symlinks=False), "st_file_attributes", 0)
+    except OSError:
+        return False
+    return not attributes & (stat.FILE_ATTRIBUTE_HIDDEN | stat.FILE_ATTRIBUTE_SYSTEM)
+
 
 _IN_ACCESS = 0x00000001
 _IN_MODIFY = 0x00000002
@@ -118,7 +130,7 @@ class BrowseIndex:
                     connection.execute("DELETE FROM browse_entries WHERE root = ?", (root,))
                     batch: list[tuple[str, str, str, str, str]] = []
                     for dirpath, dirnames, filenames in os.walk(root):
-                        dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+                        dirnames[:] = [name for name in dirnames if _visible_entry(Path(dirpath) / name)]
                         for dirname in dirnames:
                             path = str(Path(dirpath) / dirname)
                             batch.append((root, path, dirname, dirname.casefold(), "folder"))

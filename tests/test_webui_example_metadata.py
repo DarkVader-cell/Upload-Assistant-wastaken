@@ -1,3 +1,4 @@
+# ruff: noqa: S101
 import ast
 from pathlib import Path
 
@@ -222,7 +223,7 @@ def test_config_update_removes_all_optional_arr_instance_keys(
     monkeypatch.setattr(server, "_is_authenticated", lambda: True)
     monkeypatch.setattr(server, "_verify_csrf_header", lambda: True)
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)
-    monkeypatch.setattr(server, "_write_audit_log", lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, "_write_audit_log", lambda *_args, **_kwargs: None)
 
     for key in ("sonarr_url_1", "sonarr_api_key_1"):
         with server.app.test_request_context(
@@ -427,10 +428,14 @@ def test_example_config_keeps_only_primary_screenshot_description_defaults() -> 
         "use_bluray_images",
         "user_description",
     }
-    for tracker in example_config["TRACKERS"].values():
+    for name, tracker in example_config["TRACKERS"].items():
         if not isinstance(tracker, dict):
             continue
         active_overrides = override_keys.intersection(tracker)
+        if name == "QINGWA":
+            # Upstream supplies QINGWA-specific description defaults.
+            assert tracker["anon"] is True
+            continue
         assert active_overrides <= {"anon"}
         if "anon" in active_overrides:
             assert tracker["anon"] is False
