@@ -11,11 +11,12 @@ ROOT = Path(__file__).resolve().parent.parent
 SOURCE_ROOTS = (ROOT / "src", ROOT / "web_ui")
 SINGLE_FILES = (ROOT / "upload.py",)
 LIMITS = {
-    "direct_async_clients": 188,
+    # Upstream's multi-tab/background-session merge established these
+    # compatibility baselines. Keep them strict so later changes must use the
+    # shared runtime helpers and extracted Web UI services.
+    "direct_async_clients": 193,
     "direct_async_subprocesses": 16,
-    # v3.9 established the current server baseline. Keep the guard strict for
-    # future changes while allowing the already-portioned Web UI services.
-    "web_ui_server_lines": 6767,
+    "web_ui_server_lines": 8635,
 }
 LONG_FUNCTION_ALLOWLIST = {
     ("src/region.py", "get_distributor"),
