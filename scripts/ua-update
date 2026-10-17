@@ -53,7 +53,7 @@ update_whatbox_client() {
          # First startup after an image update can spend more than 30 seconds
          # rebuilding caches on slower seedbox storage. Keep the deployment
          # bounded, but allow up to two minutes before declaring it unhealthy.
-         for _ in $(seq 1 60); do
+         for _ in \$(seq 1 60); do
              code=\"\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 http://127.0.0.1:$port/api/health || true)\"
              case \"\$code\" in 2??|3??|4??) echo \"health=\$code\"; exit 0;; esac
              sleep 2
