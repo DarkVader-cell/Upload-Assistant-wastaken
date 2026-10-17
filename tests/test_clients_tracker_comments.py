@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import pytest
+
 from src.clients import Clients
 from src.meta import Meta
 from src.trackers.GAZELLE.orpheus import Orpheus
@@ -52,6 +54,41 @@ def test_matches_torrent_name_when_content_path_is_unavailable():
     torrent = SimpleNamespace(name="SampleFilm.mkv", content_path="")
 
     assert client._matches_qbit_content_path(torrent, Meta({"path": media, "filelist": [media], "uuid": "different"}))  # noqa: S101
+
+
+@pytest.mark.asyncio
+async def test_early_qbit_match_uses_exact_content_path_before_filelist_is_populated(monkeypatch):
+    client = Clients({"TRACKERS": {}})
+    media = "/downloads/SampleFilm/SampleFilm.mkv"
+    torrent = SimpleNamespace(
+        hash="abc123",
+        name="SampleFilm",
+        save_path="/downloads",
+        content_path=media,
+        tracker="",
+        trackers=[],
+        comment="",
+        size=123,
+        category="",
+        num_complete=0,
+    )
+    def torrent_trackers(*, torrent_hash):
+        assert torrent_hash == "abc123"  # noqa: S101
+        return []
+
+    qbt_client = SimpleNamespace(torrents_trackers=torrent_trackers)
+
+    async def immediate_retry(operation, *_args, **_kwargs):
+        return await operation()
+
+    monkeypatch.setattr(client, "retry_qbt_operation", immediate_retry)
+    meta = Meta({"path": media, "uuid": "SampleFilm.mkv", "filelist": [], "torrent_comments": []})
+
+    matches = await client._process_torrent_matches([torrent], {}, [], "", "", None, qbt_client, meta)
+
+    assert len(matches) == 1  # noqa: S101
+    assert matches[0]["hash"] == "abc123"  # noqa: S101
+    assert matches[0]["content_path"] == media  # noqa: S101
 
 
 def test_orpheus_uses_its_fixed_base_url():

@@ -1703,7 +1703,13 @@ class QbittorrentClientMixin:
                     logger.debug("[yellow]Skipping torrent with missing name attribute")
                     continue
 
-                if not self._torrent_name_matches(torrent_name, meta):
+                # Early reuse starts before ``filelist`` is always populated. In
+                # that state a single-file torrent whose display name is its parent
+                # directory (rather than the selected filename) cannot pass the
+                # legacy name-only check even when qBittorrent exposes the exact
+                # content path. Prefer that authoritative path and retain the name
+                # fallback for clients/proxies that do not return ``content_path``.
+                if not self._matches_qbit_content_path(torrent, meta):
                     continue
 
                 torrent_properties: dict[str, Any] = {}
@@ -1776,11 +1782,15 @@ class QbittorrentClientMixin:
 
                 await match_tracker_url(tracker_url_list, meta)
 
+                actual_content_path = str(getattr(torrent, "content_path", "") or "").strip()
+                if not actual_content_path:
+                    actual_content_path = str(Path(str(torrent.save_path)) / str(torrent.name))
+
                 match_info: dict[str, Any] = {
                     "hash": torrent.hash,
                     "name": torrent.name,
                     "save_path": torrent.save_path,
-                    "content_path": os.path.normpath(Path(str(torrent.save_path)) / str(torrent.name)),
+                    "content_path": os.path.normpath(actual_content_path),
                     "size": torrent.size,
                     "category": torrent.category,
                     "seeders": torrent.num_complete,
