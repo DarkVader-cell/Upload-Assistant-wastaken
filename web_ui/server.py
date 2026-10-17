@@ -54,6 +54,7 @@ from src.manual_metadata import (
 )
 from src.runtime.history import ReleaseHistoryStore
 from web_ui.browse_index import BrowseIndex
+from web_ui.services.config_options import group_webui_default_settings, prompt_timeout_example, validate_prompt_timeout
 from web_ui.services.config_remove_api import ConfigSourceOperations, create_config_remove_blueprint
 from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
 from web_ui.services.history_api import create_history_api_blueprint
@@ -4048,14 +4049,7 @@ def _prepare_default_webui_section(
             comments_map.setdefault(f"DEFAULT/{client_key}", help_text)
             subsection_map[f"DEFAULT/{client_key}"] = "CLIENT SELECTION"
 
-    if "stats_enabled" in prepared:
-        # Group statistics with Main Settings only for WebUI presentation.
-        # Keep the fields together so the builder emits a single subsection.
-        subsection_map["DEFAULT/stats_enabled"] = "MAIN SETTINGS"
-        main_settings = {key: value for key, value in prepared.items() if subsection_map.get(f"DEFAULT/{key}") == "MAIN SETTINGS"}
-        prepared = {**main_settings, **prepared}
-
-    return prepared
+    return group_webui_default_settings(prepared, subsection_map)
 
 
 def _torrent_client_template(
@@ -6423,7 +6417,9 @@ def _apply_config_update(source: str, example_config: dict[str, Any], data: dict
             raise ValueError("Path not found in example config")
         example_value = _get_nested_value(prior_config, path)
 
+    example_value = prompt_timeout_example(path, raw_value, example_value)
     coerced_value = None if inherit_tracker_override else _coerce_config_value(raw_value, example_value)
+    validate_prompt_timeout(path, coerced_value)
     overlay_choices = {"overlay_position": {"left", "right"}, "overlay_layout": {"stacked", "single_line"}}
     if path[:1] == ["DEFAULT"] and len(path) == 2 and key in overlay_choices and (not isinstance(coerced_value, str) or coerced_value not in overlay_choices[key]):
         raise ValueError(f"Invalid {key} value")

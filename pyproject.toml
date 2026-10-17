@@ -78,6 +78,7 @@ dependencies = [
     "torf==4.3.0",
     "tqdm==4.67.1",
     "transmission-rpc==7.0.11",
+    "tvdb-v4-official==1.1.0",
     "typing-extensions==4.15.0",
     "unidecode==1.4.0",
     "urllib3==2.8.0",
@@ -104,11 +105,11 @@ include-package-data = false
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["bin*", "data*", "src*", "web_ui*"]
-exclude = ["tests", "tmp", "build", "build.*"]
+exclude = ["tests", "tmp", "build", "build.*", "web_ui.static.js.node_modules", "web_ui.static.js.node_modules.*"]
 
 [tool.setuptools.package-data]
 data = ["tags.json", "templates/*.csv", "templates/*.json", "unit3d_catalogs/*.json"]
-web_ui = ["static/**/*", "templates/*.html"]
+web_ui = ["static/*.ico", "static/*.webmanifest", "static/css/*.css", "static/img/**/*", "static/js/*.js", "templates/*.html"]
 
 [tool.ruff]
 line-length = 176

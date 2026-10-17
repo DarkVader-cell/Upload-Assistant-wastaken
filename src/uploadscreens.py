@@ -3,6 +3,7 @@ import asyncio
 import base64
 import contextlib
 import gc
+import itertools
 import math
 import re
 import time
@@ -22,8 +23,13 @@ from src.screenshot_manifest import files as manifest_files
 from src.stats import record_event_async
 from src.temp_paths import screenshots_dir
 from src.tracker_images import deduplicate_images, image_tags
+from src.webui_progress import complete_progress, publish_progress
 
 type ImageDict = dict[str, Any]
+
+# Uploads can run concurrently (tracker rehosts, menus, spectrograms), so each
+# top-level call gets its own Web UI progress card.
+_upload_progress_ids = itertools.count(1)
 
 
 def _image_upload_timeout(config: dict[str, Any]) -> float:
@@ -81,6 +87,7 @@ class UploadScreensManager:
         successes_before = int(return_dict.get("_stats_image_upload_successes", 0) or 0)
         bytes_before = int(return_dict.get("_stats_image_upload_bytes", 0) or 0)
         outcome = "skipped"
+        progress: dict[str, Any] = {"id": f"image-upload-{next(_upload_progress_ids)}"}
         try:
             result = await _upload_screens(
                 self.config,
@@ -94,6 +101,7 @@ class UploadScreensManager:
                 retry_mode=retry_mode,
                 max_retries=max_retries,
                 allowed_hosts=allowed_hosts,
+                progress=progress,
             )
             attempted = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) - attempts_before
             uploaded = int(return_dict.get("_stats_image_upload_successes", 0) or 0) - successes_before
@@ -105,6 +113,24 @@ class UploadScreensManager:
             outcome = "error"
             raise
         finally:
+            # Only calls that actually started uploading published a card.
+            if "label" in progress:
+                # A partial result (some images failed on every host) is still a failure.
+                if outcome == "error" or progress["current"] < progress["total"]:
+                    publish_progress(
+                        progress["id"],
+                        progress["label"],
+                        current=progress["current"],
+                        total=progress["total"],
+                        detail=f"{progress['detail']}: {progress['total'] - progress['current']:.0f} image(s) failed",
+                        status="failed",
+                        group="images",
+                        unit="images",
+                    )
+                else:
+                    complete_progress(
+                        progress["id"], progress["label"], current=progress["current"], total=progress["total"], detail=progress["detail"], group="images", unit="images"
+                    )
             if outcome != "skipped":
                 service = str(meta.imghost or self.config.get("DEFAULT", {}).get(f"img_host_{img_host_num}", "image_host"))
                 bytes_sent = int(return_dict.get("_stats_image_upload_bytes", 0) or 0) - bytes_before
@@ -690,7 +716,7 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
                 return {"status": "failed", "reason": f"Unexpected error: {e!s}"}
 
         elif img_host == "samaritano":
-            url = "https://img.samaritano.cc/api/v1/images"
+            url = "https://img.samaritano.cc/api/v1/sharex/upload"
             api_key = config.get("TRACKERS", {}).get("SAMARITANO", {}).get("image_host_api_key")
 
             if not isinstance(api_key, str) or not api_key.strip():
@@ -836,6 +862,7 @@ async def _upload_screens(
     retry_mode: bool = False,
     max_retries: int = 3,
     allowed_hosts: list[str] | None = None,
+    progress: dict[str, Any] | None = None,
 ) -> tuple[list[ImageDict], int]:
     """Select screenshots, throttle uploads, and collect successful results."""
     default_config = config.get("DEFAULT", {})
@@ -1069,11 +1096,33 @@ async def _upload_screens(
     # Track running tasks for cancellation
     running_tasks: set[asyncio.Task[dict[str, Any]]] = set()
 
+    # A host fallback recurses with the same progress card, relabelled for the new host,
+    # keeping the images already uploaded and the original total. Custom lists are
+    # re-uploaded in full on the next host, so their count starts over.
+    completed_uploads = 0
+    uploaded_before = int(progress.get("current", 0)) if progress is not None and not using_custom_img_list else 0
+    progress_total = int(progress.get("total", len(upload_tasks))) if progress is not None else len(upload_tasks)
+
+    def report_upload_progress(note: str = "") -> None:
+        if progress is None:
+            return
+        # Always send the host so a stale retry note is replaced on the next update.
+        progress.update(
+            label="Uploading images",
+            detail=f"{img_host}: {note}" if note else img_host,
+            current=uploaded_before + completed_uploads,
+            total=progress_total,
+        )
+        publish_progress(progress["id"], progress["label"], current=progress["current"], total=progress["total"], detail=progress["detail"], group="images", unit="images")
+
+    report_upload_progress()
+
     async def async_upload(
         task: tuple[int, str, str, dict[str, Any], Meta],
         max_retries: int = 3,
     ) -> tuple[int, dict[str, Any]] | None:
         """Upload image with concurrency control and retry logic."""
+        nonlocal completed_uploads
         index, *task_args = task
         retry_count = 0
 
@@ -1094,6 +1143,8 @@ async def _upload_screens(
                                 uploaded_image_files = return_dict.setdefault("_uploaded_image_files", set())
                                 if isinstance(uploaded_image_files, set):
                                     uploaded_image_files.add(str(Path(str(task_args[0])).resolve()))
+                            completed_uploads += 1
+                            report_upload_progress()
                             return (index, result)
                         reason = result.get("reason", "Unknown error")
                         if "timed out" in reason.lower():
@@ -1108,6 +1159,7 @@ async def _upload_screens(
                         if retry_count < max_retries:
                             retry_count += 1
                             logger.info(f"[yellow]Retry {retry_count}/{max_retries} for image {index}: {reason}[/yellow]")
+                            report_upload_progress(f"Retry {retry_count}/{max_retries} for image {index}")
                             await asyncio.sleep(1.1 * retry_count)
                             continue
                         logger.error(f"[red]Failed to upload image {index} after {max_retries} attempts: {reason}[/red]")
@@ -1118,6 +1170,10 @@ async def _upload_screens(
                         if future in running_tasks:
                             future.cancel()
                             running_tasks.discard(future)
+                        # A timed-out host is unlikely to recover promptly and
+                        # retrying it serially delays every screenshot. Preserve
+                        # the bounded fallback policy and move to the next host.
+                        report_upload_progress(f"{img_host} timed out; trying the next image host")
                         return None
 
                 except asyncio.CancelledError:
@@ -1132,6 +1188,7 @@ async def _upload_screens(
                     if retry_count < max_retries:
                         retry_count += 1
                         logger.info(f"[yellow]Retry {retry_count}/{max_retries} for image {index}: {e!s}[/yellow]")
+                        report_upload_progress(f"Retry {retry_count}/{max_retries} for image {index}")
                         await asyncio.sleep(1.5 * retry_count)
                         continue
                     logger.error(f"[red]Error during upload for image {index} after {max_retries} attempts: {e!s}[/red]")
@@ -1221,6 +1278,7 @@ async def _upload_screens(
                     retry_mode=True,
                     max_retries=max_retries,
                     allowed_hosts=allowed_hosts,
+                    progress=progress,
                 )
                 if using_custom_img_list:
                     combined_images = partial_custom_images + fallback_images
