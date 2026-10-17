@@ -50,10 +50,10 @@ update_whatbox_client() {
          podman compose -f docker-compose.local.yml up -d --no-build upload-assistant-wastaken
          podman ps --filter name=upload-assistant-wastaken --format 'table {{.Names}}\\t{{.Status}}\\t{{.Image}}'
          code=''
-         # First startup after an image update can spend more than 30 seconds
+         # First startup after an image update can spend more than two minutes
          # rebuilding caches on slower seedbox storage. Keep the deployment
-         # bounded, but allow up to two minutes before declaring it unhealthy.
-         for _ in \$(seq 1 60); do
+         # bounded, but allow up to four minutes before declaring it unhealthy.
+         for _ in \$(seq 1 120); do
              code=\"\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 http://127.0.0.1:$port/api/health || true)\"
              case \"\$code\" in 2??|3??|4??) echo \"health=\$code\"; exit 0;; esac
              sleep 2
