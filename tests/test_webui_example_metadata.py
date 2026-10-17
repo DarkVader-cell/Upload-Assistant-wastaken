@@ -81,6 +81,25 @@ def test_stats_enabled_is_grouped_with_main_settings_only_in_webui() -> None:
     assert defaults["stats_enabled"] is False
 
 
+def test_every_default_setting_is_exposed_once_by_webui_metadata() -> None:
+    example_path = server.CODE_DIR / "data" / "example_config.py"
+    example_config = server._load_config_from_file(example_path)
+    assert example_config is not None
+    defaults = example_config["DEFAULT"]
+    comments, subsections = server._extract_example_metadata(example_path)
+
+    prepared = server._prepare_default_webui_section(defaults, comments, subsections)
+    items = server._build_config_items(prepared, {}, comments, subsections, ["DEFAULT"])
+    exposed_keys = [
+        child["key"]
+        for item in items
+        for child in (item.get("children", []) if item.get("subsection") is True else [item])
+    ]
+
+    for key in defaults:
+        assert exposed_keys.count(key) == 1, f"DEFAULT/{key} is missing or duplicated in the WebUI"
+
+
 def test_removed_keep_meta_is_not_exposed_from_existing_config() -> None:
     user_section = {"keep_meta": True, "stats_enabled": True, "custom_setting": "preserved"}
     items = server._build_config_items(

@@ -63,6 +63,14 @@ test("WebUI settings belong to General without adding a sidebar page", () => {
   );
 });
 
+test("ordinary settings stay visible without a generic Other accordion", () => {
+  assert.doesNotMatch(source, /<span>Other<\/span>/);
+  assert.match(
+    source,
+    /Fields without a[\s\S]*specialized group remain directly visible/,
+  );
+});
+
 test("THRImg and Catbox credentials both map to image host API keys", () => {
   const context = vm.createContext({});
   load(context, ["imageHostApiKeys", "getImageHostForApiKey"]);
