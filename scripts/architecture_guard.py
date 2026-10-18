@@ -16,7 +16,9 @@ LIMITS = {
     # shared runtime helpers and extracted Web UI services.
     "direct_async_clients": 193,
     "direct_async_subprocesses": 16,
-    "web_ui_server_lines": 8635,
+    # v4.7 adds the authenticated MediaInfo review endpoint and screenshot
+    # capture guards; no additional async client/subprocess allowances.
+    "web_ui_server_lines": 8680,
 }
 LONG_FUNCTION_ALLOWLIST = {
     ("src/region.py", "get_distributor"),
