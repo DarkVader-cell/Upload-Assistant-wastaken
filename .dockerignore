@@ -58,6 +58,8 @@ docker-data
 **/.ua-token*
 data/config.py
 data/access_log.log
+data/webui_auth.json
+data/config.py.sync.lock
 data/session_secret
 data/sessions
 data/*.db
