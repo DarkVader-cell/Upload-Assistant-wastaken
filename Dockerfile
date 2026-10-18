@@ -111,8 +111,10 @@ EXPOSE 5000
 STOPSIGNAL SIGTERM
 
 # Health check for WebUI mode — ignored when running CLI
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -sf http://localhost:5000/api/health || exit 1
+COPY scripts/docker-healthcheck.py /usr/local/bin/upload-assistant-healthcheck
+RUN chmod 755 /usr/local/bin/upload-assistant-healthcheck
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD ["python", "/usr/local/bin/upload-assistant-healthcheck"]
 
 # ── Entrypoint ───────────────────────────────────────────────────────
 # The entrypoint script handles directory permissions and optional

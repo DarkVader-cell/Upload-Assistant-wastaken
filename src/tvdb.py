@@ -249,7 +249,10 @@ def _get_tvdb_or_warn(config: dict[str, Any] | None = None) -> TVDB | None:
     if not isinstance(tvdb_api_key, str) or not tvdb_api_key.strip():
         if not _tvdb_error_reported:
             _tvdb_error_reported = True
-            logger.info("[yellow]TVDB API key is missing in config.py under DEFAULT section. Continuing without TVDB.[/yellow]")
+            logger.info(
+                "[yellow]TVDB API key is not configured. Direct TVDB lookups are unavailable; "
+                "TVDB IDs will be obtained from TMDb when available.[/yellow]"
+            )
         return None
 
     try:
@@ -463,6 +466,7 @@ class TvdbData:
                                 "slug": cached_dict.get("slug") if isinstance(cached_dict.get("slug"), str) else None,
                                 "series_title": cached_dict.get("series_title") if isinstance(cached_dict.get("series_title"), str) else None,
                                 "series_year": cached_dict.get("series_year") if isinstance(cached_dict.get("series_year"), str) else None,
+                                "series_name": cached_dict.get("series_name") if isinstance(cached_dict.get("series_name"), str) else None,
                             }
 
                             if not episodes_data.get("series_title") and not episodes_data.get("series_year"):
@@ -478,6 +482,8 @@ class TvdbData:
                                             _series_info=series_info,
                                         )
                                         episodes_data.update(series_metadata)
+                                        if not episodes_data.get("series_name") and series_info.get("name"):
+                                            episodes_data["series_name"] = series_info["name"]
                                     except Exception as series_error:
                                         logger.debug(f"[yellow]Could not refresh cached TVDB series metadata: {series_error}[/yellow]")
 
@@ -553,6 +559,7 @@ class TvdbData:
                 "slug": series_slug,
                 "series_title": None,
                 "series_year": None,
+                "series_name": None,
             }
 
             # Try to get aliases from series info (may need separate call)
@@ -562,6 +569,8 @@ class TvdbData:
                     series_info = await client.get_series_extended(series_id_int)
                     if "aliases" in series_info:
                         episodes_data["aliases"] = series_info["aliases"]
+                    if "name" in series_info:
+                        episodes_data["series_name"] = series_info["name"]
                     aliases_list = _as_dict_list(episodes_data["aliases"])
                     episodes_data.update(
                         await _series_translation_metadata(

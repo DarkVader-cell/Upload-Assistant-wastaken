@@ -28,7 +28,7 @@ update_local() {
     git switch main
     git pull --ff-only origin main
     docker compose --env-file "$env_file" -f "$compose_file" pull upload-assistant
-    docker compose --env-file "$env_file" -f "$compose_file" up -d --force-recreate upload-assistant
+    docker compose --env-file "$env_file" -f "$compose_file" up -d --no-deps --force-recreate upload-assistant
     docker compose --env-file "$env_file" -f "$compose_file" ps upload-assistant
 }
 
@@ -55,7 +55,7 @@ update_whatbox_client() {
          # bounded, but allow up to four minutes before declaring it unhealthy.
          for _ in \$(seq 1 120); do
              code=\"\$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 http://127.0.0.1:$port/api/health || true)\"
-             case \"\$code\" in 2??|3??|4??) echo \"health=\$code\"; exit 0;; esac
+             case \"\$code\" in 200) echo \"health=\$code\"; exit 0;; esac
              sleep 2
          done
          echo \"health check failed (last status: \$code)\" >&2

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import sys
 from urllib.error import URLError
@@ -13,10 +14,14 @@ def main() -> int:
     url = os.environ.get("UA_HEALTHCHECK_URL", "http://127.0.0.1:5000/api/health")
     try:
         with urlopen(url, timeout=4) as response:  # noqa: S310 - URL is operator-controlled
-            if 200 <= response.status < 300:
-                return 0
+            if response.status == 200:
+                payload = json.loads(response.read(65536))
+                if isinstance(payload, dict) and payload.get("status") == "healthy" and payload.get("success") is True:
+                    return 0
+                print("Health endpoint did not report healthy", file=sys.stderr)
+                return 1
             print(f"Health check returned HTTP {response.status}", file=sys.stderr)
-    except (OSError, URLError) as exc:
+    except (OSError, URLError, ValueError) as exc:
         print(f"Health check failed: {exc}", file=sys.stderr)
     return 1
 

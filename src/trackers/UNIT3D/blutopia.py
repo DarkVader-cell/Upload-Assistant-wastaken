@@ -1,13 +1,16 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import re
+from dataclasses import replace
 from typing import Any
 
 import cli_ui
 
 from src.console import logger
+from src.get_name import build_name_components
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
+from src.trackers.naming import BLU_NAME_RULES, build_video_name, with_imdb_title
 from src.trackers.UNIT3D import UNIT3D
 
 
@@ -261,10 +264,25 @@ class Blutopia(UNIT3D):
         return should_continue
 
     async def get_name(self, meta: Meta) -> dict[str, str]:
+        # BLU follows the TMDB title/year selected by this fork while using the
+        # upstream component-based naming guide for all supported video types.
+        components = build_name_components(meta)
+        if not str(components.title or "").strip():
+            components = with_imdb_title(meta, components)
+        if meta.category == "TV" and meta.episode_title and components.episode_title == meta.episode_title:
+            components = replace(components, episode_title="")
+        if meta.tracker_status.get(self.tracker, {}).get("other", False) and components.resolution:
+            components = replace(components, resolution=f"{components.resolution} DVP5/DVP8")
+        generated_name = await build_video_name(meta, BLU_NAME_RULES, self.tracker, components)
+        has_component_details = any((meta.audio, meta.video_encode, meta.video_codec, meta.service, meta.source, meta.tag))
+        if (generated_name and (not meta.name or has_component_details)) or meta.manual_name is not None or meta.category not in ("MOVIE", "TV"):
+            return {"name": generated_name or meta.name}
+
+        # Preserve the legacy fallback for partially populated metadata that
+        # cannot be rendered faithfully by the guide (notably resumed older sessions).
         blu_name = meta.name
-        if meta.category == "TV" and meta.episode_title != "":
+        if meta.category == "TV" and meta.episode_title:
             blu_name = blu_name.replace(f"{meta.episode_title} {meta.resolution}", f"{meta.resolution}", 1)
-        webdv = meta.webdv
 
         tmdb_title = str(meta.title or "").strip()
         aka = str(meta.aka or "").strip()
@@ -285,12 +303,10 @@ class Blutopia(UNIT3D):
                 title_prefix = f"{title_prefix}\\s+{re.escape(aka)}"
             blu_name = re.sub(rf"^({title_prefix}\s+)(?:19|20)\d{{2}}(?=\s|$)", rf"\g<1>{tmdb_year}", blu_name, count=1, flags=re.IGNORECASE)
 
-        if webdv:
+        if meta.webdv:
             blu_name = blu_name.replace("HYBRID ", "", 1)
-
         if meta.tracker_status.get(self.tracker, {}).get("other", False):
             blu_name = blu_name.replace(f"{meta.resolution}", f"{meta.resolution} DVP5/DVP8", 1)
-
         return {"name": blu_name}
 
     async def get_additional_data(self, meta: Meta) -> dict[str, Any]:

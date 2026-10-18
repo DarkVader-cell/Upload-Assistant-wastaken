@@ -1,17 +1,20 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import re
+from dataclasses import replace
 from typing import Any
 
 import aiofiles
 
 from src.console import logger
 from src.get_desc import DescriptionBuilder
+from src.get_name import build_name_components
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
-from src.trackers.naming import add_incomplete_pack_marker
+from src.trackers.naming import BLU_NAME_RULES, add_incomplete_pack_marker, build_video_name, with_imdb_title
 from src.trackers.UNIT3D import UNIT3D
 
 Config = dict[str, Any]
+ULCX_NAME_RULES = replace(BLU_NAME_RULES, hybrid_on_webdl=False)
 
 
 class ULCX(UNIT3D):
@@ -299,24 +302,34 @@ class ULCX(UNIT3D):
         return {"description": desc}
 
     async def get_name(self, meta: Meta) -> dict[str, str]:
-        ulcx_name = meta.name
-        imdb_name = meta.imdb_info.get("title", "")
+        # ULCX omits the AKA for anime and Hybrid for WEB-DLs.
+        base_components = build_name_components(meta)
+        components = with_imdb_title(meta, base_components)
         imdb_year = self._valid_release_year(meta.imdb_info.get("year"))
-        imdb_aka = meta.imdb_info.get("aka", "")
-        year = str(meta.year) if meta.year is not None else ""
-        aka = meta.aka
-        if imdb_name and imdb_name.strip():
-            if aka:
-                ulcx_name = ulcx_name.replace(f"{aka} ", "", 1)
-            ulcx_name = ulcx_name.replace(f"{meta.title}", imdb_name, 1)
-            if imdb_aka and imdb_aka.strip() and imdb_aka != imdb_name and not meta.no_aka and not meta.anime:
-                ulcx_name = ulcx_name.replace(f"{imdb_name}", f"{imdb_name} AKA {imdb_aka}", 1)
-        if "Hybrid" in ulcx_name and meta.type == "WEBDL":
-            ulcx_name = ulcx_name.replace("Hybrid ", "", 1)
-        if meta.category != "TV" and imdb_year and imdb_year.strip() and year and year.strip() and imdb_year != year:
-            ulcx_name = ulcx_name.replace(f"{year}", imdb_year, 1)
-
-        if meta.type == "WEBDL" and ("hybrid" in meta.edition.lower() or meta.webdv):
-            ulcx_name = ulcx_name.replace("Hybrid ", "", 1)
-
+        if meta.category != "TV" and not imdb_year:
+            components = replace(components, year=base_components.year)
+        if meta.anime:
+            components = replace(components, alt_title="")
+        generated_name = await build_video_name(meta, ULCX_NAME_RULES, self.tracker, components)
+        has_component_details = any((meta.audio, meta.video_encode, meta.video_codec, meta.service, meta.source, meta.tag))
+        if generated_name and (not meta.name or has_component_details or not str(meta.title or "").strip()):
+            ulcx_name = generated_name
+        else:
+            # Resumed older sessions may only carry the already-built generic
+            # name; preserve its details while applying ULCX title precedence.
+            ulcx_name = meta.name
+            imdb_name = str(meta.imdb_info.get("title") or "").strip()
+            imdb_aka = str(meta.imdb_info.get("aka") or "").strip()
+            year = str(meta.year) if meta.year is not None else ""
+            if imdb_name:
+                if meta.aka:
+                    ulcx_name = ulcx_name.replace(f"{meta.aka} ", "", 1)
+                if meta.title:
+                    ulcx_name = ulcx_name.replace(str(meta.title), imdb_name, 1)
+                if imdb_aka and imdb_aka != imdb_name and not meta.no_aka and not meta.anime:
+                    ulcx_name = ulcx_name.replace(imdb_name, f"{imdb_name} AKA {imdb_aka}", 1)
+            if meta.category != "TV" and imdb_year and year and imdb_year != year:
+                ulcx_name = ulcx_name.replace(year, imdb_year, 1)
+            if meta.type == "WEBDL" and ("hybrid" in meta.edition.lower() or meta.webdv):
+                ulcx_name = ulcx_name.replace("Hybrid ", "", 1)
         return {"name": add_incomplete_pack_marker(ulcx_name, meta, self.tracker)}

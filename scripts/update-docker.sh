@@ -9,5 +9,5 @@ cd "$repo_dir"
 git switch main
 git pull --ff-only origin main
 docker compose --env-file "$env_file" -f "$compose_file" pull upload-assistant
-docker compose --env-file "$env_file" -f "$compose_file" up -d --force-recreate upload-assistant
+docker compose --env-file "$env_file" -f "$compose_file" up -d --no-deps --force-recreate upload-assistant
 docker compose --env-file "$env_file" -f "$compose_file" ps upload-assistant
