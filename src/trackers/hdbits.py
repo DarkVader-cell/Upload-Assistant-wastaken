@@ -667,7 +667,11 @@ class HDBits:
     async def _post_image_batch(self, url: str, data: dict[str, Any], files: dict[str, tuple[str, bytes, str]]) -> httpx.Response:
         started = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            # HDB can take over 30 seconds to process even one full-size PNG.
+            # Keep connection establishment bounded, but allow image processing
+            # and large multipart writes enough time without losing the result.
+            timeout = httpx.Timeout(connect=15.0, read=180.0, write=180.0, pool=15.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.post(url, data=data, files=files)
         except Exception:
             await record_event_async("api", service="hdbimg", operation="image_upload", outcome="error", duration_ms=(time.monotonic() - started) * 1000)

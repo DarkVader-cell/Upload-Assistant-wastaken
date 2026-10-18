@@ -37,7 +37,15 @@ def test_hdbits_rehosts_screenshots_from_typed_directory(tmp_path, monkeypatch: 
     async def record_event(_family, **kwargs):
         events.append(kwargs)
 
-    monkeypatch.setattr("src.trackers.hdbits.httpx.AsyncClient", lambda **_kwargs: _Client())
+    def client(**kwargs):
+        timeout = kwargs["timeout"]
+        assert timeout.read == 180.0
+        assert timeout.write == 180.0
+        assert timeout.connect == 15.0
+        assert timeout.pool == 15.0
+        return _Client()
+
+    monkeypatch.setattr("src.trackers.hdbits.httpx.AsyncClient", client)
     monkeypatch.setattr("src.trackers.hdbits.record_event_async", record_event)
     screenshot = screenshots_dir(tmp_path, "release") / "screen.png"
     screenshot.write_bytes(b"png")

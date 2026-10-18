@@ -11,7 +11,11 @@ The image API needs `TRACKERS.HDBITS.username` and `passkey`. Browser cookies
 authenticate torrent submission, **not** `img.hdbits.org/upload_api.php`.
 
 HTTP 200 alone is not treated as a successful image upload: UA checks the
-returned HDB BBCode and expected image count. Rejected/incomplete bulk requests
+returned HDB BBCode and expected image count. Live debugging reproduced read
+timeouts at the old 30-second limit, including an individual PNG. Image-host
+requests now allow 180 seconds for reads/writes, with a separate 15-second
+connection/pool limit. Torrent submission timeouts are unchanged.
+Rejected/incomplete bulk requests
 are retried as individual images. Redirects during recovery are revalidated,
 downloads are bounded to 32 MiB/image, and decoded images are checked before
 being sent to the image API.
