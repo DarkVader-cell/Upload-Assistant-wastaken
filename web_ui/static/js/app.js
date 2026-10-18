@@ -1057,6 +1057,7 @@ let argumentCategories = [
   {
     title: "Upload Selection / Dupe",
     args: [
+      { label: "--hdb-offer" },
       {
         label: "--trackers",
         placeholder: "aither,blutopia,lst,etc",
