@@ -13,7 +13,8 @@ cd /home/artemis/Upload-Assistant-wastaken
 ```
 
 The script switches to `main`, fast-forwards from GitHub, pulls the published
-Wastaken image, and recreates only the Upload Assistant service in `/opt/yams`.
+Wastaken image, and recreates only the Upload Assistant service in `/opt/yams`
+using `--no-deps`, leaving the shared VPN and torrent clients running.
 The bind-mounted `docker-data/` directories and `/mnt/seeding` remain in place.
 Confirm the service is `healthy` before resuming unattended Qui jobs.
 
@@ -85,8 +86,11 @@ and reads `/config/.ua-token-whatbox`.
 For the Whatbox qBittorrent instance, the external-program path mapping must
 rewrite the qBittorrent host path `/home/artemisprime` to the path seen
 by the Whatbox Upload Assistant container, `/mnt/seeding`. Its argument
-template is `{content_path} -client qbittorrent`; the wrapper supplies the
-unattended mode and session prefix.
+template is `{content_path} -client qbittorrent`; the submit API appends
+unattended mode by default and the wrapper supplies the session prefix.
+Destiny's physical `/mnt/mpathf/artemisprime` prefix must also map to
+`/mnt/seeding`. Local wrappers should use the stable host gateway
+`http://172.60.0.1:5000`, not an ephemeral container IP.
 
 The Clementine entry uses `/config/ua-submit-clementine`, the separate
 `/config/.ua-token-clementine`, and the `qui.richmayfly.box.ca` Upload
