@@ -1,14 +1,18 @@
-"""Image-only HDBits offer drafts. This module never submits an offer or torrent."""
+"""Manual HDBits offers with HDB images and encrypted PrivateBin sharing only."""
 
 from __future__ import annotations
 
+import contextlib
+import os
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlsplit
 
 from src.get_name import NameManager
 from src.meta import Meta
+from src.privatebin import DEFAULT_ENDPOINT, PrivateBinError, create_paste
+from src.region import get_service
 from src.screenshot_manifest import files as manifest_files
 from src.trackers.hdbits import HDBits
 
@@ -124,8 +128,31 @@ def _report(meta: Meta) -> tuple[str, str]:
     return label, _plain(report)
 
 
+async def _source_attribution(meta: Meta) -> str:
+    if meta.type != "WEBDL":
+        return ""
+    services = cast(dict[str, str], await get_service(get_services_only=True))
+    code = services.get(meta.service, "")
+    if not code:
+        return ""
+    longname = meta.service_longname
+    if not longname:
+        # Same catalogue fallback as metadata preparation, including MA aliases.
+        longname = max((name for name, value in services.items() if value == code), key=len)
+    return f"This release was sourced from {_plain(longname)}"
+
+
+def _write_offer_link(path: Path, link: str) -> None:
+    # Exclusive creation avoids following links and keeps the fragment private
+    # from the first byte, even with a permissive umask.
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        os.fchmod(output.fileno(), 0o600)
+        output.write(link + "\n")
+
+
 async def generate_hdb_offer(meta: Meta, config: dict[str, Any]) -> dict[str, Path]:
-    """Validate first, upload screenshots only, and write deterministic UTF-8 drafts."""
+    """Validate, upload HDB screenshots, save drafts, then share encrypted text."""
     validate_offer_options(meta)
     tracker = HDBits(config)
     if not tracker.username or not tracker.passkey:
@@ -139,11 +166,11 @@ async def generate_hdb_offer(meta: Meta, config: dict[str, Any]) -> dict[str, Pa
         raise ValueError("HDBits offer requires validated registered screenshots")
     images = validate_image_bbcode(await tracker.hdbimg_upload(meta))
 
-    # No cached tracker descriptions, image lists, artwork or review drafts.
-    converted = tracker.format_description(_plain(meta.manual_overview or meta.overview))
+    # No synopsis, cached tracker descriptions, image lists, artwork or reviews.
+    source = await _source_attribution(meta)
     directory = Path(meta.base_dir) / "tmp" / meta.uuid
     links = "\n".join(str(fields[key]) for key in ("IMDb link", "TMDB link") if fields[key] != "Not available")
-    description = f"{converted}\n\n{links}\n\n[hide={label}]\n{report}\n[/hide]\n\n[center]{images}[/center]\n".lstrip()
+    description = f"{source}\n\n{links}\n\n[hide={label}]\n{report}\n[/hide]\n\n[center]{images}[/center]\n".lstrip()
     form = "\n".join(f"{key}: {value}" for key, value in fields.items()) + "\n"
     contents = {"HDB_OFFER_TITLE.txt": str(fields["Title"]) + "\n", "HDB_OFFER_DESCRIPTION.txt": description, "HDB_OFFER_FORM.txt": form}
     paths: dict[str, Path] = {}
@@ -155,4 +182,20 @@ async def generate_hdb_offer(meta: Meta, config: dict[str, Any]) -> dict[str, Pa
     print("\nHDBits offer form (manual submission only)\n" + form)
     print("Description (BBCode):\n" + description)
     print("Saved offer drafts:\n" + "\n".join(str(path) for path in paths.values()))
+    link_path = directory / "HDB_OFFER_LINK.txt"
+    try:
+        # A failed rerun must not advertise a stale share link as its result.
+        link_path.unlink(missing_ok=True)
+        paste_text = f"Title:\n{fields['Title']}\n\nFORM:\n{form}\nDescription (BBCode):\n{description}"
+        endpoint = config.get("TRACKERS", {}).get("HDBITS", {}).get("offer_paste_url", DEFAULT_ENDPOINT)
+        link = await create_paste(paste_text, endpoint)
+        _write_offer_link(link_path, link)
+    except (PrivateBinError, OSError):
+        # Do not echo endpoints, responses or exceptions: they can carry secrets.
+        with contextlib.suppress(OSError):
+            link_path.unlink(missing_ok=True)
+        print("Warning: encrypted offer sharing unavailable; use the local HDB_OFFER_TITLE/DESCRIPTION/FORM.txt drafts listed above. No new share link was saved.")
+    else:
+        paths[link_path.name] = link_path
+        print("Encrypted offer link (anyone with this full link can read it; expires in one week):\n" + link)
     return paths

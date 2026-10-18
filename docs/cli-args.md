@@ -25,17 +25,22 @@ upload.py [path...] [options]
 python upload.py "/media/Example.2026.1080p.WEB-DL.mkv" --hdb-offer --tmdb 12345 --screens 3
 ```
 
-`--hdb-offer` generates a **manual HDBits offer draft**, not a torrent upload. It is also available in WebUI arguments (Other CLI options). Configure `TRACKERS.HDBITS.username` and `passkey` for the HDB image host. Metadata lookup, MediaInfo/BDInfo, naming and local screenshots are reused. The only remote writes are screenshot uploads to `https://img.hdbits.org/upload_api.php`; gallery URLs such as `https://img.hdbits.org/abdce` are returned links, not upload endpoints.
+`--hdb-offer` generates a **manual HDBits offer draft**, not a torrent upload. It is also available in WebUI arguments (Upload Selection / Dupe). Configure `TRACKERS.HDBITS.username` and `passkey` for the HDB image host. Metadata lookup, MediaInfo/BDInfo, naming and local screenshots are reused. Remote writes are limited to screenshot uploads to `https://img.hdbits.org/upload_api.php` and a locally encrypted text paste to `https://privatebin.net/`. Gallery URLs such as `https://img.hdbits.org/abdce` are returned links, not upload endpoints. No torrent builder (including mkbrr) is required or enabled.
 
 Copy the raw terminal/WebUI log output, or use UTF-8 files in `tmp/<release>/`:
 
 - `HDB_OFFER_TITLE.txt`: HDB title.
-- `HDB_OFFER_DESCRIPTION.txt`: BBCode overview, IMDb/TMDB links, expandable `[hide=MediaInfo]` (or BDInfo) report and HDB screenshots.
+- `HDB_OFFER_DESCRIPTION.txt`: IMDb/TMDB links, expandable `[hide=MediaInfo]` (or `[hide=BDInfo]`) report and HDB screenshots; no synopsis. Known WEB-DL services include “This release was sourced from Movies Anywhere” (or the verified service long name).
 - `HDB_OFFER_FORM.txt`: title, IMDb link, TMDB link/ID, TVDB ID, season/episode, category, codec, medium, origin and exclusivity.
+- `HDB_OFFER_LINK.txt`: the full secret PrivateBin link (mode `0600`), created only when encrypted sharing succeeds. The link is also printed in terminal/WebUI output.
 
 Use `--imdb`, `--tmdb`, `--tvdb`, `--season`, `--episode`, `--category` or `--type` to correct metadata before rerunning. An IMDb or TMDB ID and supported HDB media fields are required; missing optional IDs are explicitly marked, never invented. TV seasons/episodes must be single numbers (season packs leave episode blank). Origin follows HDB internal-group configuration; exclusivity follows `--exclusive true|false` (or `1|0`), defaulting to No. Check all fields before manually submitting an offer on HDBits.
 
-This mode ignores configured tracker selections/imported descriptions and normal image hosts. It uses a plain metadata overview, not saved description drafts/templates. It never submits an offer/torrent, creates a torrent/Usenet archive, cross-seeds, runs upload hooks or registers with a torrent client. Zero screenshots, disabled image uploads, comparison mode, Usenet, site actions and prepare-only are rejected. Image-host errors, malformed responses and non-HDB image links fail closed; no fallback host is used. Existing drafts from earlier successful runs are not proof a failed rerun succeeded.
+The paste contains only the title, form details and BBCode description, not local artifact paths or HDB credentials. PrivateBin v2 encryption happens locally (AES-256-GCM, PBKDF2-SHA256); the server receives ciphertext and a one-week expiry, never the random decryption key. The key appears only in the share URL fragment. **Anyone with the complete link can read the paste**: treat the link file and terminal/WebUI logs as confidential. A trusted PrivateBin server/browser remains necessary: server-served JavaScript can access the fragment when you open the link. Availability, server expiry enforcement and browser rendering are not guaranteed. There is no plaintext upload or alternate-host fallback; on paste failure the local title/description/form files remain usable and a warning is printed, not a success link. Reruns remove stale link artifacts before attempting a new paste.
+
+Optionally set `TRACKERS.HDBITS.offer_paste_url` to a trusted public HTTPS PrivateBin v2 endpoint, such as `https://paste.example/privatebin/`. Credentials, query strings, fragments, local/private addresses and HTTP redirects are rejected. The default endpoint is free to use, but may rate-limit or reject uploads. Expiration is fixed at `1week`; endpoints must support that setting. No new dependencies or dropdown controls are needed.
+
+This mode ignores configured tracker selections/imported descriptions, synopsis/overview and normal image hosts. It never submits an offer/torrent, creates a torrent/Usenet archive, cross-seeds, runs upload hooks or registers with a torrent client. Zero screenshots, disabled image uploads, comparison mode, Usenet, site actions and prepare-only are rejected. Image-host errors, malformed responses and non-HDB image links fail closed; no fallback host is used. Existing drafts from earlier successful runs are not proof a failed rerun succeeded.
 
 ### Pasting multiple full paths
 

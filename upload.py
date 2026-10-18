@@ -2480,18 +2480,22 @@ async def do_the_thing(base_dir: str) -> None:
         if webui_roots is not None and not is_generated_queue_path(path):
             path = validate_subprocess_path(path)
 
-        is_binary = await get_mkbrr_path(base_dir) if not meta.hdb_offer else None
-        if not meta.mkbrr:
-            try:
-                meta.mkbrr = config["DEFAULT"].get("mkbrr", False)
-            except ValueError:
-                logger.debug("[yellow]Invalid mkbrr config value, defaulting to False[/yellow]")
-                meta.mkbrr = False
-        if meta.mkbrr and not is_binary:
-            logger.info("[bold red]mkbrr binary is not available. Please ensure it is installed correctly.[/bold red]")
-            logger.info("[bold red]Reverting to Torf[/bold red]")
-            logger.info("")
+        if meta.hdb_offer:
+            # Offers never build torrents, regardless of CLI/config builder settings.
             meta.mkbrr = False
+        else:
+            is_binary = await get_mkbrr_path(base_dir)
+            if not meta.mkbrr:
+                try:
+                    meta.mkbrr = config["DEFAULT"].get("mkbrr", False)
+                except ValueError:
+                    logger.debug("[yellow]Invalid mkbrr config value, defaulting to False[/yellow]")
+                    meta.mkbrr = False
+            if meta.mkbrr and not is_binary:
+                logger.info("[bold red]mkbrr binary is not available. Please ensure it is installed correctly.[/bold red]")
+                logger.info("[bold red]Reverting to Torf[/bold red]")
+                logger.info("")
+                meta.mkbrr = False
 
         queue, log_file = await QueueManager.handle_queue(path, meta, paths, base_dir)
         queue_list = cast(list[Any], queue)

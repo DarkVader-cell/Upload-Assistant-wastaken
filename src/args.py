@@ -438,7 +438,7 @@ class Args:
         parser.add_argument("--plan", "--dry-run-plan", dest="dry_run_plan", action="store_true", help="Show stages, cache hits, expected calls, and selected trackers without executing")
         parser.add_argument("--no-resume", action="store_true", help="Ignore saved preparation checkpoints for this run")
         parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)
-        parser.add_argument("--hdb-offer", action="store_true", help="Generate HDBits offer text; upload only to img.hdbits.org, never submit or create torrents")
+        parser.add_argument("--hdb-offer", action="store_true", help="Generate HDBits offer text with HDB screenshots and an encrypted PrivateBin link; never submit or create torrents")
         parser.add_argument(
             "--queue-prepare-concurrency",
             type=int,

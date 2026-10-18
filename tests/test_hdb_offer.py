@@ -18,6 +18,7 @@ from src.args import Args, cli_argument_catalog
 from src.hdb_offer import generate_hdb_offer, offer_fields, validate_image_bbcode, validate_offer_options
 from src.meta import Meta
 from src.prep import Prep
+from src.privatebin import PrivateBinError
 from src.screenshot_manifest import clear_group, files as manifest_files, register
 from src.temp_paths import screenshots_dir
 from src.trackers.hdbits import HDBits
@@ -34,6 +35,7 @@ def no_network(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "request", forbidden)
     monkeypatch.setattr(httpx.Client, "request", forbidden)
     monkeypatch.setattr("socket.socket.connect", forbidden)
+    monkeypatch.setattr("src.hdb_offer.create_paste", AsyncMock(side_effect=PrivateBinError("mock unavailable")))
 
 
 @pytest.fixture
@@ -78,6 +80,7 @@ async def test_generate_hdb_offer_image_api_only_and_plaintext_artifacts(release
     assert "https://www.imdb.com/title/tt1234567/" in description
     assert "https://www.themoviedb.org/movie/123" in description
     assert BB in description
+    assert "A film" not in description and "with brackets" not in description
     assert "Category: Movie (1)" in form
     assert "Codec: H.264 (1)" in form and "Medium: WEB-DL (6)" in form
     assert "Origin: External (0)" in form and "Exclusive: No" in form
@@ -264,15 +267,17 @@ async def test_process_meta_offer_skips_normal_pipeline(release, monkeypatch):
 
 
 @pytest.mark.parametrize("success", [True, False])
+@pytest.mark.parametrize("cli_mkbrr", [False, True])
 @pytest.mark.asyncio
-async def test_outer_offer_loop_never_processes_trackers_crossseeds_clients_or_hooks(release, monkeypatch, success):
+async def test_outer_offer_loop_never_processes_trackers_crossseeds_clients_or_hooks(release, monkeypatch, success, cli_mkbrr):
     import src.stats as stats
     import upload
     from bin.get_mediainfo import MediaInfoBinaryManager
     media = Path(release.base_dir) / "release.mkv"
     media.touch()
     monkeypatch.setattr(sys, "argv", ["upload.py", str(media), "--hdb-offer"])
-    monkeypatch.setattr(importlib, "reload", lambda module: SimpleNamespace(config=CONFIG))
+    config = {**CONFIG, "DEFAULT": {**CONFIG["DEFAULT"], "mkbrr": True}}
+    monkeypatch.setattr(importlib, "reload", lambda module: SimpleNamespace(config=config))
     monkeypatch.setattr(upload, "config", {})
     monkeypatch.setattr(upload, "load_heavy_globals", Mock())
     monkeypatch.setattr(upload, "update_notification", AsyncMock(return_value=None))
@@ -284,10 +289,15 @@ async def test_outer_offer_loop_never_processes_trackers_crossseeds_clients_or_h
     monkeypatch.setattr(upload, "cancel_and_drain_early_artifact_tasks", AsyncMock())
     monkeypatch.setattr(upload, "_publish_webui_preview_target", Mock())
     def parse(args, meta):
-        meta.path, meta.hdb_offer, meta.screens = str(media), True, 3
+        meta.path, meta.hdb_offer, meta.screens, meta.mkbrr = str(media), True, 3, cli_mkbrr
         return meta, None, None
     monkeypatch.setattr(upload, "parser", SimpleNamespace(parse=parse), raising=False)
-    monkeypatch.setattr(upload.QueueManager, "handle_queue", AsyncMock(return_value=([str(media)], None)))
+    async def handle_queue(path, meta, *args):
+        assert meta.mkbrr is False  # disabled before even queue construction
+        return [str(media)], None
+    monkeypatch.setattr(upload.QueueManager, "handle_queue", handle_queue)
+    logger = Mock()
+    monkeypatch.setattr(upload, "logger", logger)
     processor = AsyncMock(return_value=success)
     monkeypatch.setattr(upload, "process_meta", processor)
     for name in ("configure_stats", "set_stats_context"):
@@ -302,6 +312,9 @@ async def test_outer_offer_loop_never_processes_trackers_crossseeds_clients_or_h
     await upload.do_the_thing(release.base_dir)
     processor.assert_awaited_once()
     forbidden.assert_not_awaited()
+    assert "mkbrr binary is not available" not in str(logger.mock_calls)
+    assert "Reverting to Torf" not in str(logger.mock_calls)
+    assert processor.await_args.args[0].mkbrr is False
 
 
 @pytest.mark.asyncio
@@ -475,3 +488,109 @@ async def test_offer_real_capture_orchestration_with_mocked_ffmpeg(release, monk
         assert len(calls) == expected_initial_calls + (capture_mode == "retry")
     assert calls
     assert (directory / "stale.png").is_file()
+
+
+@pytest.mark.parametrize(("service", "longname", "expected"), [
+    ("MA", "", "Movies Anywhere"),
+    ("YKW", "", "Movies Anywhere"),
+    ("MA", "Movies Anywhere", "Movies Anywhere"),
+    ("NF", "Netflix", "Netflix"),
+    ("AMZN", "Amazon", "Amazon"),
+    ("UNKNOWN", "Unverified source", ""),
+    ("", "", ""),
+])
+@pytest.mark.asyncio
+async def test_offer_web_source_attribution_without_synopsis(release, monkeypatch, service, longname, expected):
+    release.service, release.service_longname = service, longname
+    release.manual_overview = "Manual synopsis must not be included"
+    mock_name(monkeypatch, release)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=BB))
+    paths = await generate_hdb_offer(release, CONFIG)
+    description = paths["HDB_OFFER_DESCRIPTION.txt"].read_text()
+    assert "synopsis" not in description and "A film" not in description
+    if expected:
+        assert f"This release was sourced from {expected}\n" in description
+    else:
+        assert "This release was sourced" not in description
+    assert "[hide=MediaInfo]\n" in description and "[/hide]" in description
+
+
+@pytest.mark.asyncio
+async def test_offer_non_webdl_has_no_service_attribution(release, monkeypatch):
+    release.service, release.service_longname, release.type = "MA", "Movies Anywhere", "WEBRIP"
+    mock_name(monkeypatch, release)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=BB))
+    paths = await generate_hdb_offer(release, CONFIG)
+    assert "This release was sourced" not in paths["HDB_OFFER_DESCRIPTION.txt"].read_text()
+
+
+@pytest.mark.parametrize(("imdb", "tmdb"), [(1234567, 0), (0, 123)])
+@pytest.mark.asyncio
+async def test_offer_optional_ids_without_overview(release, monkeypatch, imdb, tmdb):
+    release.imdb_id, release.tmdb_id, release.overview = imdb, tmdb, ""
+    mock_name(monkeypatch, release)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=BB))
+    paths = await generate_hdb_offer(release, CONFIG)
+    assert "[hide=MediaInfo]" in paths["HDB_OFFER_DESCRIPTION.txt"].read_text()
+    assert "Not available" in paths["HDB_OFFER_FORM.txt"].read_text()
+
+
+@pytest.mark.asyncio
+async def test_offer_paste_includes_only_drafts_and_saves_secret_link_private(release, monkeypatch, capsys):
+    mock_name(monkeypatch, release)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=BB))
+    link = "https://privatebin.net/?0123456789abcdef#SyntheticSecretKey"
+    paste = AsyncMock(return_value=link)
+    monkeypatch.setattr("src.hdb_offer.create_paste", paste)
+    config = {**CONFIG, "TRACKERS": {"HDBITS": {**CONFIG["TRACKERS"]["HDBITS"], "offer_paste_url": "https://paste.example/bin/"}}}
+    directory = Path(release.base_dir) / "tmp" / release.uuid
+    link_path = directory / "HDB_OFFER_LINK.txt"
+    link_path.write_text("stale secret")
+    link_path.chmod(0o644)
+    paths = await generate_hdb_offer(release, config)
+    assert link_path.read_text() == link + "\n"
+    assert link_path.stat().st_mode & 0o777 == 0o600
+    assert paths[link_path.name] == link_path
+    text, endpoint = paste.await_args.args
+    assert endpoint == "https://paste.example/bin/"
+    assert "Title:\n" in text and "FORM:\n" in text and "Description (BBCode):\n" in text
+    for name in ("TITLE", "FORM", "DESCRIPTION"):
+        content = paths[f"HDB_OFFER_{name}.txt"].read_text()
+        assert content.strip() in text
+        assert "SyntheticSecretKey" not in content
+    for secret in (release.path, release.base_dir, "test-user", "test-key", "A film"):
+        assert secret not in text
+    output = capsys.readouterr().out
+    assert link in output and "Warning:" not in output
+
+
+@pytest.mark.asyncio
+async def test_offer_paste_failure_preserves_local_drafts_removes_stale_link_and_does_not_echo_error(release, monkeypatch, capsys):
+    mock_name(monkeypatch, release)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=BB))
+    paste = AsyncMock(side_effect=PrivateBinError("Secret response must not be echoed"))
+    monkeypatch.setattr("src.hdb_offer.create_paste", paste)
+    link_path = Path(release.base_dir) / "tmp" / release.uuid / "HDB_OFFER_LINK.txt"
+    link_path.write_text("https://example.test/?stale#SecretOldKey")
+    paths = await generate_hdb_offer(release, CONFIG)
+    assert set(paths) == {"HDB_OFFER_TITLE.txt", "HDB_OFFER_FORM.txt", "HDB_OFFER_DESCRIPTION.txt"}
+    assert all(path.is_file() for path in paths.values())
+    assert not link_path.exists()
+    output = capsys.readouterr().out
+    assert "Warning: encrypted offer sharing unavailable" in output and "local HDB_OFFER" in output
+    assert "Secret response" not in output and "SecretOldKey" not in output
+    assert "Encrypted offer link" not in output
+    paste.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_offer_link_write_failure_preserves_local_drafts_without_secret_output(release, monkeypatch, capsys):
+    mock_name(monkeypatch, release)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=BB))
+    monkeypatch.setattr("src.hdb_offer.create_paste", AsyncMock(return_value="https://example.test/?0123456789abcdef#SecretKey"))
+    monkeypatch.setattr("src.hdb_offer._write_offer_link", Mock(side_effect=OSError("SecretKey")))
+    paths = await generate_hdb_offer(release, CONFIG)
+    assert len(paths) == 3 and all(path.is_file() for path in paths.values())
+    output = capsys.readouterr().out
+    assert "Warning:" in output and "SecretKey" not in output
+    assert not (Path(release.base_dir) / "tmp" / release.uuid / "HDB_OFFER_LINK.txt").exists()
