@@ -11,6 +11,7 @@ from src.trackers.common import Common
 from src.trackers.hdbits import HDBits
 
 MIB = 1024**2
+_REAL_HDB_EDIT_DESC = HDBits.edit_desc
 
 
 def write_torrent(path, piece_size, size, name="release.mkv"):
@@ -70,3 +71,31 @@ async def test_successful_upload_records_torrent_id_for_result_link(setup_releas
 
 def test_class_exposes_details_url_for_result_links():
     assert HDBits.torrent_url == "https://hdbits.org/details.php?id="  # noqa: S101
+
+
+@pytest.mark.asyncio
+async def test_image_failure_warns_but_does_not_stop_torrent_submission(setup_release, monkeypatch):
+    directory, meta, config = setup_release
+    source = directory / "candidate.torrent"
+    write_torrent(source, 2 * MIB, 4000 * 2 * MIB)
+    TorrentManifest(meta.base_dir, meta.uuid).register(source, "base", "client:test")
+    monkeypatch.setattr(HDBits, "edit_desc", _REAL_HDB_EDIT_DESC)
+    monkeypatch.setattr(HDBits, "hdbimg_upload", AsyncMock(return_value=None))
+    monkeypatch.setattr("src.cookie_auth.find_cookie_file", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(Common, "parse_cookie_file", AsyncMock(return_value={}))
+    monkeypatch.setattr(HDBits, "download_new_torrent", AsyncMock())
+    original_client = httpx.AsyncClient
+    posts = []
+    def handler(request):
+        if request.method == "POST":
+            posts.append(str(request.url))
+            return httpx.Response(303, headers={"Location": "https://hdbits.org/details.php?id=54321&uploaded=1"}, request=request)
+        return httpx.Response(200, request=request)
+    def make_client(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return original_client(*args, **kwargs)
+    monkeypatch.setattr(hdbits_module.httpx, "AsyncClient", make_client)
+    assert await HDBits(config).upload(meta) is True
+    assert posts == ["https://hdbits.org/upload/upload"]
+    assert meta.tracker_status["HDBITS"]["status_message"].startswith("SCREENSHOT WARNING:")
+    assert meta.tracker_status["HDBITS"]["torrent_id"] == "54321"

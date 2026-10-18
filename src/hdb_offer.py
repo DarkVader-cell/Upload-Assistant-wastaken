@@ -7,9 +7,9 @@ import os
 import re
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlsplit
 
 from src.get_name import NameManager
+from src.hdb_images import validate_image_bbcode
 from src.meta import Meta
 from src.privatebin import DEFAULT_ENDPOINT, PrivateBinError, create_paste
 from src.region import get_service
@@ -44,30 +44,6 @@ def _plain(value: object) -> str:
     # Metadata/report text must not close a hide block or inject BBCode.
     text = str(value or "").replace("[", "\uff3b").replace("]", "\uff3d")
     return "".join(char for char in text if char in "\n\t" or (ord(char) >= 32 and not 127 <= ord(char) <= 159)).strip()
-
-
-def validate_image_bbcode(value: str | None) -> str:
-    """Accept only complete HDB image/gallery BBCode, never an HTML error page."""
-    if not value:
-        raise ValueError("HDB image upload failed or returned no BBCode")
-    pattern = r"(?:\[url=(https://[^\s\[\]]+)\])?\[img\](https://[^\s\[\]]+)\[/img\](?(1)\[/url\])"
-    matches = list(re.finditer(pattern, value, flags=re.IGNORECASE))
-    remainder = re.sub(pattern, "", value, flags=re.IGNORECASE)
-    if not matches or remainder.strip():
-        raise ValueError("HDB image upload returned unexpected BBCode")
-    for match in matches:
-        for url in match.groups():
-            if url is None:
-                continue
-            if any(ord(char) < 33 or ord(char) > 126 or char in "\"'<>\\" for char in url):
-                raise ValueError("HDB image upload returned an unsafe URL")
-            parts = urlsplit(url)
-            # BBCODE.clean_hdb_description already recognizes HDB's t.hdbits.org thumbnails.
-            # Keep exact hosts: no wildcard subdomains, userinfo or explicit ports.
-            if parts.scheme != "https" or parts.netloc not in ("img.hdbits.org", "t.hdbits.org") or not parts.path.startswith("/") or parts.path == "/":
-                raise ValueError("HDB image upload returned a non-HDB image/gallery URL")
-    thumbnails = [match.group() for match in matches]
-    return "\n".join(" ".join(thumbnails[index:index + 2]) for index in range(0, len(thumbnails), 2))
 
 
 def _tv_number(value: object, prefix: str, label: str) -> str:

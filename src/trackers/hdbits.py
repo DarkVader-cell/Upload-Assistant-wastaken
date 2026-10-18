@@ -14,9 +14,12 @@ from unidecode import unidecode
 
 from src.bbcode import BBCODE
 from src.cogs.redaction import Redaction
+from src.config_helpers import parse_bool
 from src.console import console, logger
 from src.description_review import get_base_description
 from src.exceptions import *  # noqa F403
+from src.exceptions import UploadError
+from src.hdb_images import recover_hosted_images, validate_image_bbcode
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
 from src.stats import record_event_async
@@ -98,9 +101,9 @@ class HDBits:
         self.config: Config = config
         tracker_config = config.get("TRACKERS", {}).get("HDBITS", {})
         tracker_config_dict = cast(dict[str, Any], tracker_config) if isinstance(tracker_config, dict) else {}
-        self.username = str(tracker_config_dict.get("username", "")).strip()
-        self.passkey = str(tracker_config_dict.get("passkey", "")).strip()
-        self.rehost_images = bool(tracker_config_dict.get("img_rehost", True))
+        self.username = str(tracker_config_dict.get("username") or "").strip()
+        self.passkey = str(tracker_config_dict.get("passkey") or "").strip()
+        self.rehost_images = parse_bool(str(tracker_config_dict.get("img_rehost", True)), default=True)
 
     async def get_type_category_id(self, meta: Meta) -> int:
         cat_id = 0
@@ -373,8 +376,10 @@ class HDBits:
         # Match url to verify successful upload
         match = re.match(rf".*?{re.escape(self.base_url.replace('https://', ''))}/details\.php\?id=(\d+)&uploaded=(\d+)", str(up.url))
         if match:
-            meta.tracker_status[self.tracker]["status_message"] = match.group(0)
-            meta.tracker_status[self.tracker]["torrent_id"] = match.group(1)
+            status = meta.tracker_status[self.tracker]
+            warnings = status.get("screenshot_warnings", [])
+            status["status_message"] = ("SCREENSHOT WARNING: " + " ".join(warnings) + " " + match.group(0)) if warnings else match.group(0)
+            status["torrent_id"] = match.group(1)
             if id_match := re.search(r"(id=)(\d+)", urlparse(str(up.url)).query):
                 id = id_match.group(2)
                 await self.download_new_torrent(id, torrent_file_path)
@@ -382,7 +387,7 @@ class HDBits:
         logger.info(data)
         logger.info(f"{self.tracker}: \n\n")
         logger.info(up.text)
-        raise UploadError(f"Upload to HDBITS Failed: result URL {up.url} ({up.status_code}) was not expected", "red")  # noqa F405
+        raise UploadError(f"Upload to HDBITS Failed: result URL {up.url} ({up.status_code}) was not expected", "red")
 
     async def search_existing(self, meta: Meta) -> list[dict[str, Any]]:
         dupes: list[dict[str, Any]] = []
@@ -537,6 +542,16 @@ class HDBits:
         return re.sub(r"\[/size\]|\[size=\d+\]", "", desc, flags=re.IGNORECASE)
 
     async def edit_desc(self, meta: Meta) -> None:
+        status = meta.tracker_status.setdefault(self.tracker, {})
+        status.pop("screenshot_warnings", None)
+        if str(status.get("status_message", "")).startswith("SCREENSHOT WARNING:"):
+            status.pop("status_message", None)
+        try:
+            warning = Path(meta.base_dir) / "tmp" / meta.uuid / "HDB_SCREENSHOTS_WARNING.txt"
+            if not warning.is_symlink():
+                warning.unlink(missing_ok=True)
+        except OSError:
+            pass
         base = get_base_description(meta)
 
         desc_parts: list[str] = []
@@ -562,9 +577,18 @@ class HDBits:
         if desc:
             desc_parts.append(f"{desc}\n")
 
+        hdbimg_bbcode = None
         if self.rehost_images is True:
             logger.info(f"{self.tracker}: [green]Rehosting Images...")
-            hdbimg_bbcode = await self.hdbimg_upload(meta)
+            try:
+                raw_images = await self.hdbimg_upload(meta)
+                validated = validate_image_bbcode(raw_images)
+                hdbimg_bbcode = raw_images.strip() if meta.comparison and raw_images else validated
+            except Exception:
+                # Image trouble must not abort the torrent upload (operator policy).
+                # Cancellation remains a BaseException and is never swallowed.
+                hdbimg_bbcode = None
+                self._screenshot_warning(meta, "HDB image rehosting failed. Using the existing hosted screenshots if available; upload will continue. Check screenshot display on HDBits afterward.")
             if hdbimg_bbcode is not None:
                 if meta.comparison:
                     desc_parts.append("[center]")
@@ -591,7 +615,7 @@ class HDBits:
                     desc_parts.append("[/center]")
                 else:
                     desc_parts.append(f"[center]{hdbimg_bbcode}[/center]")
-        else:
+        if self.rehost_images is not True or not hdbimg_bbcode:
             images_value = meta.image_list
             images_list: list[dict[str, Any]] = []
             if isinstance(images_value, list):
@@ -599,20 +623,46 @@ class HDBits:
                 images_list.extend([cast(dict[str, Any], item) for item in images_value_list if isinstance(item, dict)])
             if images_list:
                 desc_parts.append("[center]")
-                screen_limit = meta.screens or 0
+                screen_limit = meta.screens or len(images_list)
                 for each in range(len(images_list[:screen_limit])):
-                    img_url = str(images_list[each].get("img_url", ""))
-                    web_url = str(images_list[each].get("web_url", ""))
-                    desc_parts.append(f"[url={web_url}][img]{img_url}[/img][/url]")
+                    img_url = str(images_list[each].get("img_url") or images_list[each].get("raw_url") or "")
+                    web_url = str(images_list[each].get("web_url") or images_list[each].get("raw_url") or img_url)
+                    valid = True
+                    for image_url in (img_url, web_url):
+                        parsed = urlparse(image_url)
+                        if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or re.search(r"[\s\[\]<>\"']", image_url):
+                            valid = False
+                    if valid:
+                        desc_parts.append(f"[url={web_url}][img]{img_url}[/img][/url]")
                 desc_parts.append("[/center]")
 
         if self.signature is not None:
             desc_parts.append(self.signature)
 
+        description = "".join(desc_parts)
+        if re.search(r"\[img(?:=[^\]]+)?\]https?://[^\s\[\]]+\[/img\]", description, re.IGNORECASE) is None:
+            self._screenshot_warning(meta, "No usable screenshot links are present in this HDB description. Upload will continue as requested; add screenshots manually on HDBits.")
         async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[{self.tracker}]DESCRIPTION.txt", "w", encoding="utf-8") as descfile:
-            await descfile.write("".join(desc_parts))
+            await descfile.write(description)
 
         return
+
+    def _screenshot_warning(self, meta: Meta, message: str) -> None:
+        logger.warning(f"HDBITS SCREENSHOT WARNING: {message}", extra={"markup": False})
+        status = meta.tracker_status.setdefault(self.tracker, {})
+        status["status_message"] = "SCREENSHOT WARNING: " + message
+        warnings = status.get("screenshot_warnings")
+        if not isinstance(warnings, list):
+            warnings = status["screenshot_warnings"] = []
+        if message not in warnings:
+            warnings.append(message)
+        try:
+            path = Path(meta.base_dir) / "tmp" / meta.uuid / "HDB_SCREENSHOTS_WARNING.txt"
+            if not path.is_symlink():
+                path.write_text("\n".join(warnings) + "\n", encoding="utf-8")
+                path.chmod(0o600)
+        except OSError:
+            pass
 
     async def _post_image_batch(self, url: str, data: dict[str, Any], files: dict[str, tuple[str, bytes, str]]) -> httpx.Response:
         started = time.monotonic()
@@ -633,7 +683,33 @@ class HDBits:
         )
         return response
 
+    async def _validated_image_batch(self, url: str, data: dict[str, Any], files: dict[str, tuple[str, bytes, str]]) -> str | None:
+        """Verify every returned image, retrying rejected bulk requests individually."""
+        try:
+            response = await self._post_image_batch(url, data, files)
+            if response.status_code == 200:
+                return validate_image_bbcode(response.text, expected=len(files))
+            logger.warning(f"HDBITS: screenshot API returned HTTP {response.status_code}.")
+        except (httpx.RequestError, ValueError):
+            logger.warning("HDBITS: screenshot API did not return the expected complete image BBCode.")
+        if len(files) <= 1:
+            return None
+        logger.warning("HDBITS: bulk screenshot response was invalid or rejected; retrying each image separately.")
+        parts = []
+        for file in files.values():
+            try:
+                response = await self._post_image_batch(url, data, {"images_files[0]": file})
+                if response.status_code != 200:
+                    return None
+                parts.append(validate_image_bbcode(response.text, expected=1))
+            except (httpx.RequestError, ValueError):
+                return None
+        return validate_image_bbcode("\n".join(parts), expected=len(files))
+
     async def hdbimg_upload(self, meta: Meta) -> str | None:
+        if not self.username or not self.passkey:
+            logger.warning("HDBITS: image-host username/passkey are missing; browser cookies do not authenticate the image API.")
+            return None
         bbcode = ""
         response: httpx.Response | None = None
         upload_success = False
@@ -733,7 +809,18 @@ class HDBits:
                 hidden_glob_results = await asyncio.to_thread(lambda pat=unwanted_pattern: [str(p) for p in Path(screenshot_dir).glob(f".{pat}")])
                 unwanted_files.update(hidden_glob_results)
             image_glob = [file for file in image_glob if file not in unwanted_files]
-            all_image_files = list(set(image_glob))
+            all_image_files = sorted(set(image_glob))
+            manifest = Path(meta.base_dir) / "tmp" / meta.uuid / "screenshot_manifest.json"
+            if manifest.is_file():
+                all_image_files = [str(path) for path in manifest_files(meta.base_dir, meta.uuid, "main")]
+
+        if not all_image_files and not meta.comparison and not meta.hdb_offer:
+            images = [item for item in meta.image_list if isinstance(item, dict)] if isinstance(meta.image_list, list) else []
+            if images:
+                logger.info("HDBITS: local screenshots are absent; recovering full-size hosted screenshots for rehosting.")
+                directory = Path(meta.base_dir) / "tmp" / meta.uuid / "rehosted_images" / "HDBITS"
+                limit = 3 if meta.category == "TV" and meta.tv_pack == 0 else 6
+                all_image_files = [str(path) for path in await recover_hosted_images(directory, images, limit)]
 
         # At this point, all_image_files contains paths to all images we want to upload
         if not all_image_files:
@@ -812,19 +899,19 @@ class HDBits:
                         chunk_size_mb = sum(Path(all_image_files[int(key.split("[")[1].split("]")[0])]).stat().st_size for key, _ in chunk) / (1024 * 1024)
                         logger.debug(f"{self.tracker}: [cyan]Uploading chunk {chunk_idx + 1}/{len(chunks)} ({len(file_list)} images, {chunk_size_mb:.2f} MiB)")
 
-                    response = await self._post_image_batch(url, data, file_list)
-                    if response.status_code == 200:
-                        logger.info(f"{self.tracker}: [green]Chunk {chunk_idx + 1}/{len(chunks)} upload successful!")
-                        bbcode += response.text
+                    uploaded = await self._validated_image_batch(url, data, file_list)
+                    if uploaded:
+                        logger.info(f"{self.tracker}: [green]Chunk {chunk_idx + 1}/{len(chunks)} screenshots verified!")
+                        bbcode += uploaded + "\n"
                     else:
-                        logger.info(f"{self.tracker}: [red]Chunk {chunk_idx + 1}/{len(chunks)} upload failed with status code {response.status_code}")
+                        logger.info(f"{self.tracker}: [red]Chunk {chunk_idx + 1}/{len(chunks)} screenshot upload failed validation")
                         upload_success = False
                         break
             else:
-                response = await self._post_image_batch(url, data, upload_files)
-                if response.status_code == 200:
-                    logger.info(f"{self.tracker}: [green]Upload successful!")
-                    bbcode = response.text
+                uploaded = await self._validated_image_batch(url, data, upload_files)
+                if uploaded:
+                    logger.info(f"{self.tracker}: [green]Screenshot uploads verified!")
+                    bbcode = uploaded
                 else:
                     upload_success = False
 
