@@ -226,7 +226,8 @@ async def process_trackers(
                                 new_dupes = cast(list[Any], await t_class.search_existing(meta))
                             else:
                                 ptp = PassThePopcorn(config=config)
-                                group_id = meta.ptp_groupid
+                                group_id = await ptp.get_group_by_imdb(meta.imdb, strict=True, allow_prompt=False)
+                                meta.ptp_groupid = group_id
                                 new_dupes = cast(list[Any], await ptp.search_existing(group_id or "", meta))
                         except Exception as e:
                             logger.info(f"[bold red]{tracker_name}: Error redoing duplicate check after bandwidth wait: {e}[/bold red]")
@@ -239,6 +240,11 @@ async def process_trackers(
                         def is_in_initial(dupe: Any) -> bool:
                             for initial_dupe in initial_dupes:
                                 if isinstance(dupe, dict) and isinstance(initial_dupe, dict):
+                                    if tracker_name == "PASSTHEPOPCORN":
+                                        keys = ("Id", "name", "size", "res", "type", "Source", "Codec", "Container", "RemasterTitle", "NotMainMovie", "MediaInfo", "HDR")
+                                        if all(dupe.get(key) == initial_dupe.get(key) for key in keys):
+                                            return True
+                                        continue
                                     if dupe.get("name") == initial_dupe.get("name") and dupe.get("size") == initial_dupe.get("size"):
                                         return True
                                 elif isinstance(dupe, str) and isinstance(initial_dupe, str) and dupe == initial_dupe:
@@ -254,6 +260,9 @@ async def process_trackers(
                                 return True
                             if slot_decision is not None and slot_decision.verdict is Verdict.BLOCK:
                                 logger.info(f"[red]{tracker_name}: a release that fills this slot appeared during the wait. Automatically skipping upload.[/red]")
+                                return False
+                            if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_decision.verdict is Verdict.REVIEW:
+                                logger.warning("PASSTHEPOPCORN: group changed during bandwidth wait and now requires policy review; skipping upload.")
                                 return False
                             dupe_checker = DupeChecker(config)
                             real_new_dupes = cast(list[Any], await dupe_checker.filter_dupes(real_new_dupes, meta, tracker_name))
@@ -387,6 +396,11 @@ async def process_trackers(
             if upload_status:
                 try:
                     ptp = PassThePopcorn(config=config)
+                    if not await check_bandwidth_and_dupes(tracker, ptp):
+                        status = meta.tracker_status.setdefault(tracker, {})
+                        status.update(upload=False, skipped=True, status_message="Skipped: PTP group changed or could not be verified after bandwidth wait")
+                        print_tracker_result(tracker, ptp, status, False)
+                        return
                     group_id = meta.ptp_groupid
                     await check_tracker_image_hosts(meta, ptp)
                     ptp_url, ptp_data = await ptp.fill_upload_form(group_id, meta)

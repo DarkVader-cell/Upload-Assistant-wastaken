@@ -417,6 +417,18 @@ class UploadHelper:
         meta.were_trumping = False
         slot_verdict = slot_decision.verdict if slot_decision is not None else None
         interactive = (not meta.unattended or (meta.unattended and meta.unattended_confirm)) and not meta.ask_dupe
+        if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_verdict in {Verdict.BLOCK, Verdict.REVIEW}:
+            meta[f"{tracker_name}_cross_seed"] = False
+            self._show_slot_decision(slot_decision, meta)
+            if slot_verdict is Verdict.BLOCK:
+                logger.info("PASSTHEPOPCORN: skipping release rejected by the supplied PTP rules.")
+                return True, meta
+            if not interactive:
+                logger.info("PASSTHEPOPCORN: skipping unattended upload requiring slot, comparison or staff-approval review.")
+                return True, meta
+            approved = await self.prompt_yes_no("Have you checked the required evidence/staff approval and confirmed this PTP upload is permitted?", default=False)
+            meta.we_asked = True
+            return not approved, meta
         if not dupes_list:
             needs_answer = slot_verdict is Verdict.BLOCK or (slot_verdict is Verdict.REVIEW and bool(slot_decision and slot_decision.conflicts))
             if slot_decision is not None and needs_answer:

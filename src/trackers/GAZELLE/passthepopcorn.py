@@ -26,6 +26,7 @@ from src.mediainfo import MediaInfo
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.screenshot_manifest import files as manifest_files
+from src.slot_rules.trackers.passthepopcorn import ptp_entry
 from src.takescreens import TakeScreensManager
 from src.temp_paths import artwork_dir, screenshots_dir
 from src.torrent_policy import PASSTHEPOPCORN_POLICY
@@ -320,7 +321,7 @@ class PassThePopcorn:
                 meta.saved_description = True
         return imagelist if meta.keep_images else []
 
-    async def get_group_by_imdb(self, imdb: int | str) -> str | None:
+    async def get_group_by_imdb(self, imdb: int | str, *, strict: bool = False, allow_prompt: bool = True) -> str | None:
         params = {
             "imdb": imdb,
             "json": "noredirect",
@@ -333,8 +334,8 @@ class PassThePopcorn:
         try:
             if response.status_code != 200:
                 logger.info(f"{self.tracker}: [red]group lookup failed with HTTP {response.status_code}[/red]")
-                if response.text:
-                    logger.info(f"{self.tracker}: [red]Response body (truncated): {response.text[:200]}[/red]")
+                if strict:
+                    raise ValueError("PTP group lookup HTTP failure")
                 return None
 
             try:
@@ -342,11 +343,15 @@ class PassThePopcorn:
             except json.JSONDecodeError:
                 content_type = response.headers.get("content-type", "unknown")
                 logger.info(f"{self.tracker}: [red]group lookup returned non-JSON content (content-type: {content_type})[/red]")
-                if response.text:
-                    logger.info(f"{self.tracker}: [red]Response body (truncated): {response.text[:200]}[/red]")
+                if strict:
+                    raise ValueError("PTP group lookup returned invalid JSON") from None
                 return None
 
-            if response_data.get("TotalResults"):  # Search results page
+            if not isinstance(response_data, dict):
+                raise ValueError("PTP group lookup response is not an object")
+            if strict and (response_data.get("Error") or response_data.get("error")):
+                raise ValueError("PTP group lookup returned an API error")
+            if "TotalResults" in response_data:  # Search results page, including explicit zero.
                 total_results = int(response_data.get("TotalResults", 0))
                 if total_results == 0:
                     logger.info(f"{self.tracker}: [yellow]No results found for IMDb: tt{imdb}[/yellow]")
@@ -355,11 +360,16 @@ class PassThePopcorn:
                     # Single result - use it
                     movie = response_data.get("Movies", [{}])[0]
                     group_id: str | None = str(movie.get("GroupId")) if movie.get("GroupId") is not None else None
+                    if strict and (not group_id or not group_id.isdigit() or int(group_id) <= 0):
+                        raise ValueError("PTP match has no valid group ID")
                     title = movie.get("Title", "Unknown")
                     year = movie.get("Year", "Unknown")
                     logger.info(f"{self.tracker}: [green]Found single match for IMDb: [yellow]tt{imdb}[/yellow] -> Group ID: [yellow]{group_id}[/yellow][/green]")
                     logger.info(f"{self.tracker}: [green]Title: [yellow]{title}[/yellow] ([yellow]{year}[/yellow])")
                     return group_id
+                # Unattended/recheck paths must not block on an ambiguous group.
+                if not allow_prompt:
+                    raise ValueError("Multiple PTP groups match; manual selection is required")
                 # Multiple results - let user choose
                 logger.info(f"{self.tracker}: [yellow]Found {total_results} matches for IMDb: tt{imdb}[/yellow]")
                 movies = cast(list[dict[str, Any]], response_data.get("Movies", []))
@@ -377,6 +387,8 @@ class PassThePopcorn:
                     selected = await prompt_in_thread(cli_ui.ask_choice, "Select the correct movie:", choices=choices)
                     if selected == "Skip - Don't use any of these matches":
                         logger.info(f"{self.tracker}: [yellow]User chose to skip all matches[/yellow]")
+                        if strict:
+                            raise ValueError("PTP group selection was declined")
                         return None
 
                     # Match selection directly to movie data to avoid index issues from cli_ui sorting
@@ -389,24 +401,36 @@ class PassThePopcorn:
                             group_id = str(group_id)
                             break
 
+                    if strict and (not str(group_id).isdigit() or int(str(group_id)) <= 0):
+                        raise ValueError("PTP selection has no valid group ID")
                     logger.info(f"{self.tracker}: [green]User selected: Group ID [yellow]{group_id}[/yellow][/green]")
                     return group_id
 
                 except KeyboardInterrupt:
                     logger.info(f"{self.tracker}: [yellow]Selection cancelled by user[/yellow]")
+                    if strict:
+                        raise ValueError("PTP group selection was cancelled") from None
                     return None
             elif response_data.get("Page") == "Browse":  # No Releases on Site with ID
+                if strict and response_data.get("Movies") != []:
+                    raise ValueError("PTP browse response did not establish an empty result")
                 return None
             elif response_data.get("Page") == "Details":  # Group Found
                 group_id = response_data.get("GroupId")
+                if strict and (not str(group_id).isdigit() or int(str(group_id)) <= 0):
+                    raise ValueError("PTP details response has no valid group ID")
                 logger.info(f"{self.tracker}: [green]Matched IMDb: [yellow]tt{imdb}[/yellow] to Group ID: [yellow]{group_id}[/yellow][/green]")
                 logger.info(f"{self.tracker}: [green]Title: [yellow]{response_data.get('Name')}[/yellow] ([yellow]{response_data.get('Year')}[/yellow])")
                 return str(group_id) if group_id is not None else None
         except Exception:
+            if strict:
+                raise ValueError("PTP group lookup failed; slot occupancy is unknown") from None
             logger.info(f"{self.tracker}: [red]An error has occurred trying to find a group ID")
             logger.info(f"{self.tracker}: [red]Please check that the site is online and your ApiUser/api_key values are correct")
             return None
 
+        if strict:
+            raise ValueError("PTP group lookup response did not establish a group or an explicit absence")
         return None
 
     async def get_torrent_info(self, imdb: int | str, meta: Meta) -> dict[str, Any]:
@@ -490,15 +514,11 @@ class PassThePopcorn:
 
         return tags
 
-    async def search_existing(self, group_id: int | str, meta: Meta) -> list[str]:
-        # Map resolutions to SD / HD / UHD
-        quality = None
-        if meta.sd == 1:  # 1 is SD
-            quality = "Standard Definition"
-        elif meta.resolution in ["1440p", "1080p", "1080i", "720p"]:
-            quality = "High Definition"
-        elif meta.resolution in ["2160p", "4320p", "8640p"]:
-            quality = "Ultra High Definition"
+    async def search_existing(self, group_id: int | str, meta: Meta) -> list[dict[str, Any]]:
+        # Slot rules need the entire group, including other quality bands.
+        if not group_id:
+            meta["PASSTHEPOPCORN_title_releases"] = []
+            return []
 
         # Prepare request parameters and headers
         params = {
@@ -513,21 +533,14 @@ class PassThePopcorn:
             response = await client.get(url, headers=headers, params=params)
             await asyncio.sleep(1)  # Mimic server-friendly delay
             response.raise_for_status()
-            existing: list[str] = []
-            try:
-                data = response.json()
-            except Exception as e:
-                logger.info(f"{self.tracker}: [red]Error searching for duplicates, response was not valid JSON: {e}[/red]")
-                if response.text:
-                    logger.info(f"{self.tracker}: [red]Response body (truncated): {response.text[:200]}[/red]")
-                return existing
-
-            torrents = cast(list[dict[str, Any]], data.get("Torrents", []))
-            existing.extend(
-                f"[{torrent.get('Resolution')}] {torrent.get('ReleaseName', 'RELEASE NAME NOT FOUND')}"
-                for torrent in torrents
-                if torrent.get("Quality") == quality and quality is not None
-            )
+            data = response.json()
+            if not isinstance(data, dict) or data.get("Error") or data.get("error") or not isinstance(data.get("Torrents"), list):
+                raise ValueError("PTP group response has no valid torrent inventory")
+            torrents = data["Torrents"]
+            if any(not isinstance(torrent, dict) for torrent in torrents):
+                raise ValueError("PTP group inventory contains malformed releases")
+            existing = [ptp_entry(torrent) for torrent in torrents]
+            meta["PASSTHEPOPCORN_title_releases"] = existing
             return existing
 
     def _selected_poster_host(self, meta: Meta) -> str:

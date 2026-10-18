@@ -20,6 +20,7 @@ from src.slot_rules.trackers.greatposterwall import GreatPosterWallSlotRules
 from src.slot_rules.trackers.hdtorrents import HDTorrentsSlotRules
 from src.slot_rules.trackers.lst import LstSlotRules
 from src.slot_rules.trackers.luminarr import LuminarrSlotRules
+from src.slot_rules.trackers.passthepopcorn import PassThePopcornSlotRules
 from src.slot_rules.trackers.simple import DreadVaultSlotRules, MTeamSlotRules, SeedpoolSlotRules, TorrentLeechSlotRules
 from src.slot_rules.trackers.ulcx import UlcxSlotRules
 from src.slot_rules.trackers.webproviders import HomieHelpDeskSlotRules, SkipTheCommercialsSlotRules
@@ -40,6 +41,7 @@ SLOT_RULES: dict[str, type[SlotRules]] = {
         LstSlotRules,
         LuminarrSlotRules,
         MTeamSlotRules,
+        PassThePopcornSlotRules,
         PrivateHDSlotRules,
         SamaritanoSlotRules,
         SeedpoolSlotRules,
@@ -90,7 +92,8 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
     """
     tracker = tracker.upper()
     rules_cls = SLOT_RULES.get(tracker)
-    if rules_cls is None or not slot_rules_apply(meta, config):
+    applies = slot_rules_apply(meta, config) or (tracker == "PASSTHEPOPCORN" and slot_rules_enabled(config))
+    if rules_cls is None or not applies:
         return None
     # Trackers that search the whole title keep the full list for slot rules.
     title_releases = meta.get(f"{tracker}_title_releases")
@@ -98,7 +101,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         dupes = cast(list[DupeInput], title_releases)
     try:
         upload = profile_from_meta(meta)
-        if upload.kind == DISC:
+        if upload.kind == DISC and tracker != "PASSTHEPOPCORN":
             return None
 
         existing: list[ReleaseProfile] = []
@@ -108,7 +111,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
             name = str(entry.get("name") or "")
             if not name:
                 continue
-            if meta.category == "TV":
+            if meta.category == "TV" and tracker != "PASSTHEPOPCORN":
                 normalized = await DupeChecker.normalize_filename(name)
                 matches, is_season_pack = await DupeChecker.is_season_episode_match(normalized, meta.season, meta.episode)
                 if not matches:
@@ -117,7 +120,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
                     season_packs.append(profile_from_entry(entry))
                     continue
             exact = await DupeChecker.is_exact_match(entry, meta) or name.strip().lower() == (meta.name or "").strip().lower()
-            existing.append(profile_from_entry(entry, provider=await _provider(name), exact=exact))
+            existing.append(profile_from_entry(entry, provider=None if tracker == "PASSTHEPOPCORN" else await _provider(name), exact=exact))
 
         rules = rules_cls(meta)
         decision = rules.evaluate(upload, existing)
@@ -130,6 +133,9 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
             logger.debug(f"[slot rules] {tracker}: decision={decision}")
         return decision
     except Exception as e:
-        # A rules bug must never block an upload decision; fall back to the basic check.
+        if tracker == "PASSTHEPOPCORN":
+            logger.warning("PASSTHEPOPCORN: slot evaluation failed; manual review is required.", extra={"markup": False})
+            return rules_cls(meta).decision(Verdict.REVIEW, "PTP slot evaluation failed; do not assume the slot is free")
+        # Other trackers retain their existing basic-check fallback.
         logger.warning(f"{tracker}: slot rules could not be evaluated ({e}); using the basic dupe check.", extra={"markup": False})
         return None

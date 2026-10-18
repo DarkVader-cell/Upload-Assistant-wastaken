@@ -16,6 +16,7 @@ from src.imdb import imdb_manager
 from src.languages import languages_manager
 from src.meta import Meta
 from src.metadata_searching import get_douban_id
+from src.slot_rules.models import Verdict
 from src.slot_rules.registry import evaluate_slots
 from src.stats import record_event_async
 from src.trackers.AVISTAZ.routing import AvistaZNetworkRouter
@@ -290,39 +291,22 @@ class TrackerStatusManager:
                         if not local_tracker_status["skipped"]:
                             search_started = time.monotonic()
                             try:
-                                group_id = await ptp.get_group_by_imdb(local_meta["imdb"])
+                                group_id = await ptp.get_group_by_imdb(local_meta["imdb"], strict=True, allow_prompt=not local_meta.unattended or bool(local_meta.unattended_confirm))
                                 async with meta_lock:
                                     meta.ptp_groupid = group_id
-                                dupes = cast(list[Any], await ptp.search_existing(group_id or "", cast(dict[str, Any], local_meta)))
+                                dupes = cast(list[Any], await ptp.search_existing(group_id or "", local_meta))
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="success", duration_ms=(time.monotonic() - search_started) * 1000
                                 )
-                            except Exception as e:
+                            except Exception:
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="error", duration_ms=(time.monotonic() - search_started) * 1000
                                 )
-                                logger.info(f"[bold red]Error searching for duplicates on {tracker_name}: {e}[/bold red]")
-                                if local_meta.get("unattended", False):
-                                    local_tracker_status["skipped"] = True
-                                    local_meta.skipping = tracker_name
-                                    local_tracker_status["skip_reason"] = f"duplicate search failed: {e}"
-                                    dupes = []
-                                else:
-                                    try:
-                                        if await helper.prompt_yes_no(
-                                            f"Duplicate check failed on {tracker_name}. Do you want to proceed with the upload anyway?", default=False
-                                        ):
-                                            dupes = []
-                                        else:
-                                            local_tracker_status["skipped"] = True
-                                            local_meta.skipping = tracker_name
-                                            local_tracker_status["skip_reason"] = "duplicate search was declined"
-                                            dupes = []
-                                    except EOFError:
-                                        logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
-                                        await cleanup_manager.cleanup()
-                                        cleanup_manager.reset_terminal()
-                                        sys.exit(1)
+                                logger.warning("PASSTHEPOPCORN: group search failed; slot occupancy is unknown. Skipping PTP, not the other trackers.")
+                                local_tracker_status["skipped"] = True
+                                local_meta.skipping = tracker_name
+                                local_tracker_status["skip_reason"] = "PTP group search failed; slot occupancy is unknown"
+                                dupes = []
                         else:
                             dupes = []
                     else:
@@ -352,7 +336,12 @@ class TrackerStatusManager:
                         # Run dupe check first so it can modify local_meta (e.g., set cross-seed values)
                         is_dupe, local_meta = await helper.dupe_check(dupes, local_meta, tracker_name, slot_decision)
                         if is_dupe:
-                            local_tracker_status["dupe"] = True
+                            if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_decision.verdict in {Verdict.BLOCK, Verdict.REVIEW}:
+                                local_tracker_status["skipped"] = True
+                                local_tracker_status["skip_reason"] = slot_decision.reason
+                                local_tracker_status["status_message"] = "PTP policy check: " + slot_decision.reason
+                            else:
+                                local_tracker_status["dupe"] = True
 
                         matched_episode_ids = local_meta.get(f"{tracker_name}_matched_episode_ids", [])
                         trumpable_id = local_meta.get("trumpable_id")
