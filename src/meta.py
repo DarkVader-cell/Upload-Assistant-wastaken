@@ -240,6 +240,7 @@ class Meta:
     description: str = ""
     dry_run_plan: bool = False
     hdb_offer: bool = False
+    hdb_manual: bool = False
     developer: str | None = None
     directors: list[str] | None = None
     discs_missing_certificate: list[Any] = field(default_factory=list)

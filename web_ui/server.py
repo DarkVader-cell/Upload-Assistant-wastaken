@@ -54,6 +54,7 @@ from src.manual_metadata import (
 )
 from src.runtime.history import ReleaseHistoryStore
 from web_ui.browse_index import BrowseIndex
+from web_ui.services.comparisons import create_comparison_blueprint
 from web_ui.services.config_options import group_webui_default_settings, prompt_timeout_example, validate_prompt_timeout
 from web_ui.services.config_remove_api import ConfigSourceOperations, create_config_remove_blueprint
 from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
@@ -8672,6 +8673,7 @@ def internal_error(e: Exception):
 app.register_blueprint(create_qui_sync_blueprint(auth_check=_submit_auth_ok, broker=QUI_EVENT_BROKER, snapshots=_detached_job_snapshot, retry_job=_retry_detached_job))
 app.register_blueprint(create_runtime_api_blueprint(auth_check=_submit_auth_ok, limiter=limiter, basic_rate_key=get_remote_address, rate_limit_key=_rate_limit_key_func, resolve_user_path=_resolve_user_path, validate_args=_validated_detached_args, load_config=_load_config_from_file, project_root=CODE_DIR, config_root=STATE_DIR, runtime_root=STATE_DIR, include_health=False))
 app.register_blueprint(create_history_api_blueprint(auth_check=_submit_auth_ok, history=RELEASE_HISTORY, json_safe=_json_safe))
+app.register_blueprint(create_comparison_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token, resolve_path=_resolve_user_path, state_root=STATE_DIR, code_root=CODE_DIR))
 _config_source_operations = ConfigSourceOperations(_load_config_from_file, _remove_config_key_in_source, _replace_config_value_in_source, _python_literal, _get_nested_value, _write_audit_log)
 app.register_blueprint(create_config_remove_blueprint(authenticated=_is_authenticated, csrf_valid=_verify_csrf_header, limiter=limiter, same_origin=_verify_same_origin, request_json=_request_json_dict, project_root=STATE_DIR, operations=_config_source_operations))
 

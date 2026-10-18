@@ -1058,6 +1058,7 @@ let argumentCategories = [
     title: "Upload Selection / Dupe",
     args: [
       { label: "--hdb-offer" },
+      { label: "--hdb-manual" },
       {
         label: "--trackers",
         placeholder: "aither,blutopia,lst,etc",
@@ -1496,6 +1497,9 @@ const ApplicationRail = ({
           </span>
           <span>Operations</span>
         </button>
+        <a href="/comparisons" className="ua-app-rail-button rounded-lg" title="Generate video comparison screenshots">
+          <span aria-hidden="true">▥</span><span>Comparisons</span>
+        </a>
         <button
           type="button"
           className={`ua-app-rail-button rounded-lg ${updateStatus?.update_available ? "ua-update-rail-button" : ""}`}

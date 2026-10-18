@@ -202,7 +202,7 @@ class TrackerSetup:
                 tracker_config = self.config["TRACKERS"].get("BTN", {})
             example_tracker_config = example_config["TRACKERS"].get(tracker_name, {})
 
-            if isinstance(example_tracker_config, dict) and isinstance(tracker_config, dict):
+            if isinstance(example_tracker_config, dict) and isinstance(tracker_config, dict) and not (meta.hdb_manual and tracker_name == "HDBITS"):
                 has_legacy_btn_api = tracker_name == "BROADCASTHENET" and bool(self.config.get("DEFAULT", {}).get("btn_api"))
                 if "api_key" in example_tracker_config and not tracker_config.get("api_key") and not has_legacy_btn_api:
                     logger.info(f"{tracker_name}: [bold red]Tracker is missing an API key and will be ignored.[/bold red]")

@@ -54,6 +54,8 @@ class TrackerDataManager:
         use_cache: bool = True,
     ) -> tuple[Meta, bool]:
         """Reuse a cached tracker response only when the user supplied a torrent ID."""
+        if meta.hdb_manual and tracker_name == "HDBITS":
+            return meta, False
         tracker_id = (meta.get_tracker_id(tracker_name) or "").strip()
         if not tracker_id:
             return await self.tracker_meta_manager.update_metadata_from_tracker(
@@ -319,6 +321,8 @@ class TrackerDataManager:
             if specific_tracker:
                 valid_trackers: list[str] = []
                 for tracker in specific_tracker:
+                    if meta.hdb_manual and tracker == "HDBITS":
+                        continue
                     if not self._search_enabled(tracker):
                         logger.debug(f"[yellow]Tracker {tracker} is not enabled for metadata search, skipping[/yellow]")
                         continue
@@ -412,6 +416,8 @@ class TrackerDataManager:
 
                 other_api = sorted(api_trackers - {"BEYONDHD"})
                 tracker_order = ["PASSTHEPOPCORN", "HDBITS", "BEYONDHD", *other_api]
+                if meta.hdb_manual:
+                    tracker_order.remove("HDBITS")
 
                 if cat == "TV" or meta.category == "TV":
                     logger.debug("[yellow]Detected TV content, skipping PASSTHEPOPCORN tracker check")

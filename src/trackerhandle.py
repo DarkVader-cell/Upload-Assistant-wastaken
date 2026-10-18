@@ -16,6 +16,7 @@ from src.config_helpers import format_terminal_link, parse_bool
 from src.console import logger
 from src.dupe_checking import DupeChecker
 from src.get_desc import DescriptionBuilder
+from src.hdb_manual import prepare_hdb_manual
 from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
@@ -92,7 +93,7 @@ async def process_trackers(
     torrent_targets = [
         tracker
         for tracker in enabled_trackers
-        if tracker not in {"MANUAL", "USENET"} and (manual_targets or bool(cast(Mapping[str, Any], meta.tracker_status.get(tracker, {})).get("upload", False)))
+        if tracker not in {"MANUAL", "USENET"} and ((meta.hdb_manual and tracker == "HDBITS") or manual_targets or bool(cast(Mapping[str, Any], meta.tracker_status.get(tracker, {})).get("upload", False)))
     ]
     await provision_tracker_torrents(meta, config, torrent_targets, tracker_class_map)
     if config.get("DEFAULT", {}).get("smart_image_host_selection", True) and not meta.imghost_from_cli:
@@ -173,6 +174,17 @@ async def process_trackers(
         except KeyError:
             sys.exit()
         """
+
+        if meta.hdb_manual and tracker == "HDBITS":
+            status = meta.tracker_status.setdefault(tracker, {})
+            if str(status.get("status_message", "")).startswith("Skipped:"):
+                return
+            try:
+                await prepare_hdb_manual(meta, config)
+            except Exception as error:
+                status.update(upload=False, upload_success=False, manual_prepared=False, status_message=f"Manual preparation failed: {error}")
+                logger.error(f"HDBITS: manual preparation failed: {escape(str(error))}")
+            return
 
         tracker_class: Any = None
         if tracker not in {"MANUAL", "PASSTHEPOPCORN"}:
@@ -432,7 +444,7 @@ async def process_trackers(
 
     for tracker_name in enabled_trackers:
         normalized = tracker_name.replace(" ", "").upper().strip()
-        if normalized in {"MANUAL", "USENET"}:
+        if normalized in {"MANUAL", "USENET"} or (meta.hdb_manual and normalized == "HDBITS"):
             continue
         status = cast(Mapping[str, Any], meta.tracker_status.get(normalized, {}))
         duration_ms = float(meta.get(f"{normalized}_upload_duration") or 0) * 1000

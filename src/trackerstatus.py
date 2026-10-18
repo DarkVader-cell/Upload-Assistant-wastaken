@@ -159,6 +159,10 @@ class TrackerStatusManager:
             if local_meta["name"].endswith("DUPE?"):
                 local_meta["name"] = local_meta["name"].replace(" DUPE?", "")
 
+            if local_meta.hdb_manual and tracker_name == "HDBITS":
+                local_tracker_status.update(manual_pending=True, manual_prepared=False, upload_success=None)
+                return tracker_name, local_tracker_status, None, None
+
             if tracker_name in ("MANUAL", "USENET"):
                 local_tracker_status["upload"] = True
                 return tracker_name, local_tracker_status, None, None
@@ -404,6 +408,9 @@ class TrackerStatusManager:
 
         for tracker_name, status, display_name, tracker_class in results:
             tracker_status[tracker_name] = status
+            if status.get("manual_pending"):
+                logger.info("HDBITS: local manual preparation only; no authentication or duplicate check performed.")
+                continue
             if status["banned"]:
                 pass
             elif status["skipped"]:

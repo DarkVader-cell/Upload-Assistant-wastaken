@@ -19,6 +19,41 @@ upload.py [path...] [options]
   - Quoting is recommended (single or double quotes) especially when paths contain spaces.
   - The parser has a small recovery mechanism: if extra “unknown” tokens were provided and the joined `path` doesn’t exist, it will append those tokens into the path until it finds an existing path.
 
+### HDBits approved-offer torrent (manual submission)
+
+Use `--hdb-manual` after your HDBits offer is approved:
+
+```console
+python upload.py "/media/Example.mkv" --hdb-manual
+# Upload other trackers normally, but prepare HDBits locally only:
+python upload.py "/media/Example.mkv" --hdb-manual -tk AITHER,BLUTOPIA
+```
+
+The flag is selectable under **Upload Selection / Dupe** in the WebUI.
+Alone, it selects only HDBITS rather than inheriting default upload targets.
+With explicit trackers, it adds HDBITS as a local-only target and leaves normal
+upload safeguards in place for the others. It creates `tmp/<release>/[HDBITS].torrent`
+with the HDBits source flag and the existing tracker-specific torrent policy.
+It reuses the base torrent where compatible and prepares the normal local
+qBittorrent/rTorrent hardlink or symlink layout when configured. It never
+registers this HDB torrent with a client and never submits it to HDBits.
+Deluge/Transmission/watch clients do not acquire new linking behavior.
+
+An explicitly configured `TRACKERS.HDBITS.announce_url` is used if it belongs
+to `tracker.hdbits.org`; otherwise the torrent uses the non-routable placeholder
+`https://hdbits.invalid/announce`. Never seed the placeholder torrent. Upload
+`[HDBITS].torrent` through your approved offer, then download the final torrent
+from HDBits and add that to your client at the printed prepared payload path.
+The server may alter more than the announce, so use the final site torrent.
+Cookies are not needed for this local preparation mode. No HDB login or dupe
+check is performed; you remain responsible for approval and release rules.
+
+Existing output torrents and different files at link destinations are not
+overwritten. Move an old output torrent aside before intentionally rerunning.
+`--hdb-manual` cannot be combined with offer generation, Usenet, site/bulk actions,
+the MANUAL package tracker, `--debug`, `--delete-tmp`, prepare-only, plan, cleanup or comparison
+mode. Do not use debug mode as a substitute for this workflow.
+
 ### HDBits offers only
 
 ```console

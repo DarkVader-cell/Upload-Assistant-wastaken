@@ -107,6 +107,7 @@ from src.early_tasks import is_usenet_only as _is_usenet_only
 from src.get_desc import gen_desc
 from src.get_name import NameManager
 from src.get_tracker_data import TrackerDataManager
+from src.hdb_manual import allow_manual_after_failed_threshold, select_manual_trackers, validate_manual_options
 from src.meta_file import write_meta_file
 from src.qbitwait import Wait
 from src.queuemanage import QueueManager
@@ -426,7 +427,7 @@ async def validate_tracker_logins(meta: Meta, trackers: list[str] | str | None =
         return
 
     # Filter trackers that are in both the list and tracker_class_map
-    valid_trackers = [tracker for tracker in trackers if tracker in tracker_class_map and tracker in http_trackers]
+    valid_trackers = [tracker for tracker in trackers if tracker in tracker_class_map and tracker in http_trackers and not (meta.hdb_manual and tracker == "HDBITS")]
     # RETROFLIX/PASSTHEPOPCORN are not HTTP trackers but need validation
     if "RETROFLIX" in trackers:
         valid_trackers.append("RETROFLIX")
@@ -1058,6 +1059,9 @@ def xxx_min_successful_uploads(meta: Meta, min_successful_uploads: int) -> int:
 
 async def process_meta(meta: Meta, base_dir: str) -> bool:
     """Process the metadata for each queued path."""
+    if meta.hdb_manual:
+        select_manual_trackers(meta)
+        validate_manual_options(meta)
     if meta.hdb_offer:
         from src.hdb_offer import generate_hdb_offer, validate_offer_options
 
@@ -1337,7 +1341,8 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
 
     if successful_trackers < skip_uploading_int and not meta.debug:
         logger.info(f"[red]Not enough successful trackers ({successful_trackers}/{skip_uploading_int}). No uploads being processed.[/red]")
-        return True
+        if not allow_manual_after_failed_threshold(meta):
+            return True
 
     meta.we_are_uploading = True
     common = Common(config)
@@ -2410,6 +2415,8 @@ async def do_the_thing(base_dir: str) -> None:
 
             return  # Exit early when running web UI only
 
+        if meta.hdb_manual:
+            validate_manual_options(meta)
         if meta.hdb_offer:
             from src.hdb_offer import validate_offer_options
 
@@ -2434,6 +2441,8 @@ async def do_the_thing(base_dir: str) -> None:
             if imghost_val:
                 active_imghost = imghost_val
 
+        if meta.hdb_manual:
+            active_trackers = [t for t in (active_trackers or []) if t != "HDBITS"]
         if meta.hdb_offer:
             active_trackers = ["HDBITS"]
             active_imghost = "hdb"
@@ -2699,7 +2708,7 @@ async def do_the_thing(base_dir: str) -> None:
                     tracker_status_map = meta.tracker_status
                     for tracker in list(trackers_list):
                         tracker_status = tracker_status_map.get(tracker, {})
-                        if tracker_status.get("upload") is not True:
+                        if tracker_status.get("upload") is not True and not (meta.hdb_manual and tracker == "HDBITS"):
                             logger.debug(f"[yellow]{tracker} was previously marked to skip upload. Skipping double dupe check.[/yellow]")
                             trackers_list.remove(tracker)
                             tracker_status_map.pop(tracker, None)
@@ -2716,7 +2725,9 @@ async def do_the_thing(base_dir: str) -> None:
                 except ValueError, TypeError:
                     skip_uploading_int = 0
 
-                if successful_trackers < skip_uploading_int and not meta.debug:
+                below_threshold = successful_trackers < skip_uploading_int and not meta.debug
+                manual_only = allow_manual_after_failed_threshold(meta) if below_threshold else False
+                if below_threshold and not manual_only:
                     logger.info(f"[red]Not enough successful trackers ({successful_trackers}/{skip_uploading_int}). No uploads being processed.[/red]")
                 else:
                     trackers_upper = [(t).upper() for t in meta.trackers]
@@ -3038,14 +3049,15 @@ async def do_the_thing(base_dir: str) -> None:
                 else:
                     trackers = [t for t in cast(list[Any], meta.trackers) if isinstance(t, str)]
                     logger.debug(f"[cyan]Using trackers for request search: {trackers}[/cyan]")
-                await tracker_setup.tracker_request(meta, trackers)
+                await tracker_setup.tracker_request(meta, [t for t in trackers if not (meta.hdb_manual and t == "HDBITS")])
 
             # Persist and expose the completed item before user-managed hooks run.
             # Hooks may inspect the final tracker status and files have not yet been cleaned.
             await record_completed_item_stats_async(meta, tracker_class_map)
             await write_meta_file(meta)
             _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
-            await run_post_upload_hooks(meta, config)
+            if not (meta.hdb_manual and all(t == "HDBITS" for t in meta.trackers)):
+                await run_post_upload_hooks(meta, config)
 
             if meta.site_check and "queue" in meta and meta.queue is not None:
                 processed_files_count += 1
@@ -3094,7 +3106,11 @@ async def do_the_thing(base_dir: str) -> None:
 
 
 async def process_cross_seeds(meta: Meta) -> None:
+    if meta.hdb_manual and all(t == "HDBITS" for t in meta.trackers):
+        return
     all_trackers: set[str] = set(api_trackers) | set(http_trackers) | set(other_api_trackers)
+    if meta.hdb_manual:
+        all_trackers.discard("HDBITS")
 
     # Get list of trackers to exclude (already in client)
     remove_list: list[str] = []

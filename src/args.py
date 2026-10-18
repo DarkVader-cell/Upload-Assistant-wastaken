@@ -438,6 +438,7 @@ class Args:
         parser.add_argument("--plan", "--dry-run-plan", dest="dry_run_plan", action="store_true", help="Show stages, cache hits, expected calls, and selected trackers without executing")
         parser.add_argument("--no-resume", action="store_true", help="Ignore saved preparation checkpoints for this run")
         parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)
+        parser.add_argument("--hdb-manual", action="store_true", help="Prepare an HDBits torrent locally without upload or client registration; may accompany -tk uploads")
         parser.add_argument("--hdb-offer", action="store_true", help="Generate HDBits offer text with HDB screenshots and an encrypted PrivateBin link; never submit or create torrents")
         parser.add_argument(
             "--queue-prepare-concurrency",
@@ -1444,6 +1445,12 @@ class Args:
 
         # Apply game metadata overrides to the fields used by trackers.
         self._apply_game_meta_overrides(meta)
+
+        if meta.hdb_manual:
+            from src.hdb_manual import select_manual_trackers, validate_manual_options
+
+            select_manual_trackers(meta)
+            validate_manual_options(meta)
 
         return meta, parser, before_args
 
