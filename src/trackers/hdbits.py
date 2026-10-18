@@ -18,6 +18,7 @@ from src.console import console, logger
 from src.description_review import get_base_description
 from src.exceptions import *  # noqa F403
 from src.meta import Meta
+from src.screenshot_manifest import files as manifest_files
 from src.stats import record_event_async
 from src.temp_paths import screenshots_dir
 from src.torrent_policy import HDBITS_POLICY
@@ -508,30 +509,10 @@ class HDBits:
             await tor.write(r.content)
         return
 
-    async def edit_desc(self, meta: Meta) -> None:
-        base = get_base_description(meta)
-
-        desc_parts: list[str] = []
-        # Add This line for all web-dls
-        if meta.type == "WEBDL" and meta.service_longname and meta.description:
-            desc_parts.append(f"[center][quote]This release is sourced from {meta.service_longname}[/quote][/center]")
-
+    @staticmethod
+    def format_description(desc: str) -> str:
+        """Convert base BBCode to HDB syntax without reading drafts or hosting images."""
         bbcode = BBCODE()
-        if meta.discs != []:
-            discs = meta.discs
-            if discs[0]["type"] == "DVD":
-                desc_parts.append(f"[quote=VOB MediaInfo]{discs[0]['vob_mi']}[/quote]\n\n")
-            if discs[0]["type"] == "BDMV":
-                desc_parts.append(f"[quote]{discs[0]['summary'].strip()}[/quote]\n\n")
-            if len(discs) >= 2:
-                for each in discs[1:]:
-                    if each["type"] == "BDMV":
-                        desc_parts.append(f"[quote={each.get('name', 'BDINFO')}]{each['summary']}[/quote]\n\n")
-                    if each["type"] == "DVD":
-                        desc_parts.append(f"{each['name']}:\n")
-                        desc_parts.append(f"[quote={Path(each['vob']).name}][{each['vob_mi']}[/quote] [quote={Path(each['ifo']).name}][{each['ifo_mi']}[/quote]\n\n")
-
-        desc = base
         # desc = bbcode.convert_code_to_quote(desc)
         desc = desc.replace("[code]", "[font=monospace]").replace("[/code]", "[/font]")
         desc = desc.replace("[user]", "").replace("[/user]", "")
@@ -553,7 +534,31 @@ class HDBits:
         desc = bbcode.convert_spoiler_to_hide(desc)
         desc = bbcode.convert_comparison_to_centered(desc, 1000)
         desc = re.sub(r"(\[img=\d+)]", "[img]", desc, flags=re.IGNORECASE)
-        desc = re.sub(r"\[/size\]|\[size=\d+\]", "", desc, flags=re.IGNORECASE)
+        return re.sub(r"\[/size\]|\[size=\d+\]", "", desc, flags=re.IGNORECASE)
+
+    async def edit_desc(self, meta: Meta) -> None:
+        base = get_base_description(meta)
+
+        desc_parts: list[str] = []
+        # Add This line for all web-dls
+        if meta.type == "WEBDL" and meta.service_longname and meta.description:
+            desc_parts.append(f"[center][quote]This release is sourced from {meta.service_longname}[/quote][/center]")
+
+        if meta.discs != []:
+            discs = meta.discs
+            if discs[0]["type"] == "DVD":
+                desc_parts.append(f"[quote=VOB MediaInfo]{discs[0]['vob_mi']}[/quote]\n\n")
+            if discs[0]["type"] == "BDMV":
+                desc_parts.append(f"[quote]{discs[0]['summary'].strip()}[/quote]\n\n")
+            if len(discs) >= 2:
+                for each in discs[1:]:
+                    if each["type"] == "BDMV":
+                        desc_parts.append(f"[quote={each.get('name', 'BDINFO')}]{each['summary']}[/quote]\n\n")
+                    if each["type"] == "DVD":
+                        desc_parts.append(f"{each['name']}:\n")
+                        desc_parts.append(f"[quote={Path(each['vob']).name}][{each['vob_mi']}[/quote] [quote={Path(each['ifo']).name}][{each['ifo_mi']}[/quote]\n\n")
+
+        desc = self.format_description(base)
         if desc:
             desc_parts.append(f"{desc}\n")
 
@@ -707,6 +712,10 @@ class HDBits:
             logger.debug(f"{self.tracker}: [cyan]Images will be uploaded in this order:")
             for i, path in enumerate(all_image_files):
                 logger.debug(f"{self.tracker}: [cyan]{i}: {Path(path).name}")
+        elif meta.hdb_offer:
+            thumb_size = "w300"
+            # Only capture-validated main frames, never raw leftovers or artwork.
+            all_image_files = [str(path) for path in manifest_files(meta.base_dir, meta.uuid, "main")]
         else:
             thumb_size = "w300"
             screenshot_dir = screenshots_dir(meta.base_dir, meta.uuid)

@@ -29,6 +29,7 @@ try:
     from src.audio import AudioManager
     from src.book_prep import gather_book_prep as _gather_book_prep_fn
     from src.book_prep import resolve_book_filelist as _resolve_book_filelist_fn
+    from src.clients import Clients
     from src.console import logger
     from src.early_tasks import restart_early_artifact_tasks
     from src.get_disc import DiscInfoManager
@@ -176,6 +177,11 @@ class Prep:
         # 2. Disc and Category Detection
         videoloc, bdinfo = await prep_helpers.detect_disc_and_category(self, meta)
 
+        # Offers must branch before client lookups, artwork hosting and early
+        # torrent/Usenet tasks, not merely before the final tracker upload.
+        if meta.hdb_offer:
+            return await self._gather_hdb_offer(meta, videoloc, bdinfo, client)
+
         # Music has its own release-oriented metadata pipeline.  It must not flow
         # through video/media-info, TMDB, screenshots or episode handling. It
         # still needs the shared tracker/client stage: qBittorrent path matching
@@ -279,6 +285,30 @@ class Prep:
 
         logger.debug(f"Metadata processed in {time.time() - meta_start_time:.2f} seconds")
 
+        return meta
+
+    async def _gather_hdb_offer(self, meta: Meta, videoloc: str, bdinfo: dict[str, Any], client: Clients) -> Meta:
+        """Metadata and local screenshots only; no shared upload preparation."""
+        from src.hdb_offer import validate_offer_options
+
+        validate_offer_options(meta)
+        if meta.category and meta.category not in ("MOVIE", "TV"):
+            raise ValueError("HDBits offers support only MOVIE and TV")
+        meta.skip_trackers = True
+        meta.imghost = "hdb"
+        meta.keep_images = False
+        meta.frame_overlay = False
+        meta.image_list = []
+        filename, untouched, videopath, search_term, search_folder, mi, video = await prep_helpers.process_media_files(self, meta, videoloc, bdinfo)
+        prep_helpers.calculate_source_size(self, meta, videopath)
+        await prep_helpers.validate_media(self, meta)
+        await prep_helpers.search_metadata(self, meta, filename, untouched, videopath, search_term, search_folder, False, False, True, client, bdinfo, mi)
+        await prep_helpers.finalize_metadata(self, meta, videopath, bdinfo, mi, filename, untouched, video)
+        if meta.category not in ("MOVIE", "TV"):
+            raise ValueError("HDBits offers support only MOVIE and TV")
+        captured = await self._capture_early_screenshots(meta, filename, videopath, bdinfo)
+        if captured is None or not manifest_files(meta.base_dir, meta.uuid, "main"):
+            raise ValueError("HDBits offer screenshot generation failed: no validated registered captures")
         return meta
 
     async def _capture_early_screenshots(self, meta: Meta, filename: str, videopath: str, bdinfo: dict[str, Any]) -> Meta | None:

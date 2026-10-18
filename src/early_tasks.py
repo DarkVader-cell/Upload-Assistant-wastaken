@@ -27,6 +27,8 @@ async def _run_early_artifact_task(task: Awaitable[None], gate: CliProgressGate)
 
 def start_early_artifact_tasks(meta: Meta, client: Clients, config: Mapping[str, Any]) -> tuple[asyncio.Task[None], asyncio.Task[None]]:
     """Start, and retain outside ``Meta``, the local-artifact preparation tasks."""
+    if meta.hdb_offer:
+        raise ValueError("HDBits offers cannot start torrent or Usenet artifact tasks")
     release_id = str(meta.uuid)
     tasks = _early_artifact_tasks.get(release_id)
     if tasks is None:
@@ -82,7 +84,7 @@ def is_usenet_only(meta: Meta) -> bool:
 async def create_base_torrents_early(meta: Meta, client: Clients) -> None:
     """Reuse or hash BASE torrents while metadata and screenshots are processed."""
     task_started = time.perf_counter()
-    if meta.nohash or meta.rehash or meta.force_recheck or is_usenet_only(meta):
+    if meta.hdb_offer or meta.nohash or meta.rehash or meta.force_recheck or is_usenet_only(meta):
         logger.debug("[cyan]Skipping early torrent creation due to hashing or tracker settings.[/cyan]")
         return
 
@@ -133,7 +135,7 @@ def needs_usenet_archive(meta: Meta) -> bool:
 async def prepare_usenet_archive_early(meta: Meta, config: Mapping[str, Any]) -> None:
     """Create archive/PAR2 files before duplicate confirmation, never post them."""
     usenet_cfg = config.get("USENET", {})
-    if not needs_usenet_archive(meta) or not isinstance(usenet_cfg, Mapping) or usenet_cfg.get("skip_archive", False):
+    if meta.hdb_offer or not needs_usenet_archive(meta) or not isinstance(usenet_cfg, Mapping) or usenet_cfg.get("skip_archive", False):
         return
     try:
         from src.usenetcreate import prepare_and_upload_usenet

@@ -1006,7 +1006,7 @@ async def search_metadata(
         meta.category = meta.category.upper()
 
     ids = None
-    if not meta.skip_trackers:
+    if not meta.skip_trackers and not meta.hdb_offer:
         if meta.category == "TV" and use_sonarr and meta.tvdb_id == 0:
             ids = await prep_instance.sonarr_manager.get_sonarr_data(filename=meta.path, title=meta.filename)
             if ids:
@@ -1107,7 +1107,7 @@ async def search_metadata(
 
     # if there's no region/distributor info, lets ping some unit3d trackers and see if we get it
     ping_unit3d_config = prep_instance.config["DEFAULT"].get("ping_unit3d", False)
-    if (not meta.region or not meta.distributor) and meta.is_disc in ("BDMV", "DVD") and ping_unit3d_config and not meta.edit and not meta.site_check:
+    if (not meta.region or not meta.distributor) and meta.is_disc in ("BDMV", "DVD") and ping_unit3d_config and not meta.edit and not meta.site_check and not meta.hdb_offer:
         await prep_instance.tracker_data_manager.ping_unit3d(meta)
 
     # the first user override check that allows to set metadata ids.
@@ -1502,7 +1502,7 @@ async def finalize_metadata(
     meta.bluray_score = int(float(prep_instance.config["DEFAULT"].get("bluray_score", 100)))
     meta.bluray_single_score = int(float(prep_instance.config["DEFAULT"].get("bluray_single_score", 100)))
     meta.use_bluray_images = prep_instance.config["DEFAULT"].get("use_bluray_images", False)
-    if _should_fetch_bluray_info(meta, get_bluray_info, _should_add_bluray_link(meta, prep_instance.config)):
+    if not meta.hdb_offer and _should_fetch_bluray_info(meta, get_bluray_info, _should_add_bluray_link(meta, prep_instance.config)):
         releases = await get_bluray_releases(meta)
 
         if releases and meta.is_disc in ("BDMV", "DVD") and meta.use_bluray_images:

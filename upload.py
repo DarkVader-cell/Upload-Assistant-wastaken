@@ -1058,6 +1058,21 @@ def xxx_min_successful_uploads(meta: Meta, min_successful_uploads: int) -> int:
 
 async def process_meta(meta: Meta, base_dir: str) -> bool:
     """Process the metadata for each queued path."""
+    if meta.hdb_offer:
+        from src.hdb_offer import generate_hdb_offer, validate_offer_options
+
+        try:
+            validate_offer_options(meta)
+            offer_prep = Prep(screens=meta.screens, img_host="hdb", config=config, publish_preview=_publish_webui_preview_target)
+            await offer_prep.gather_prep(meta=meta, mode="cli")
+            await generate_hdb_offer(meta, config)
+            await write_meta_file(meta)
+            return True
+        except Exception as error:
+            # Raw output: errors and BBCode must not be interpreted as Rich markup.
+            print(f"HDBits offer generation failed: {error}")
+            return False
+
     if not meta.imghost:
         meta.imghost = config["DEFAULT"]["img_host_1"]
         try:
@@ -2395,6 +2410,11 @@ async def do_the_thing(base_dir: str) -> None:
 
             return  # Exit early when running web UI only
 
+        if meta.hdb_offer:
+            from src.hdb_offer import validate_offer_options
+
+            validate_offer_options(meta)
+
         # Validate config structure and types (after args parsed so we have trackers list)
         from src.configvalidator import group_warnings, validate_config
 
@@ -2414,6 +2434,9 @@ async def do_the_thing(base_dir: str) -> None:
             if imghost_val:
                 active_imghost = imghost_val
 
+        if meta.hdb_offer:
+            active_trackers = ["HDBITS"]
+            active_imghost = "hdb"
         is_valid, config_errors, config_warnings = validate_config(config, active_trackers, active_imghost)
 
         if not is_valid:
@@ -2457,7 +2480,7 @@ async def do_the_thing(base_dir: str) -> None:
         if webui_roots is not None and not is_generated_queue_path(path):
             path = validate_subprocess_path(path)
 
-        is_binary = await get_mkbrr_path(base_dir)
+        is_binary = await get_mkbrr_path(base_dir) if not meta.hdb_offer else None
         if not meta.mkbrr:
             try:
                 meta.mkbrr = config["DEFAULT"].get("mkbrr", False)
@@ -2585,6 +2608,14 @@ async def do_the_thing(base_dir: str) -> None:
                 meta_success = await process_meta(meta, base_dir)
             finally:
                 await cancel_and_drain_early_artifact_tasks(meta.uuid)
+            if meta.hdb_offer:
+                # A successful draft is NOT permission to enter the normal upload,
+                # cross-seed, torrent/client, hook or Usenet pipeline below.
+                processed_files_count += 1
+                await record_event_async("item", operation="completed", outcome="success" if meta_success else "error")
+                await cleanup_manager.cleanup()
+                cleanup_manager.reset_terminal()
+                continue
             if not meta_success:
                 set_stats_context(debug=bool(meta.debug), category=str(meta.category or ""))
                 await record_event_async("item", operation="completed", outcome="error")

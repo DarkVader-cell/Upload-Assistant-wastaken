@@ -707,6 +707,7 @@ async def disc_screenshots(
                         logger.info(f"[red]Image {image_path} with size {image_size} bytes: does not meet size requirements for {img_host}, retaking.")
                         retake = True
                 elif img_host and img_host in [
+                    "hdb",
                     "lensdump",
                     "ptscreens",
                     "onlyimage",
@@ -736,6 +737,9 @@ async def disc_screenshots(
 
                         random_time = random.uniform(0, length)  # nosec B311 - Random screenshot timing, not cryptographic  # noqa: S311
                         screenshot_response = await capture_disc_task(index, file_path, str(random_time), image_path, keyframe, loglevel, hdr_tonemap, meta)
+                        if screenshot_response is None:
+                            Path(image_path).unlink(missing_ok=True)
+                            continue
                         new_size = Path(image_path).stat().st_size
                         valid_image = False
 
@@ -755,6 +759,7 @@ async def disc_screenshots(
                             img_host
                             and img_host
                             in [
+                                "hdb",
                                 "lensdump",
                                 "ptscreens",
                                 "onlyimage",
@@ -2177,6 +2182,7 @@ async def screenshots(
                         logger.info(f"[red]Image {image_path} with size {image_size} bytes: does not meet size requirements for {img_host}, retaking.")
                         retake = True
                 elif img_host and img_host in [
+                    "hdb",
                     "lensdump",
                     "ptscreens",
                     "onlyimage",
@@ -2247,6 +2253,7 @@ async def screenshots(
                                 img_host
                                 and img_host
                                 in [
+                                    "hdb",
                                     "lensdump",
                                     "ptscreens",
                                     "onlyimage",
@@ -2308,7 +2315,7 @@ async def screenshots(
                     elif (
                         img_host
                         and img_host
-                        in ["lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "bioma", "passtheimage", "seedpool_cdn", "sharex", "thrimg", "utppm"]
+                        in ["hdb", "lensdump", "ptscreens", "onlyimage", "dalexni", "zipline", "midnightscene", "bioma", "passtheimage", "seedpool_cdn", "sharex", "thrimg", "utppm"]
                         and new_size > 75000
                     ):
                         valid_image = True

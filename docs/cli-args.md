@@ -19,6 +19,24 @@ upload.py [path...] [options]
   - Quoting is recommended (single or double quotes) especially when paths contain spaces.
   - The parser has a small recovery mechanism: if extra “unknown” tokens were provided and the joined `path` doesn’t exist, it will append those tokens into the path until it finds an existing path.
 
+### HDBits offers only
+
+```console
+python upload.py "/media/Example.2026.1080p.WEB-DL.mkv" --hdb-offer --tmdb 12345 --screens 3
+```
+
+`--hdb-offer` generates a **manual HDBits offer draft**, not a torrent upload. It is also available in WebUI arguments (Other CLI options). Configure `TRACKERS.HDBITS.username` and `passkey` for the HDB image host. Metadata lookup, MediaInfo/BDInfo, naming and local screenshots are reused. The only remote writes are screenshot uploads to `https://img.hdbits.org/upload_api.php`; gallery URLs such as `https://img.hdbits.org/abdce` are returned links, not upload endpoints.
+
+Copy the raw terminal/WebUI log output, or use UTF-8 files in `tmp/<release>/`:
+
+- `HDB_OFFER_TITLE.txt`: HDB title.
+- `HDB_OFFER_DESCRIPTION.txt`: BBCode overview, IMDb/TMDB links, expandable `[hide=MediaInfo]` (or BDInfo) report and HDB screenshots.
+- `HDB_OFFER_FORM.txt`: title, IMDb link, TMDB link/ID, TVDB ID, season/episode, category, codec, medium, origin and exclusivity.
+
+Use `--imdb`, `--tmdb`, `--tvdb`, `--season`, `--episode`, `--category` or `--type` to correct metadata before rerunning. An IMDb or TMDB ID and supported HDB media fields are required; missing optional IDs are explicitly marked, never invented. TV seasons/episodes must be single numbers (season packs leave episode blank). Origin follows HDB internal-group configuration; exclusivity follows `--exclusive true|false` (or `1|0`), defaulting to No. Check all fields before manually submitting an offer on HDBits.
+
+This mode ignores configured tracker selections/imported descriptions and normal image hosts. It uses a plain metadata overview, not saved description drafts/templates. It never submits an offer/torrent, creates a torrent/Usenet archive, cross-seeds, runs upload hooks or registers with a torrent client. Zero screenshots, disabled image uploads, comparison mode, Usenet, site actions and prepare-only are rejected. Image-host errors, malformed responses and non-HDB image links fail closed; no fallback host is used. Existing drafts from earlier successful runs are not proof a failed rerun succeeded.
+
 ### Pasting multiple full paths
 
 Use `--paths-from-stdin` when copying multiple full paths from a torrent client or another application. This keeps spaces, parentheses, and other shell-sensitive characters inside each path instead of letting the shell interpret them.
