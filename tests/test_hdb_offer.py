@@ -77,8 +77,10 @@ async def test_generate_hdb_offer_image_api_only_and_plaintext_artifacts(release
     assert "[hide=MediaInfo]\nGeneral" in description
     assert description.count("[/hide]") == 1 and "［/hide］" in description
     assert "[table" not in description and "evil.test" not in description
-    assert "https://www.imdb.com/title/tt1234567/" in description
-    assert "https://www.themoviedb.org/movie/123" in description
+    assert "https://www.imdb.com/title/tt1234567/" not in description
+    assert "https://www.themoviedb.org/movie/123" not in description
+    assert "https://www.imdb.com/title/tt1234567/" in form
+    assert "https://www.themoviedb.org/movie/123" in form
     assert BB in description
     assert "A film" not in description and "with brackets" not in description
     assert "Category: Movie (1)" in form
@@ -594,3 +596,8 @@ async def test_offer_link_write_failure_preserves_local_drafts_without_secret_ou
     output = capsys.readouterr().out
     assert "Warning:" in output and "SecretKey" not in output
     assert not (Path(release.base_dir) / "tmp" / release.uuid / "HDB_OFFER_LINK.txt").exists()
+
+
+def test_offer_thumbnail_rows_follow_user_format():
+    images = [f"[url=https://img.hdbits.org/id{i}][img]https://t.hdbits.org/id{i}.jpg[/img][/url]" for i in range(5)]
+    assert validate_image_bbcode("\n".join(images)) == " ".join(images[:2]) + "\n" + " ".join(images[2:4]) + "\n" + images[4]

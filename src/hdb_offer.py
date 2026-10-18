@@ -66,7 +66,8 @@ def validate_image_bbcode(value: str | None) -> str:
             # Keep exact hosts: no wildcard subdomains, userinfo or explicit ports.
             if parts.scheme != "https" or parts.netloc not in ("img.hdbits.org", "t.hdbits.org") or not parts.path.startswith("/") or parts.path == "/":
                 raise ValueError("HDB image upload returned a non-HDB image/gallery URL")
-    return "\n".join(match.group() for match in matches)
+    thumbnails = [match.group() for match in matches]
+    return "\n".join(" ".join(thumbnails[index:index + 2]) for index in range(0, len(thumbnails), 2))
 
 
 def _tv_number(value: object, prefix: str, label: str) -> str:
@@ -169,8 +170,8 @@ async def generate_hdb_offer(meta: Meta, config: dict[str, Any]) -> dict[str, Pa
     # No synopsis, cached tracker descriptions, image lists, artwork or reviews.
     source = await _source_attribution(meta)
     directory = Path(meta.base_dir) / "tmp" / meta.uuid
-    links = "\n".join(str(fields[key]) for key in ("IMDb link", "TMDB link") if fields[key] != "Not available")
-    description = f"{source}\n\n{links}\n\n[hide={label}]\n{report}\n[/hide]\n\n[center]{images}[/center]\n".lstrip()
+    sections = ([source] if source else []) + [f"[hide={label}]\n{report}\n[/hide]", f"[center]{images}[/center]"]
+    description = "\n\n".join(sections) + "\n"
     form = "\n".join(f"{key}: {value}" for key, value in fields.items()) + "\n"
     contents = {"HDB_OFFER_TITLE.txt": str(fields["Title"]) + "\n", "HDB_OFFER_DESCRIPTION.txt": description, "HDB_OFFER_FORM.txt": form}
     paths: dict[str, Path] = {}
