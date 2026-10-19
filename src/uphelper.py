@@ -416,7 +416,30 @@ class UploadHelper:
         upload: bool = False
         meta.were_trumping = False
         slot_verdict = slot_decision.verdict if slot_decision is not None else None
+        protected_ids = set(slot_decision.protected_ids) if slot_decision is not None else set()
+        report_ids = {str(entry.get("id")) for entry in slot_decision.conflicts} if slot_decision is not None else None
+        if tracker_name == "LST":
+            from src.slot_rules.profile import group_from_name
+            cfg = (self.config.get("TRACKERS") or {}).get("LST") or {}
+            groups = cfg.get("internal_groups") or []
+            groups = groups if isinstance(groups, (list, tuple, set)) else []
+            group = (meta.tag or "").lstrip("-").casefold()
+            internal = bool(group) and cfg.get("internal") is True and group in {str(g).lstrip("-").casefold() for g in groups}
+            raw = meta.get("LST_report_candidates", [])
+            raw = raw if isinstance(raw, list) else []
+            for entry in [*raw, *dupes_list]:
+                if isinstance(entry, dict) and entry.get("internal") and entry.get("id"):
+                    old_group = group_from_name(str(entry.get("name") or ""))
+                    failed = slot_decision is not None and "slot evaluation failed" in slot_decision.reason
+                    if slot_decision is None or failed or not (internal and old_group and group == old_group.casefold()):
+                        protected_ids.add(str(entry["id"]))
+            meta["LST_protected_ids"] = sorted(protected_ids)
         interactive = (not meta.unattended or (meta.unattended and meta.unattended_confirm)) and not meta.ask_dupe
+        if tracker_name == "LST" and slot_decision is not None and slot_decision.constraint_violation:
+            self._show_slot_decision(slot_decision, meta)
+            meta["LST_cross_seed"] = False
+            logger.info("LST: fix the prohibited/MUST issue before uploading; duplicate overrides do not authorize it.")
+            return True, meta
         if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_verdict in {Verdict.BLOCK, Verdict.REVIEW}:
             meta[f"{tracker_name}_cross_seed"] = False
             self._show_slot_decision(slot_decision, meta)
@@ -430,7 +453,7 @@ class UploadHelper:
             meta.we_asked = True
             return not approved, meta
         evidence_shown = False
-        if (tracker_name in {"AITHER", "HDBITS"} and slot_decision is not None
+        if (tracker_name in {"AITHER", "HDBITS", "LST"} and slot_decision is not None
                 and slot_verdict is Verdict.REVIEW and slot_decision.requires_evidence):
             self._show_slot_decision(slot_decision, meta)
             evidence_shown = True
@@ -456,7 +479,8 @@ class UploadHelper:
             # coexistence/vacancy. Use only the actual slot conflicts if known.
             pool = list(slot_decision.conflicts) if slot_decision is not None else [*retained, *(entry for entry in dupes_list if isinstance(entry, dict))]
             unique = {str(entry["id"]): entry for entry in pool
-                      if str(entry.get("id") or "").isdigit() and len(str(entry["id"])) <= 20 and int(str(entry["id"])) > 0}
+                      if str(entry.get("id") or "").isdigit() and len(str(entry["id"])) <= 20 and int(str(entry["id"])) > 0
+                      and str(entry["id"]) not in protected_ids}
             candidates = list(unique.values())
             if candidates:
                 if slot_decision is not None and not evidence_shown:
@@ -532,12 +556,15 @@ class UploadHelper:
 
         trumpable_text = None
         if meta.trumpable_id or (meta.season_pack_contains_episode and meta.get(f"{tracker_name}_matched_episode_ids", [])):
-            trumpable_dupes = [entry for entry in dupes_list if isinstance(entry, dict) and entry.get("trumpable")]
+            trumpable_dupes = [entry for entry in dupes_list if isinstance(entry, dict) and entry.get("trumpable") and str(entry.get("id")) not in protected_ids and (report_ids is None or str(entry.get("id")) in report_ids)]
             if trumpable_dupes:
                 trumpable_text = _format_dupes_list(trumpable_dupes)
                 logger.info("[bold red]Trumpable found![/bold red]")
-            elif meta.season_pack_contains_episode and meta.get(f"{tracker_name}_matched_episode_ids", []):
-                matched_episodes = cast(list[DupeEntry], meta.get(f"{tracker_name}_matched_episode_ids", []))
+            elif meta.season_pack_contains_episode and any(
+                str(entry.get("id")) not in protected_ids and (report_ids is None or str(entry.get("id")) in report_ids)
+                for entry in meta.get(f"{tracker_name}_matched_episode_ids", [])):
+                matched_episodes = [entry for entry in cast(list[DupeEntry], meta.get(f"{tracker_name}_matched_episode_ids", []))
+                                    if str(entry.get("id")) not in protected_ids and (report_ids is None or str(entry.get("id")) in report_ids)]
                 user_tag = meta.tag.lstrip("-").lower() if meta.tag else ""  # Remove leading dash for comparison
 
                 # Try to find a release with matching tag
@@ -607,7 +634,9 @@ class UploadHelper:
                 if meta.filename_match and meta.file_count_match:
                     logger.info(f"[bold red]Exact match found! - {meta.filename_match}[/bold red]")
                     try:
-                        if tracker_name in ["AITHER", "LST"]:
+                        if (tracker_name in ["AITHER", "LST"]
+                                and str(meta.get(f"{tracker_name}_matched_id") or meta.get(f"{tracker_name}_trumpable_id") or meta.trumpable_id) not in protected_ids
+                                and (report_ids is None or str(meta.get(f"{tracker_name}_matched_id") or meta.get(f"{tracker_name}_trumpable_id") or meta.trumpable_id) in report_ids)):
                             logger.info(f"[yellow]{tracker_name} supports automatic trumping of exact matches, if the file is allowed to be trumped.[/yellow]")
                             upload = await self.prompt_yes_no(f"Are you trumping this exact match on {tracker_name}?", default=False)
                             if upload:

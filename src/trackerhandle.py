@@ -243,8 +243,8 @@ async def process_trackers(
                         def is_in_initial(dupe: Any) -> bool:
                             for initial_dupe in initial_dupes:
                                 if isinstance(dupe, dict) and isinstance(initial_dupe, dict):
-                                    if tracker_name == "PASSTHEPOPCORN":
-                                        keys = ("Id", "name", "size", "res", "type", "Source", "Codec", "Container", "RemasterTitle", "NotMainMovie", "MediaInfo", "HDR")
+                                    if tracker_name in {"PASSTHEPOPCORN", "LST"}:
+                                        keys = ("Id", "id", "name", "size", "res", "type", "Source", "Codec", "Container", "RemasterTitle", "NotMainMovie", "MediaInfo", "HDR", "internal", "flags", "media_info")
                                         if all(dupe.get(key) == initial_dupe.get(key) for key in keys):
                                             return True
                                         continue
@@ -258,6 +258,12 @@ async def process_trackers(
 
                         if real_new_dupes:
                             slot_decision = await evaluate_slots(new_dupes, meta, tracker_name, config)
+                            if tracker_name == "LST" and slot_decision is not None:
+                                meta["LST_protected_ids"] = list(slot_decision.protected_ids)
+                                target = str(meta.get("LST_trumpable_id") or meta.get("LST_reported_torrent_id") or "")
+                                if target in slot_decision.protected_ids:
+                                    meta["LST_were_trumping"] = False
+                                    logger.warning("LST: the proposed report target is protected; report intent revoked.")
                             if slot_decision is not None and slot_decision.verdict is Verdict.ALLOW:
                                 logger.info(f"[green]{tracker_name}: new releases appeared during the wait, but slot rules still allow this upload.[/green]")
                                 return True

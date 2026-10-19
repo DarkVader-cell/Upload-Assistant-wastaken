@@ -1349,6 +1349,13 @@ class TrackerSetup:
             return False
 
         reported_torrent_id = meta.get(f"{tracker}_reported_torrent_id", "")
+        if tracker == "LST":
+            protected = {str(int(str(value))) for value in (meta.get("LST_protected_ids") or [])
+                         if str(value).isdigit() and len(str(value)) <= 20}
+            target = str(reported_torrent_id or "")
+            if target.isdigit() and len(target) <= 20 and str(int(target)) in protected:
+                logger.warning("LST: refusing a report against a protected internal release.")
+                return False
         report_id = str(reported_torrent_id or "")
         if not report_id.isdigit() or len(report_id) > 20 or int(report_id) <= 0:
             logger.info(f"[red]No valid reported torrent ID found for trump report creation on {tracker}[/red]")

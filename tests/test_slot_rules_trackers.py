@@ -131,12 +131,12 @@ class TestLst:
     def test_held_encode_needs_review(self) -> None:
         assert verdict(self.rules, prof(f"{T}.1080p.BluRay.DD5.1.x264-NOGRPA"), prof(f"{T}.1080p.BluRay.DTS.x264-NOGRPB")) is REVIEW
 
-    def test_720p_x265_is_not_listed(self) -> None:
-        assert verdict(self.rules, prof(f"{T}.720p.BluRay.DD5.1.x265-NOGRPA")) is REVIEW
+    def test_720p_x265_is_prohibited(self) -> None:
+        assert verdict(self.rules, prof(f"{T}.720p.BluRay.DD5.1.x265-NOGRPA")) is BLOCK
 
     def test_internal_holder_blocks(self) -> None:
         upload = prof(f"{T}.1080p.AMZN.WEB-DL.DDP5.1.H.264-NOGRPA")
-        assert verdict(self.rules, upload, prof(f"{T}.1080p.AMZN.WEB-DL.DDP5.1.H.264-NOGRPB", internal=1)) is BLOCK
+        assert verdict(self.rules, upload, prof(f"{T}.1080p.AMZN.WEB-DL.DDP5.1.H.264-NOGRPB", internal=1)) is REVIEW
 
 
 class TestUlcx:

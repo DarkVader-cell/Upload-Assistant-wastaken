@@ -96,7 +96,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
     tracker = tracker.upper()
     rules_cls = SLOT_RULES.get(tracker)
     applies = slot_rules_apply(meta, config) or (slot_rules_enabled(config) and
-              (tracker in {"PASSTHEPOPCORN", "HDBITS"} or (tracker == "AITHER" and meta.category in SLOT_CATEGORIES)))
+              (tracker in {"PASSTHEPOPCORN", "HDBITS", "LST"} or (tracker == "AITHER" and meta.category in SLOT_CATEGORIES)))
     if rules_cls is None or not applies:
         return None
     # Trackers that search the whole title keep the full list for slot rules.
@@ -105,13 +105,15 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         dupes = cast(list[DupeInput], title_releases)
     try:
         upload = profile_from_meta(meta)
-        if upload.kind == DISC and tracker not in {"PASSTHEPOPCORN", "AITHER", "HDBITS"}:
+        if upload.kind == DISC and tracker not in {"PASSTHEPOPCORN", "AITHER", "HDBITS", "LST"}:
             return None
-        if tracker in {"AITHER", "HDBITS"}:
+        if tracker in {"AITHER", "HDBITS", "LST"}:
             tracker_config = cast(Mapping[str, Any], cast(Mapping[str, Any], config.get("TRACKERS") or {}).get(tracker) or {})
             groups = tracker_config.get("internal_groups") or []
             allowed = {str(group).lstrip("-").casefold() for group in groups} if isinstance(groups, (list, tuple, set)) else set()
             upload = replace(upload, internal=bool(upload.group) and tracker_config.get("internal") is True and (upload.group or "").casefold() in allowed)
+            if tracker == "LST":
+                meta["LST_modq_effective"] = bool(meta.modq or tracker_config.get("modq"))
 
         existing: list[ReleaseProfile] = []
         season_packs: list[ReleaseProfile] = []
@@ -138,18 +140,22 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
             conflicts = [*season_packs, *(profile for profile in existing if decision and profile.entry in decision.conflicts)]
             prior = decision
             decision = rules.decision(Verdict.REVIEW, "A season pack that contains this episode is already on the site.", conflicts)
-            if tracker in {"AITHER", "HDBITS"} and prior is not None and prior.verdict is Verdict.REVIEW:
+            if prior is not None:
+                decision.protected_ids = list(prior.protected_ids)
+            if tracker == "LST":
+                decision.protected_ids.extend(str(p.entry['id']) for p in season_packs if p.internal and p.entry.get('id'))
+            if tracker in {"AITHER", "HDBITS", "LST"} and prior is not None and prior.verdict is Verdict.REVIEW:
                 decision.notes.extend([prior.reason, *([prior.why] if prior.why else []), *prior.notes])
         if meta.debug:
             logger.debug(f"[slot rules] {tracker}: upload={upload}")
             logger.debug(f"[slot rules] {tracker}: decision={decision}")
         return decision
     except Exception as e:
-        if tracker in {"PASSTHEPOPCORN", "AITHER", "HDBITS"}:
+        if tracker in {"PASSTHEPOPCORN", "AITHER", "HDBITS", "LST"}:
             logger.warning(f"{tracker}: slot evaluation failed; manual review is required.", extra={"markup": False})
             label = "PTP" if tracker == "PASSTHEPOPCORN" else tracker
             decision = rules_cls(meta).decision(Verdict.REVIEW, f"{label} slot evaluation failed; do not assume the slot is free")
-            decision.requires_evidence = tracker in {"AITHER", "HDBITS"}
+            decision.requires_evidence = tracker in {"AITHER", "HDBITS", "LST"}
             return decision
         # Other trackers retain their existing basic-check fallback.
         logger.warning(f"{tracker}: slot rules could not be evaluated ({e}); using the basic dupe check.", extra={"markup": False})

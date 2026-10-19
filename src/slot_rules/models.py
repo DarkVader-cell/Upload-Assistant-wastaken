@@ -31,3 +31,6 @@ class SlotDecision:
     trump_recommended: bool = False
     # Required provenance/comparison/approval evidence, even for a vacant slot.
     requires_evidence: bool = False
+    # Protected targets may be displayed for coexistence but never reported as replacements.
+    protected_ids: list[str] = field(default_factory=list)
+    constraint_violation: bool = False

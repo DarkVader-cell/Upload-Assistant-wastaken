@@ -342,7 +342,7 @@ class TrackerStatusManager:
                         if is_dupe:
                             policy_rejection = slot_decision is not None and (
                                 (tracker_name == "PASSTHEPOPCORN" and slot_decision.verdict in {Verdict.BLOCK, Verdict.REVIEW}) or
-                                (tracker_name in {"AITHER", "HDBITS"} and (slot_decision.verdict is Verdict.BLOCK or
+                                (tracker_name in {"AITHER", "HDBITS", "LST"} and (slot_decision.verdict is Verdict.BLOCK or
                                                                (slot_decision.verdict is Verdict.REVIEW and slot_decision.requires_evidence))))
                             if policy_rejection and slot_decision is not None:
                                 local_tracker_status["skipped"] = True
@@ -371,6 +371,8 @@ class TrackerStatusManager:
                             trumpable_id_after_dupe_check = local_meta.get(f"{tracker_name}_trumpable_id")
                             async with meta_lock:
                                 meta[f"{tracker_name}_were_trumping"] = bool(were_trumping)
+                                if tracker_name == "LST":
+                                    meta["LST_protected_ids"] = local_meta.get("LST_protected_ids", [])
                                 if were_trumping:
                                     meta.were_trumping = were_trumping
                                 if trump_reason:
