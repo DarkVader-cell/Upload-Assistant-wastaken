@@ -264,8 +264,9 @@ async def process_trackers(
                             if slot_decision is not None and slot_decision.verdict is Verdict.BLOCK:
                                 logger.info(f"[red]{tracker_name}: a release that fills this slot appeared during the wait. Automatically skipping upload.[/red]")
                                 return False
-                            if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_decision.verdict is Verdict.REVIEW:
-                                logger.warning("PASSTHEPOPCORN: group changed during bandwidth wait and now requires policy review; skipping upload.")
+                            if (slot_decision is not None and slot_decision.verdict is Verdict.REVIEW
+                                    and (tracker_name == "PASSTHEPOPCORN" or slot_decision.requires_evidence)):
+                                logger.warning(f"{tracker_name}: group changed during bandwidth wait and now requires evidence/policy review; skipping upload.")
                                 return False
                             dupe_checker = DupeChecker(config)
                             real_new_dupes = cast(list[Any], await dupe_checker.filter_dupes(real_new_dupes, meta, tracker_name))

@@ -429,6 +429,20 @@ class UploadHelper:
             approved = await self.prompt_yes_no("Have you checked the required evidence/staff approval and confirmed this PTP upload is permitted?", default=False)
             meta.we_asked = True
             return not approved, meta
+        evidence_shown = False
+        if (tracker_name in {"AITHER", "HDBITS"} and slot_decision is not None
+                and slot_verdict is Verdict.REVIEW and slot_decision.requires_evidence):
+            self._show_slot_decision(slot_decision, meta)
+            evidence_shown = True
+            if not interactive:
+                meta[f"{tracker_name}_cross_seed"] = False
+                logger.info(f"{tracker_name}: skipping unattended upload that needs source/comparison/staff-approval evidence.")
+                return True, meta
+            approved = await self.prompt_yes_no(f"Have you verified the required {tracker_name} source/quality evidence, comparisons and any required rights/staff approval?", default=False)
+            meta.we_asked = True
+            if not approved:
+                meta[f"{tracker_name}_cross_seed"] = False
+                return True, meta
         # Slot recommendations can retain a replacement that the basic dupe
         # filter removed, or recommend a trump before the API marks it trumpable.
         if (tracker_name in {"AITHER", "LST"} and interactive and meta.dupe is False
@@ -445,7 +459,7 @@ class UploadHelper:
                       if str(entry.get("id") or "").isdigit() and len(str(entry["id"])) <= 20 and int(str(entry["id"])) > 0}
             candidates = list(unique.values())
             if candidates:
-                if slot_decision is not None:
+                if slot_decision is not None and not evidence_shown:
                     self._show_slot_decision(slot_decision, meta)
                 selected = candidates[0]
                 if len(candidates) > 1:
@@ -471,7 +485,8 @@ class UploadHelper:
             needs_answer = slot_verdict is Verdict.BLOCK or (slot_verdict is Verdict.REVIEW and bool(slot_decision and slot_decision.conflicts))
             if slot_decision is not None and needs_answer:
                 # The basic check found nothing, but the slot rules see a conflict.
-                self._show_slot_decision(slot_decision, meta)
+                if not evidence_shown:
+                    self._show_slot_decision(slot_decision, meta)
                 if meta.dupe is not False:
                     return False, meta
                 if not interactive:
@@ -489,7 +504,7 @@ class UploadHelper:
                     cleanup_manager.reset_terminal()
                     sys.exit(1)
                 return (not upload), meta
-            if slot_decision is not None and (slot_decision.conflicts or tracker_name == "PASSTHEPOPCORN"):
+            if slot_decision is not None and not evidence_shown and (slot_decision.conflicts or tracker_name == "PASSTHEPOPCORN"):
                 self._show_slot_decision(slot_decision, meta)
             logger.debug(f"[green]No dupes found at[/green] [yellow]{tracker_name}[/yellow]")
             return False, meta
@@ -548,7 +563,8 @@ class UploadHelper:
                     logger.info(f"[yellow]Note: No release found with matching tag '{meta.tag}'. Selected release may be from a different group.[/yellow]")
 
         if slot_decision is not None:
-            self._show_slot_decision(slot_decision, meta)
+            if not evidence_shown:
+                self._show_slot_decision(slot_decision, meta)
         else:
             self._show_slot_fallback(meta, tracker_name)
 

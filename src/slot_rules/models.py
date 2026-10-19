@@ -29,3 +29,5 @@ class SlotDecision:
     notes: list[str] = field(default_factory=lambda: list[str]())
     # A replacement recommendation, not mere coexistence or a vacant slot.
     trump_recommended: bool = False
+    # Required provenance/comparison/approval evidence, even for a vacant slot.
+    requires_evidence: bool = False

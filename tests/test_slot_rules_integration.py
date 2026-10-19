@@ -72,7 +72,8 @@ async def test_evaluate_slots_returns_none_when_not_applicable() -> None:
     assert await evaluate_slots(dupes, make_meta(), "AITHER", {"DEFAULT": {"slot_rules": False}}) is None
     assert await evaluate_slots(dupes, make_meta(), "NOSLOTS", {"DEFAULT": {}}) is None
     assert await evaluate_slots(dupes, make_meta(category="GAME"), "AITHER", {"DEFAULT": {}}) is None
-    assert await evaluate_slots(dupes, make_meta(is_disc="BDMV", type="DISC"), "AITHER", {"DEFAULT": {}}) is None
+    disc = await evaluate_slots(dupes, make_meta(is_disc="BDMV", type="DISC"), "AITHER", {"DEFAULT": {}})
+    assert disc is not None and disc.verdict is Verdict.REVIEW and disc.requires_evidence
 
 
 @pytest.mark.asyncio

@@ -340,10 +340,14 @@ class TrackerStatusManager:
                         # Run dupe check first so it can modify local_meta (e.g., set cross-seed values)
                         is_dupe, local_meta = await helper.dupe_check(dupes, local_meta, tracker_name, slot_decision)
                         if is_dupe:
-                            if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_decision.verdict in {Verdict.BLOCK, Verdict.REVIEW}:
+                            policy_rejection = slot_decision is not None and (
+                                (tracker_name == "PASSTHEPOPCORN" and slot_decision.verdict in {Verdict.BLOCK, Verdict.REVIEW}) or
+                                (tracker_name in {"AITHER", "HDBITS"} and (slot_decision.verdict is Verdict.BLOCK or
+                                                               (slot_decision.verdict is Verdict.REVIEW and slot_decision.requires_evidence))))
+                            if policy_rejection and slot_decision is not None:
                                 local_tracker_status["skipped"] = True
                                 local_tracker_status["skip_reason"] = slot_decision.reason
-                                local_tracker_status["status_message"] = "PTP policy check: " + slot_decision.reason
+                                local_tracker_status["status_message"] = f"{tracker_name} policy check: " + slot_decision.reason
                             else:
                                 local_tracker_status["dupe"] = True
 

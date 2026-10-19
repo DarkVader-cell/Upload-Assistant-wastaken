@@ -50,8 +50,8 @@ ALLOW, BLOCK, REVIEW = Verdict.ALLOW, Verdict.BLOCK, Verdict.REVIEW
 
 
 class TestGeneric:
-    def test_full_disc_uses_basic_check(self) -> None:
-        assert verdict(AitherSlotRules(), prof(f"{T}.1080p.BluRay.AVC.DTS-HD.MA.5.1-NOGRPA", type="Full Disc")) is None
+    def test_full_disc_requires_supported_format_evidence(self) -> None:
+        assert verdict(AitherSlotRules(), prof(f"{T}.1080p.BluRay.AVC.DTS-HD.MA.5.1-NOGRPA", type="Full Disc")) is REVIEW
 
     def test_exact_release_blocks(self) -> None:
         upload = prof(f"{T}.1080p.AMZN.WEB-DL.DDP5.1.H.264-NOGRPA")
@@ -81,7 +81,7 @@ class TestAither:
 
     def test_x264_quality_and_retention_slots(self) -> None:
         upload = prof(f"{T}.1080p.BluRay.DD5.1.x264-NOGRPA", 10)
-        assert verdict(self.rules, upload, prof(f"{T}.1080p.BluRay.DTS.x264-NOGRPB", 15)) is ALLOW
+        assert verdict(self.rules, upload, prof(f"{T}.1080p.BluRay.DTS.x264-NOGRPB", 15)) is REVIEW
         assert verdict(self.rules, upload, prof(f"{T}.1080p.BluRay.DTS.x264-NOGRPB", 11)) is BLOCK
         assert verdict(self.rules, upload, prof(f"{T}.1080p.BluRay.DTS.x264-NOGRPB", 15), prof(f"{T}.1080p.BluRay.DD.x264-NOGRPC", 5)) is BLOCK
 

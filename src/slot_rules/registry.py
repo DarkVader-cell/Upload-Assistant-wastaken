@@ -2,6 +2,7 @@
 """Entry point that turns a tracker's search results into a slot recommendation."""
 
 from collections.abc import Mapping, Sequence
+from dataclasses import replace
 from typing import Any, cast
 
 from src.console import logger
@@ -17,6 +18,7 @@ from src.slot_rules.trackers.avistaz import AvistaZSlotRules, CinemaZSlotRules, 
 from src.slot_rules.trackers.brazilian import CapybaraBRSlotRules, SamaritanoSlotRules
 from src.slot_rules.trackers.cathoderaytube import CathodeRayTubeSlotRules
 from src.slot_rules.trackers.greatposterwall import GreatPosterWallSlotRules
+from src.slot_rules.trackers.hdbits import HDBitsSlotRules
 from src.slot_rules.trackers.hdtorrents import HDTorrentsSlotRules
 from src.slot_rules.trackers.lst import LstSlotRules
 from src.slot_rules.trackers.luminarr import LuminarrSlotRules
@@ -36,6 +38,7 @@ SLOT_RULES: dict[str, type[SlotRules]] = {
         CinemaZSlotRules,
         DreadVaultSlotRules,
         GreatPosterWallSlotRules,
+        HDBitsSlotRules,
         HDTorrentsSlotRules,
         HomieHelpDeskSlotRules,
         LstSlotRules,
@@ -92,7 +95,8 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
     """
     tracker = tracker.upper()
     rules_cls = SLOT_RULES.get(tracker)
-    applies = slot_rules_apply(meta, config) or (tracker == "PASSTHEPOPCORN" and slot_rules_enabled(config))
+    applies = slot_rules_apply(meta, config) or (slot_rules_enabled(config) and
+              (tracker in {"PASSTHEPOPCORN", "HDBITS"} or (tracker == "AITHER" and meta.category in SLOT_CATEGORIES)))
     if rules_cls is None or not applies:
         return None
     # Trackers that search the whole title keep the full list for slot rules.
@@ -101,8 +105,13 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         dupes = cast(list[DupeInput], title_releases)
     try:
         upload = profile_from_meta(meta)
-        if upload.kind == DISC and tracker != "PASSTHEPOPCORN":
+        if upload.kind == DISC and tracker not in {"PASSTHEPOPCORN", "AITHER", "HDBITS"}:
             return None
+        if tracker in {"AITHER", "HDBITS"}:
+            tracker_config = cast(Mapping[str, Any], cast(Mapping[str, Any], config.get("TRACKERS") or {}).get(tracker) or {})
+            groups = tracker_config.get("internal_groups") or []
+            allowed = {str(group).lstrip("-").casefold() for group in groups} if isinstance(groups, (list, tuple, set)) else set()
+            upload = replace(upload, internal=bool(upload.group) and tracker_config.get("internal") is True and (upload.group or "").casefold() in allowed)
 
         existing: list[ReleaseProfile] = []
         season_packs: list[ReleaseProfile] = []
@@ -127,15 +136,21 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         # Episodes on the site decide first; a season pack only adds a review when nothing blocks.
         if season_packs and (decision is None or decision.verdict is not Verdict.BLOCK):
             conflicts = [*season_packs, *(profile for profile in existing if decision and profile.entry in decision.conflicts)]
+            prior = decision
             decision = rules.decision(Verdict.REVIEW, "A season pack that contains this episode is already on the site.", conflicts)
+            if tracker in {"AITHER", "HDBITS"} and prior is not None and prior.verdict is Verdict.REVIEW:
+                decision.notes.extend([prior.reason, *([prior.why] if prior.why else []), *prior.notes])
         if meta.debug:
             logger.debug(f"[slot rules] {tracker}: upload={upload}")
             logger.debug(f"[slot rules] {tracker}: decision={decision}")
         return decision
     except Exception as e:
-        if tracker == "PASSTHEPOPCORN":
-            logger.warning("PASSTHEPOPCORN: slot evaluation failed; manual review is required.", extra={"markup": False})
-            return rules_cls(meta).decision(Verdict.REVIEW, "PTP slot evaluation failed; do not assume the slot is free")
+        if tracker in {"PASSTHEPOPCORN", "AITHER", "HDBITS"}:
+            logger.warning(f"{tracker}: slot evaluation failed; manual review is required.", extra={"markup": False})
+            label = "PTP" if tracker == "PASSTHEPOPCORN" else tracker
+            decision = rules_cls(meta).decision(Verdict.REVIEW, f"{label} slot evaluation failed; do not assume the slot is free")
+            decision.requires_evidence = tracker in {"AITHER", "HDBITS"}
+            return decision
         # Other trackers retain their existing basic-check fallback.
         logger.warning(f"{tracker}: slot rules could not be evaluated ({e}); using the basic dupe check.", extra={"markup": False})
         return None
