@@ -451,7 +451,7 @@ class UploadHelper:
                     cleanup_manager.reset_terminal()
                     sys.exit(1)
                 return (not upload), meta
-            if slot_decision is not None and slot_decision.conflicts:
+            if slot_decision is not None and (slot_decision.conflicts or tracker_name == "PASSTHEPOPCORN"):
                 self._show_slot_decision(slot_decision, meta)
             logger.debug(f"[green]No dupes found at[/green] [yellow]{tracker_name}[/yellow]")
             return False, meta

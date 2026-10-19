@@ -261,3 +261,14 @@ async def test_ambiguous_group_does_not_prompt_in_unattended_lookup(monkeypatch)
     with pytest.raises(ValueError):
         await PassThePopcorn({'TRACKERS':{'PASSTHEPOPCORN':{}}}).get_group_by_imdb('123',strict=True,allow_prompt=False)
     prompt.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('unattended',[True,False])
+async def test_vacant_ptp_slot_also_displays_recommendation(monkeypatch,unattended):
+    helper=UploadHelper({'DEFAULT':{}})
+    shown=[]
+    monkeypatch.setattr(helper,'_show_slot_decision',lambda decision,meta:shown.append(decision))
+    decision=SlotDecision(verdict=ALLOW,reason='Vacant PTP slot',slot='Encode 1080p',tracker='PASSTHEPOPCORN',rules_date=date(2026,10,19))
+    rejected,_=await helper.dupe_check([],Meta(unattended=unattended),'PASSTHEPOPCORN',decision)
+    assert rejected is False and shown==[decision]
