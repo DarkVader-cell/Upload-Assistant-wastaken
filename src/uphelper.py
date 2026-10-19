@@ -435,10 +435,10 @@ class UploadHelper:
                         protected_ids.add(str(entry["id"]))
             meta["LST_protected_ids"] = sorted(protected_ids)
         interactive = (not meta.unattended or (meta.unattended and meta.unattended_confirm)) and not meta.ask_dupe
-        if tracker_name == "LST" and slot_decision is not None and slot_decision.constraint_violation:
+        if tracker_name in {"LST", "BLUTOPIA"} and slot_decision is not None and slot_decision.constraint_violation:
             self._show_slot_decision(slot_decision, meta)
-            meta["LST_cross_seed"] = False
-            logger.info("LST: fix the prohibited/MUST issue before uploading; duplicate overrides do not authorize it.")
+            meta[f"{tracker_name}_cross_seed"] = False
+            logger.info(f"{tracker_name}: fix the prohibited/MUST issue before uploading; duplicate overrides do not authorize it.")
             return True, meta
         if tracker_name == "PASSTHEPOPCORN" and slot_decision is not None and slot_verdict in {Verdict.BLOCK, Verdict.REVIEW}:
             meta[f"{tracker_name}_cross_seed"] = False
@@ -453,7 +453,7 @@ class UploadHelper:
             meta.we_asked = True
             return not approved, meta
         evidence_shown = False
-        if (tracker_name in {"AITHER", "HDBITS", "LST"} and slot_decision is not None
+        if (tracker_name in {"AITHER", "HDBITS", "LST", "BLUTOPIA"} and slot_decision is not None
                 and slot_verdict is Verdict.REVIEW and slot_decision.requires_evidence):
             self._show_slot_decision(slot_decision, meta)
             evidence_shown = True

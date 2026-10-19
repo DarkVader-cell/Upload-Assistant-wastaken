@@ -342,7 +342,7 @@ class TrackerStatusManager:
                         if is_dupe:
                             policy_rejection = slot_decision is not None and (
                                 (tracker_name == "PASSTHEPOPCORN" and slot_decision.verdict in {Verdict.BLOCK, Verdict.REVIEW}) or
-                                (tracker_name in {"AITHER", "HDBITS", "LST"} and (slot_decision.verdict is Verdict.BLOCK or
+                                (tracker_name in {"AITHER", "HDBITS", "LST", "BLUTOPIA"} and (slot_decision.verdict is Verdict.BLOCK or
                                                                (slot_decision.verdict is Verdict.REVIEW and slot_decision.requires_evidence))))
                             if policy_rejection and slot_decision is not None:
                                 local_tracker_status["skipped"] = True

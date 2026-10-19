@@ -19,6 +19,7 @@ class Blutopia(UNIT3D):
     Blutopia (BLU) is a Private Torrent Tracker for HD MOVIES / TV
     """
 
+    search_whole_title = True
     tracker = "BLUTOPIA"
     display_name = "Blutopia"
     base_url = "https://blutopia.cc"
@@ -236,6 +237,7 @@ class Blutopia(UNIT3D):
                 return False
             if cli_ui.ask_yes_no("Is this a derived layer release?", default=False):
                 meta.tracker_status[self.tracker]["other"] = True
+                meta["BLUTOPIA_derived_dv"] = True
 
         if meta.type not in ["WEBDL"] and not meta.is_disc and release_group in self.raw_only_groups:
             if not meta.unattended or (meta.unattended and meta.unattended_confirm):
