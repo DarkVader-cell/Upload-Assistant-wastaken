@@ -138,14 +138,13 @@ async def test_successful_report_uses_confirmed_target_and_new_torrent(monkeypat
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('tracker',['AITHER','LST'])
-async def test_unfiltered_search_keeps_manual_option_when_no_basic_dupes(monkeypatch,tracker):
+async def test_unfiltered_search_keeps_manual_option_when_slot_rules_disabled(monkeypatch,tracker):
     helper=UploadHelper({'DEFAULT':{}})
     prompt=AsyncMock(return_value=True)
     monkeypatch.setattr(helper,'prompt_yes_no',prompt)
     meta=Meta(unattended=False)
     meta[tracker+'_report_candidates']=[{'id':42,'name':'Old release','trumpable':False}]
-    decision=recommendation(tracker);decision.conflicts=[];decision.trump_recommended=False
-    rejected,meta=await helper.dupe_check([],meta,tracker,decision)
+    rejected,meta=await helper.dupe_check([],meta,tracker,None)
     assert rejected is False and meta.were_trumping is True
     assert meta[tracker+'_trumpable_id']==42
     assert 'manual trump report' in prompt.await_args.args[0]
@@ -177,3 +176,17 @@ async def test_failed_new_upload_clears_stale_report_success(monkeypatch):
     await trackerhandle.process_trackers(meta,{'DEFAULT':{'smart_image_host_selection':False}},client,['AITHER'],{'AITHER':lambda **kwargs:fake},[],[],bandwidth_control=False)
     assert meta.tracker_status['AITHER']['upload_success'] is not True
     client.add_to_client.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('tracker',['AITHER','LST'])
+async def test_separate_sdr_slot_never_offers_hdr_trump(monkeypatch,tracker):
+    helper=UploadHelper({'DEFAULT':{}})
+    prompt=AsyncMock(side_effect=AssertionError('separate slot is not a replacement'))
+    monkeypatch.setattr(helper,'prompt_yes_no',prompt)
+    meta=Meta(unattended=False)
+    meta[tracker+'_report_candidates']=[{'id':497065,'name':'The Expendables 3 2014 2160p MA WEB-DL DV HDR H265-GRP'}]
+    decision=recommendation(tracker);decision.conflicts=[];decision.trump_recommended=False
+    rejected,meta=await helper.dupe_check([],meta,tracker,decision)
+    assert rejected is False and meta.were_trumping is False
+    prompt.assert_not_awaited()

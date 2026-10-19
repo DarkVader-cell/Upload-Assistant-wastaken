@@ -1,9 +1,13 @@
 # Aither/LST trump reports
 
 UA supports opt-in trump reports on Aither and LST. In attended mode, existing
-search matches can be selected for a **manual trump report**, even when the API
-has not flagged them as trumpable or the basic duplicate filter removes them.
+**competing slot entries** can be selected for a manual trump report, even when
+the API has not flagged them as trumpable or basic filtering removes them.
 A slot-rule replacement recommendation also offers the report workflow.
+A vacant/coexisting standalone slot does **not** offer unrelated title matches
+as trump targets (for example SDR versus DV/HDR WEB releases). When slot rules
+are disabled/unavailable, basic search targets remain available for explicit
+manual selection; UA cannot then establish which slots they occupy.
 
 A manual report option is not a claim that a torrent is eligible to be trumped.
 Confirm the site rules, quality/source requirements and required comparison

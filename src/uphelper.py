@@ -431,13 +431,16 @@ class UploadHelper:
             return not approved, meta
         # Slot recommendations can retain a replacement that the basic dupe
         # filter removed, or recommend a trump before the API marks it trumpable.
-        if tracker_name in {"AITHER", "LST"} and interactive and meta.dupe is False:
+        if (tracker_name in {"AITHER", "LST"} and interactive and meta.dupe is False
+                and (slot_decision is None or bool(slot_decision.conflicts))):
             recommended = bool(slot_decision and slot_verdict is Verdict.ALLOW and slot_decision.trump_recommended)
             # A manual report is an explicit user choice, not an assertion that
             # every duplicate/conflict is eligible or already flagged by staff.
             raw_candidates = meta.get(f"{tracker_name}_report_candidates", [])
             retained = [entry for entry in raw_candidates if isinstance(entry, dict)] if isinstance(raw_candidates, list) else []
-            pool = [*retained, *(slot_decision.conflicts if slot_decision else []), *(entry for entry in dupes_list if isinstance(entry, dict))]
+            # A title match is not a trump target when slot rules establish
+            # coexistence/vacancy. Use only the actual slot conflicts if known.
+            pool = list(slot_decision.conflicts) if slot_decision is not None else [*retained, *(entry for entry in dupes_list if isinstance(entry, dict))]
             unique = {str(entry["id"]): entry for entry in pool
                       if str(entry.get("id") or "").isdigit() and len(str(entry["id"])) <= 20 and int(str(entry["id"])) > 0}
             candidates = list(unique.values())

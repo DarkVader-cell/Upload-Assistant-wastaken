@@ -272,3 +272,17 @@ async def test_vacant_ptp_slot_also_displays_recommendation(monkeypatch,unattend
     decision=SlotDecision(verdict=ALLOW,reason='Vacant PTP slot',slot='Encode 1080p',tracker='PASSTHEPOPCORN',rules_date=date(2026,10,19))
     rejected,_=await helper.dupe_check([],Meta(unattended=unattended),'PASSTHEPOPCORN',decision)
     assert rejected is False and shown==[decision]
+
+
+def test_standalone_uhd_sdr_web_ignores_unrelated_unknown_profiles():
+    candidate=p('2160p.WEB-DL.SDR.H265-NEW')
+    dvd=p('DVDRip.x264-TOPCAT',res='Other',type='DVDRIP')
+    dv=p('2160p.iT.WEB-DL.DDP.5.1.Atmos.DV.HEVC-MiON')
+    result=decide(candidate,dvd,dv)
+    assert result.verdict is ALLOW and result.conflicts==[]
+
+
+def test_possible_uhd_sdr_web_occupant_still_requires_review():
+    candidate=p('2160p.WEB-DL.SDR.H265-NEW')
+    uncertain=p('2160p.WEB-DL.H265-OLD')
+    assert decide(candidate,uncertain).verdict is REVIEW

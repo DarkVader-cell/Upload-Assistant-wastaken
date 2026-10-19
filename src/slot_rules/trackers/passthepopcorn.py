@@ -272,6 +272,21 @@ class PassThePopcornSlotRules(SlotRules):
                 return self.decision(Verdict.REVIEW, "Stored dimensions exceed the selected resolution's maximum; a format exception needs review (3.1-3.3)")
         return None
 
+    @staticmethod
+    def _could_share_web_slot(upload: ReleaseProfile, existing: ReleaseProfile) -> bool:
+        """Unknown details only matter if this torrent could occupy the WEB slot.
+
+        A bare DV label cannot establish Profile 5, but it does establish that
+        the torrent is not SDR. Do not ask for its profile to assess an SDR slot.
+        """
+        if upload.kind != WEBDL:
+            return True
+        if existing.kind is not None and existing.kind != WEBDL:
+            return False
+        if existing.resolution not in {None, "OTHER", upload.resolution}:
+            return False
+        return not (upload.resolution == "2160p" and upload.is_sdr and bool(existing.hdr))
+
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision:
         self._candidate = upload
         existing = [ptp_profile(p) for p in existing]
@@ -292,10 +307,17 @@ class PassThePopcornSlotRules(SlotRules):
             unknown_source = [p for p in hdr_encodes if self._source(p) is None]
             if unknown_source:
                 return self.decision(Verdict.REVIEW, "An HDR UHD encode has unknown source; verify the Blu-ray HDR WEB prohibition before uploading", unknown_source)
+            uncertain_bluray_hdr = [p for p in same_cut
+                                   if p.resolution in {None, "OTHER", "2160p"} and p.kind in {None, ENCODE, WEBRIP}
+                                   and p.hdr is None and self._source(p) in {None, "bluray"}]
+            if uncertain_bluray_hdr:
+                return self.decision(Verdict.REVIEW, "A possible Blu-ray UHD encode has unknown HDR traits; verify the HDR WEB prohibition", uncertain_bluray_hdr)
         try:
             key = self._slot(upload)
             occupants, unknown = [], []
             for profile in same_cut:
+                if not self._could_share_web_slot(upload, profile):
+                    continue
                 try:
                     if self._slot(profile) == key:
                         occupants.append(profile)
