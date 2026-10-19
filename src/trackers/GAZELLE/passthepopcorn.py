@@ -41,6 +41,7 @@ class PassThePopcorn:
     """
 
     base_url = "https://passthepopcorn.me"
+    torrent_url = f"{base_url}/torrents.php?torrentid="
 
     tracker = "PASSTHEPOPCORN"
     display_name = "PassThePopcorn"
@@ -1713,6 +1714,7 @@ class PassThePopcorn:
         # having UA add the torrent link as a comment.
         if match:
             meta.tracker_status[self.tracker]["status_message"] = str(response.url)
+            meta.tracker_status[self.tracker]["torrent_id"] = match.group(2)
             await common.create_torrent_ready_to_seed(meta, self.tracker, self.source_flag, self.announce_url, str(response.url))
             return True
         return False
