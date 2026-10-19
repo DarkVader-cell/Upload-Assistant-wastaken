@@ -16,6 +16,7 @@ from src.cogs.redaction import Redaction
 from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
+from src.runtime.tracker_requests import TrackerReadError, error_kind, retry_readonly, safe_upload_retry
 from src.slot_rules.profile import DISC, kind_from_type_label
 from src.trackers.common import Common
 from src.trackers.naming import add_incomplete_pack_marker
@@ -156,7 +157,7 @@ class UNIT3D:
         missing_details: list[dict[str, Any]] = []
         disc_type_ids: list[set[str]] = []
         title_releases: list[dict[str, Any]] = []
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=15.0, pool=15.0), follow_redirects=True) as client:
             for url, params, check_pending in urls_to_check:
                 request_url = url
                 request_params: ParamsList | None = params
@@ -185,6 +186,8 @@ class UNIT3D:
 
                     data = response.json()
                     self.observe_api_key_expiry(meta, response, data)
+                    if not isinstance(data,dict) or data.get('success') is False or not isinstance(data.get('data'),list):
+                        raise ValueError(f'{self.tracker}: duplicate-search API returned an invalid/rejected result; occupancy is unknown')
                     for each in data.get("data", []):
                         if check_pending:
                             entry_tmdb = str(each.get("tmdb_id") or "")
@@ -228,6 +231,10 @@ class UNIT3D:
                                 "bd_info": attributes.get("bd_info", ""),
                                 "description": attributes.get("description", ""),
                             }
+                        if not result.get('link') and torrent_id is not None and str(torrent_id).isdigit():
+                            result['link']=f'{self.base_url}/torrents/{torrent_id}'
+                        if 'seeders' in attributes:
+                            result['seeders']=attributes['seeders']
                         title_releases.append(result)
                         if self._matches_local_filter(attributes, local_resolution_ids, local_type_id):
                             dupes.append(result)
@@ -319,11 +326,15 @@ class UNIT3D:
                 # Sequential and spaced out to stay well within API rate limits.
                 await asyncio.sleep(0.5)
             try:
-                response = await client.get(f"{detail_base}/{entry['id']}", headers=headers)
-                response.raise_for_status()
+                async def get_detail(entry_id=entry['id']) -> httpx.Response:
+                    result=await client.get(f'{detail_base}/{entry_id}',headers=headers)
+                    result.raise_for_status()
+                    return result
+                response=await retry_readonly(get_detail,self.tracker,operation_name=f'torrent #{entry["id"]} details',attempts=2)
                 data = response.json()
-            except (httpx.HTTPError, ValueError) as e:
-                logger.debug(f"{self.tracker}: could not fetch details for torrent {entry['id']}: {e}")
+            except (httpx.HTTPError, ValueError,TrackerReadError) as e:
+                entry['detail_error']=str(e) if isinstance(e,TrackerReadError) else error_kind(e)
+                logger.debug(f"{self.tracker}: could not fetch details for torrent {entry['id']}: {entry['detail_error']}")
                 continue
             if not isinstance(data, dict):
                 continue
@@ -694,11 +705,11 @@ class UNIT3D:
             response_data = {}
             try:
                 default_retries = self.config.get("DEFAULT", {}).get("max_retries", 2)
-                max_retries = max(1, int(self.tracker_config.get("max_retries", default_retries)))
+                max_retries = max(1, min(3,int(self.tracker_config.get("max_retries", default_retries))))
             except ValueError, TypeError:
                 max_retries = 2
             retry_delay = 5
-            timeout = 40.0
+            timeout = httpx.Timeout(180.0, connect=15.0, write=120.0, pool=15.0)
             download_url: str | None = None
             post_succeeded = False
 
@@ -709,15 +720,26 @@ class UNIT3D:
                         response.raise_for_status()
 
                         response_data = response.json()
-                        self.observe_api_key_expiry(meta, response, response_data)
+                        if not isinstance(response_data,dict) or response_data.get('success') not in (True,False):
+                            meta.tracker_status[self.tracker]['upload_outcome_unknown']=True
+                            meta.tracker_status[self.tracker]['status_message']='Unrecognized upload response. Check the tracker before retrying; no automatic resubmission.'
+                            return False
 
                         # Verify API success before proceeding
                         if not response_data.get("success"):
+                            self.observe_api_key_expiry(meta, response, response_data)
                             error_msg = response_data.get("message", "Unknown error")
                             meta.tracker_status[self.tracker]["status_message"] = f"API error: {error_msg}"
                             logger.info(f"{self.tracker}: [yellow]Upload to {self.tracker} failed: {error_msg}[/yellow]")
                             return False
 
+                        # The tracker has acknowledged the mutation. No later
+                        # result-processing/download failure can replay this POST.
+                        post_succeeded = True
+                        meta.tracker_status[self.tracker]['upload_acknowledged'] = True
+                        # Cleared only by a valid atomic tracker-torrent download.
+                        meta.tracker_status[self.tracker]['torrent_download_failed'] = True
+                        self.observe_api_key_expiry(meta, response, response_data)
                         meta.tracker_status[self.tracker]["status_message"] = await self.process_response_data(response_data)
                         torrent_id = await self.get_torrent_id(response_data)
                         meta.tracker_status[self.tracker]["torrent_id"] = torrent_id
@@ -726,53 +748,40 @@ class UNIT3D:
                         break  # POST definitively succeeded
 
                 except httpx.HTTPStatusError as e:
-                    if e.response.status_code in [403, 302]:
-                        # Don't retry auth/permission errors
-                        if e.response.status_code == 403:
-                            meta.tracker_status[self.tracker]["status_message"] = (
-                                f"data error: Forbidden (403). This may indicate that you do not have upload permission. {e.response.text}"
-                            )
-                        else:
-                            meta.tracker_status[self.tracker]["status_message"] = (
-                                f"data error: Redirect (302). This may indicate a problem with authentication. {e.response.text}"
-                            )
-                        return False  # Auth/permission error
-                    if e.response.status_code in [401, 404, 422]:
-                        meta.tracker_status[self.tracker]["status_message"] = f"data error: HTTP {e.response.status_code} - {e.response.text}"
-                    else:
-                        # Retry other HTTP errors
-                        if attempt < max_retries - 1:
-                            logger.info(
-                                f"{self.tracker}: [yellow]HTTP {e.response.status_code} error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})[/yellow]"
-                            )
-                            await asyncio.sleep(retry_delay)
-                            continue
-                        # Final attempt failed
-                        if e.response.status_code == 520:
-                            meta.tracker_status[self.tracker]["status_message"] = "data error: Error (520). This is probably a cloudflare issue on the tracker side."
-                        else:
-                            meta.tracker_status[self.tracker]["status_message"] = f"data error: HTTP {e.response.status_code} - {e.response.text}"
-                        return False  # HTTP error after all retries
-                except httpx.TimeoutException:
-                    if attempt < max_retries - 1:
-                        timeout = timeout * 1.5  # Increase timeout by 50% for next retry
-                        logger.info(
-                            f"{self.tracker}: [yellow]Request timed out, retrying in {retry_delay} seconds with {timeout}s timeout... (attempt {attempt + 1}/{max_retries})[/yellow]"
-                        )
-                        await asyncio.sleep(retry_delay)
-                        continue
-                    meta.tracker_status[self.tracker]["status_message"] = "data error: Request timed out after multiple attempts"
-                    return False  # Timeout after all retries
+                    status = meta.tracker_status[self.tracker]
+                    if post_succeeded:
+                        status['status_message'] = f'Upload accepted; result processing failed ({error_kind(e)}). Do not resubmit.'
+                        return True
+                    rejected = e.response.status_code in {301,302,303,307,308,400,401,403,404,413,422,429}
+                    status['upload_outcome_unknown'] = not rejected
+                    status['status_message'] = f'Upload request failed ({error_kind(e)}). '+('Check authentication/input or rate limit before retrying.' if rejected else 'Outcome unknown: check the tracker before retrying; no automatic resubmission.')
+                    return False
                 except httpx.RequestError as e:
-                    if attempt < max_retries - 1:
-                        logger.info(f"{self.tracker}: [yellow]Request error, retrying in {retry_delay} seconds... (attempt {attempt + 1}/{max_retries})[/yellow]")
+                    status = meta.tracker_status[self.tracker]
+                    if post_succeeded:
+                        status['status_message'] = f'Upload accepted; result processing failed ({error_kind(e)}). Do not resubmit.'
+                        return True
+                    try:
+                        original_request = e.request.url == httpx.URL(self.upload_url)
+                    except RuntimeError:
+                        original_request = False
+                    if original_request and safe_upload_retry(e) and attempt < max_retries - 1:
+                        logger.info(f'{self.tracker}: connection failed before submission ({error_kind(e)}); retrying in {retry_delay}s.')
                         await asyncio.sleep(retry_delay)
                         continue
-                    meta.tracker_status[self.tracker]["status_message"] = f"data error: Unable to upload. Error: {e}.\nResponse: {response_data}"
-                    return False  # Request error after all retries
-                except json.JSONDecodeError as e:
-                    meta.tracker_status[self.tracker]["status_message"] = f"data error: Invalid JSON response from {self.tracker}. Error: {e}"
-                    return False  # JSON parsing error
+                    uncertain = not original_request or not isinstance(e,(httpx.ConnectError,httpx.ConnectTimeout,httpx.PoolTimeout))
+                    status['upload_outcome_unknown'] = uncertain
+                    status['status_message'] = f'Upload connection failed ({error_kind(e)}). '+('Outcome unknown: check the tracker before retrying; no automatic resubmission.' if uncertain else 'No connection was established; upload not submitted.')
+                    return False
+                except json.JSONDecodeError:
+                    meta.tracker_status[self.tracker]['upload_outcome_unknown'] = not post_succeeded
+                    meta.tracker_status[self.tracker]['status_message'] = 'Unreadable upload response. Check the tracker before retrying; no automatic resubmission.'
+                    return post_succeeded
+                except Exception as e:
+                    if not post_succeeded:
+                        raise
+                    meta.tracker_status[self.tracker]['status_message'] = f'Upload accepted; result processing failed ({error_kind(e)}). Do not resubmit.'
+                    return True
 
             if post_succeeded:
                 # Download is outside the retry loop — a POST timeout/error cannot cause re-submission

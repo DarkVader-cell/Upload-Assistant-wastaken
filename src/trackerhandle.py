@@ -21,6 +21,7 @@ from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
 from src.rehostimages import check_tracker_image_hosts, has_restricted_image_hosts, select_common_image_host
+from src.runtime.tracker_requests import retry_readonly
 from src.slot_rules.models import Verdict
 from src.slot_rules.registry import evaluate_slots
 from src.stats import record_event_async
@@ -226,12 +227,12 @@ async def process_trackers(
                         logger.info(f"[yellow]{tracker_name}: Redoing dupe check after bandwidth wait...[/yellow]")
                         try:
                             if tracker_name not in {"PASSTHEPOPCORN"}:
-                                new_dupes = cast(list[Any], await t_class.search_existing(meta))
+                                new_dupes = cast(list[Any], await retry_readonly(lambda: t_class.search_existing(meta), tracker_name))
                             else:
                                 ptp = PassThePopcorn(config=config)
-                                group_id = await ptp.get_group_by_imdb(meta.imdb, strict=True, allow_prompt=False)
+                                group_id = await retry_readonly(lambda: ptp.get_group_by_imdb(meta.imdb, strict=True, allow_prompt=False), tracker_name, operation_name='PTP group lookup')
                                 meta.ptp_groupid = group_id
-                                new_dupes = cast(list[Any], await ptp.search_existing(group_id or "", meta))
+                                new_dupes = cast(list[Any], await retry_readonly(lambda: ptp.search_existing(group_id or '', meta), tracker_name))
                         except Exception as e:
                             logger.info(f"[bold red]{tracker_name}: Error redoing duplicate check after bandwidth wait: {e}[/bold red]")
                             status = meta.tracker_status.setdefault(tracker_name, {})

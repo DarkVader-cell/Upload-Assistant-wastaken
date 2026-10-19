@@ -31,6 +31,7 @@ from src.exportmi import export_info
 from src.genre_map import AUDIBLE_ENG_GENRE_MAP, AUDIBLE_PTBR_GENRE_MAP, ENG_TO_PTBR_GENRE_MAP
 from src.languages import languages_manager
 from src.meta import Meta
+from src.runtime.tracker_requests import TrackerReadError, error_kind, retry_readonly
 from src.torrent_manifest import TorrentManifest
 from src.unit3d_catalogs import region_id as resolve_region_id
 from src.unit3d_catalogs import region_name as resolve_region_name
@@ -371,14 +372,39 @@ class Common:
                         cookie_validator = CookieValidator(self.config)
                         cookie_jar = await cookie_validator.load_session_cookies(meta, tracker)
 
-                async with (
-                    httpx.AsyncClient(headers=headers, params=params, cookies=cookie_jar, follow_redirects=True, timeout=30.0) as session,
-                    session.stream("GET", downurl) as r,
-                ):
-                    r.raise_for_status()
-                    async with aiofiles.open(path, "wb") as f:
-                        async for chunk in r.aiter_bytes():
-                            await f.write(chunk)
+                # A dropped response must not truncate the locally generated
+                # torrent, nor cause the successful upload POST to be replayed.
+                destination = Path(path)
+                async with httpx.AsyncClient(headers=headers, params=params, cookies=cookie_jar, follow_redirects=True, timeout=httpx.Timeout(60.0, connect=15.0, pool=15.0)) as session:
+                    async def download() -> None:
+                        temporary = destination.with_name('.tracker-download-'+secrets.token_hex(8)+'.torrent')
+                        try:
+                            size = 0
+                            async with session.stream('GET', downurl) as response:
+                                response.raise_for_status()
+                                async with aiofiles.open(temporary, 'xb') as output:
+                                    await asyncio.to_thread(temporary.chmod,0o600)
+                                    async for chunk in response.aiter_bytes():
+                                        size += len(chunk)
+                                        if size > 64*1024*1024:
+                                            raise ValueError('Tracker torrent exceeds metadata size limit')
+                                        await output.write(chunk)
+                            async with aiofiles.open(temporary, 'rb') as downloaded:
+                                torrent = bencodepy.decode(await downloaded.read())
+                            if not isinstance(torrent,dict) or not isinstance(torrent.get(b'info'),dict) or not torrent[b'info'].get(b'name'):
+                                raise ValueError('Tracker returned invalid torrent metadata')
+                            info=torrent[b'info']
+                            valid_v1=isinstance(info.get(b'pieces'),bytes) and len(info[b'pieces'])%20==0 and (isinstance(info.get(b'length'),int) or isinstance(info.get(b'files'),list))
+                            valid_v2=info.get(b'meta version')==2 and isinstance(info.get(b'file tree'),dict)
+                            if not isinstance(info.get(b'piece length'),int) or info[b'piece length']<=0 or not (valid_v1 or valid_v2):
+                                raise ValueError('Tracker returned incomplete torrent metadata')
+                            if valid_v1:
+                                await asyncio.to_thread(Torrent.read,str(temporary))
+                            temporary.replace(destination)
+                        finally:
+                            temporary.unlink(missing_ok=True)
+                    await retry_readonly(download, tracker, operation_name='torrent download')
+                    meta.tracker_status.setdefault(tracker,{})['torrent_download_failed']=False
 
                 if cross:
                     return None
@@ -388,7 +414,9 @@ class Common:
                 return path
 
             except Exception as e:
-                logger.warning(f"[yellow]Warning: Could not download torrent file: {e!s}[/yellow]")
+                meta.tracker_status.setdefault(tracker,{})['torrent_download_failed']=True
+                detail=str(e) if isinstance(e,TrackerReadError) else error_kind(e)
+                logger.warning(f"[yellow]Warning: Could not download torrent file ({detail}). The local torrent was not truncated; the upload will not be resubmitted.[/yellow]")
                 logger.info("[yellow]Download manually from the tracker.[/yellow]")
                 return None
 

@@ -136,6 +136,11 @@ class Clients(QbittorrentClientMixin, RtorrentClientMixin, DelugeClientMixin, Tr
 
     async def add_to_client(self, meta: Meta, tracker: str, cross: bool = False) -> None:
         """Add the prepared torrent to each configured client."""
+        status=meta.tracker_status.get(tracker,{})
+        if not meta.debug and status.get('torrent_download_failed'):
+            status['client_injection_pending']=True
+            logger.warning(f'{tracker}: site upload may be complete, but the required tracker torrent download failed. Client injection is deferred; download the official torrent before adding it. Do not resubmit the upload.',extra={'markup':False})
+            return
         if meta.path is None:
             logger.info("[bold red]meta.path is None, cannot add to client")
             return

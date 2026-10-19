@@ -104,7 +104,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         return None
     # Trackers that search the whole title keep the full list for slot rules.
     title_releases = meta.get(f"{tracker}_title_releases")
-    if isinstance(title_releases, list):
+    if isinstance(title_releases, list) and not meta.get(f'{tracker}_search_failed'):
         dupes = cast(list[DupeInput], title_releases)
     try:
         upload = profile_from_meta(meta)
@@ -144,6 +144,13 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
 
         rules = rules_cls(meta)
         decision = rules.evaluate(upload, existing)
+        if meta.get(f'{tracker}_search_failed') and (decision is None or decision.verdict is not Verdict.BLOCK):
+            unavailable=rules.decision(Verdict.REVIEW,'Tracker search failed; existing-release occupancy is unknown',why='No reliable existing-release list was obtained. Retry the search or check the site manually; an empty result after a connection error does not establish a vacant slot.')
+            if decision is not None:
+                unavailable.requirements=list(decision.requirements)
+            unavailable.requirements.insert(0,'Complete a successful tracker search or verify on-site occupancy before uploading.')
+            unavailable.requires_evidence=True
+            return unavailable
         # Episodes on the site decide first; a season pack only adds a review when nothing blocks.
         if season_packs and (decision is None or decision.verdict is not Verdict.BLOCK):
             conflicts = [*season_packs, *(profile for profile in existing if decision and profile.entry in decision.conflicts)]
@@ -151,6 +158,8 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
             decision = rules.decision(Verdict.REVIEW, "A season pack that contains this episode is already on the site.", conflicts)
             if prior is not None:
                 decision.protected_ids = list(prior.protected_ids)
+                decision.related_releases = list(prior.related_releases)
+                decision.requirements = list(prior.requirements)
             if tracker == "LST":
                 decision.protected_ids.extend(str(p.entry['id']) for p in season_packs if p.internal and p.entry.get('id'))
             if tracker in {"AITHER", "HDBITS", "LST", "BLUTOPIA"} and prior is not None and prior.verdict is Verdict.REVIEW:

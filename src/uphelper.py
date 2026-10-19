@@ -336,24 +336,54 @@ class UploadHelper:
         if decision.slot:
             line()
             paragraph(f"Slot: {decision.slot}")
-        if decision.why:
+        if decision.why and not decision.requirements:
             line()
             line("[dim]Why[/dim]")
             paragraph(decision.why, indent="  ")
+        if decision.requirements:
+            line()
+            line('[dim]Required checks for this upload[/dim]')
+            for requirement in dict.fromkeys(decision.requirements):
+                paragraph('- '+requirement,indent='  ')
+        if not decision.conflicts and not decision.related_releases and decision.verdict in {Verdict.REVIEW,Verdict.BLOCK}:
+            line()
+            paragraph('No specific existing release was identified as the cause of this check. This concerns upload eligibility/missing evidence; it does not prove the slot is vacant.',style='dim')
         if decision.conflicts:
             line()
-            line("[dim]Already on the site[/dim]")
-            shown = decision.conflicts[:5]
+            line("[dim]Existing releases affecting this decision[/dim]")
+            shown = (decision.comparisons or decision.conflicts)[:25]
             for entry in shown:
                 name = plain(str(entry.get("name", "")))
+                if entry.get('id') is not None:
+                    name = '#'+str(entry['id'])+' '+name
                 link = entry.get("link")
-                label = format_terminal_link(name, link, self.default_config) if isinstance(link, str) and link else escape(name)
+                label = escape(name)+' ('+format_terminal_link('link',link,self.default_config)+')' if isinstance(link,str) and link else escape(name)
                 line(f"  [cyan]{label}[/cyan]")
                 size_text = _describe_size(entry.get("size"), meta.source_size)
                 if size_text:
                     paragraph(size_text, indent="  ", style="dim")
+                if entry.get('traits'):
+                    paragraph(str(entry['traits']),indent='    ',style='dim')
+                if entry.get('reason'):
+                    paragraph('Affects this check: '+str(entry['reason']),indent='    ')
             if len(decision.conflicts) > len(shown):
                 paragraph(f"…and {len(decision.conflicts) - len(shown)} more", indent="  ", style="dim")
+        if decision.related_releases:
+            line()
+            line('[dim]Related releases (context only; not trump targets)[/dim]')
+            for entry in decision.related_releases[:25]:
+                name=str(entry.get('name',''))
+                if entry.get('id') is not None:
+                    name='#'+str(entry['id'])+' '+name
+                link=entry.get('link')
+                label=escape(name)+' ('+format_terminal_link('link',link,self.default_config)+')' if isinstance(link,str) and link else escape(name)
+                line('  '+label)
+                if entry.get('traits'):
+                    paragraph(str(entry['traits']),indent='    ',style='dim')
+                if entry.get('reason'):
+                    paragraph(str(entry['reason']),indent='    ')
+            if len(decision.related_releases)>25:
+                paragraph(f'Only 25 of {len(decision.related_releases)} context releases shown; inspect the tracker for the full list.',style='dim')
         for note in decision.notes:
             line()
             paragraph(f"Note: {note}")
@@ -453,7 +483,7 @@ class UploadHelper:
             meta.we_asked = True
             return not approved, meta
         evidence_shown = False
-        if (tracker_name in {"AITHER", "HDBITS", "LST", "BLUTOPIA"} and slot_decision is not None
+        if (slot_decision is not None
                 and slot_verdict is Verdict.REVIEW and slot_decision.requires_evidence):
             self._show_slot_decision(slot_decision, meta)
             evidence_shown = True

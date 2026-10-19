@@ -6,7 +6,7 @@ from dataclasses import replace
 from datetime import date
 
 from src.meta import Meta
-from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, is_repack_of, slot_label
+from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, add_context, is_repack_of, slot_label
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import AV1, DISC, DV, DVDRIP, ENCODE, H264, H265, HDR10P, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile
 
@@ -196,16 +196,16 @@ class LstSlotRules(_LstSlotLayout):
                                  slot=label, why="Internal Trumpable tags and dead status never remove protection. Equivalent internal/back-catalogue releases may coexist; quality and benefit must be checked. " + " ".join(self._required))
         webdl = [p for p in existing if p.kind == WEBDL and p.resolution == upload.resolution and p.provider == upload.provider and p.hdr == upload.hdr]
         if upload.kind == WEBRIP and webdl:
-            return self.decision(Verdict.REVIEW, "WEBRip may earn an additional slot only with clear visual-improvement comparisons; it never trumps the WEB-DL", slot=label,
-                                 why="An already proven WEBRip also remains when WEB-DL arrives. " + " ".join(self._required))
+            return add_context(self.decision(Verdict.REVIEW, "WEBRip may earn an additional slot only with clear visual-improvement comparisons; it never trumps the WEB-DL", slot=label,
+                                 why="An already proven WEBRip also remains when WEB-DL arrives. " + " ".join(self._required)),webdl,'Compare against this source WEB-DL. It is not a WEBRip trump target.')
         if upload.resolution == SD:
             hd = [p for p in self._all_releases if p.resolution in {"720p", "1080p", "1440p", "2160p"} and (p.edition & self.CUTS) == (upload.edition & self.CUTS)]
             if hd:
-                return self.decision(Verdict.BLOCK, "Equivalent HD retail sources preclude SD non-disc uploads; verify actual source equivalence")
+                return add_context(self.decision(Verdict.BLOCK, "Equivalent HD retail sources preclude SD non-disc uploads; verify actual source equivalence"),hd,'This HD source affects SD eligibility; verify equivalence rather than treating it as an SD replacement target.')
             return self.decision(Verdict.REVIEW, "Confirm there are no equivalent HD retail sources; DVD Remux can replace DVDRip only absent a superior-video exception", slot=label, why=" ".join(self._required))
         cuts = [p for p in existing if p.kind == upload.kind and p.resolution == upload.resolution and (p.edition & self.CUTS) != (upload.edition & self.CUTS)]
         if cuts:
-            return self.decision(Verdict.REVIEW, "Alternate-cut content differences must be documented before claiming an extra slot", slot=label, why=" ".join(self._required))
+            return add_context(self.decision(Verdict.REVIEW, "Alternate-cut content differences must be documented before claiming an extra slot", slot=label, why=" ".join(self._required)),cuts,'Document actual cut/content differences from this listed release; an alternate cut is not automatically a trump target.')
         if upload.kind == REMUX and (upload.hybrid or any(p.hybrid for p in family)):
             native_dv = DV in (upload.hdr or ()) and not upload.hybrid
             related = [p for p in family if (native_dv and p.hybrid) or (upload.hybrid and not p.hybrid and DV in (p.hdr or ()))]

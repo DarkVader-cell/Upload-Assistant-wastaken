@@ -16,6 +16,7 @@ from src.imdb import imdb_manager
 from src.languages import languages_manager
 from src.meta import Meta
 from src.metadata_searching import get_douban_id
+from src.runtime.tracker_requests import retry_readonly
 from src.slot_rules.models import Verdict
 from src.slot_rules.registry import evaluate_slots
 from src.stats import record_event_async
@@ -240,7 +241,8 @@ class TrackerStatusManager:
                         if not local_tracker_status["skipped"]:
                             search_started = time.monotonic()
                             try:
-                                dupes: list[Any] = cast(list[Any], await tracker_class.search_existing(local_meta))
+                                local_meta[f'{tracker_name}_search_failed'] = False
+                                dupes: list[Any] = cast(list[Any], await retry_readonly(lambda: tracker_class.search_existing(local_meta), tracker_name))
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="success", duration_ms=(time.monotonic() - search_started) * 1000
                                 )
@@ -250,6 +252,7 @@ class TrackerStatusManager:
                                 if local_meta["tracker_status"][tracker_name].get("other", False):
                                     local_tracker_status["other"] = True
                             except Exception as e:
+                                local_meta[f'{tracker_name}_search_failed'] = True
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="error", duration_ms=(time.monotonic() - search_started) * 1000
                                 )
@@ -291,10 +294,10 @@ class TrackerStatusManager:
                         if not local_tracker_status["skipped"]:
                             search_started = time.monotonic()
                             try:
-                                group_id = await ptp.get_group_by_imdb(local_meta["imdb"], strict=True, allow_prompt=not local_meta.unattended or bool(local_meta.unattended_confirm))
+                                group_id = await retry_readonly(lambda: ptp.get_group_by_imdb(local_meta['imdb'], strict=True, allow_prompt=not local_meta.unattended or bool(local_meta.unattended_confirm)), tracker_name, operation_name='PTP group lookup')
                                 async with meta_lock:
                                     meta.ptp_groupid = group_id
-                                dupes = cast(list[Any], await ptp.search_existing(group_id or "", local_meta))
+                                dupes = cast(list[Any], await retry_readonly(lambda: ptp.search_existing(group_id or '', local_meta), tracker_name))
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="success", duration_ms=(time.monotonic() - search_started) * 1000
                                 )

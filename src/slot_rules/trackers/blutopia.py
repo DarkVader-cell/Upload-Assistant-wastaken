@@ -14,7 +14,7 @@ from pathlib import Path
 
 from src.meta import Meta
 from src.screenshot_manifest import files as manifest_files
-from src.slot_rules.base import SlotRules, is_repack_of
+from src.slot_rules.base import SlotRules, describe_releases, is_repack_of
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import DISC, ENCODE, H264, H265, HDTV, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, _language_code, audio_family, channel_count
 
@@ -49,8 +49,21 @@ class BlutopiaSlotRules(SlotRules):
     RULES_DATE = date(2026, 10, 20)
 
     def decision(self, verdict, reason, conflicts=(), notes=(), *, slot="", why="") -> SlotDecision:
-        result = super().decision(verdict, reason, conflicts, [*notes, *REMINDERS], slot=slot, why=why)
+        details = list(notes)
+        candidate = getattr(self, "_candidate", None)
+        if candidate is not None:
+            details.append(
+                f"Incoming: {candidate.resolution or 'unknown resolution'} · {candidate.kind or 'unknown format'} · {candidate.codec or 'unknown codec'} · {candidate.hdr_label}."
+            )
+        if any(p.entry.get("seeders") == 0 for p in conflicts):
+            details.append(REMINDERS[2])
+        result = super().decision(verdict, reason, conflicts, details, slot=slot, why=why)
         result.requires_evidence = verdict is Verdict.REVIEW
+        if verdict is Verdict.REVIEW:
+            result.requirements = list(dict.fromkeys(getattr(self, "_pending", [])))
+        for item in result.comparisons:
+            item["reason"] = reason
+        result.related_releases = [item for profiles, explanation in getattr(self, "_related", []) for item in describe_releases(profiles, explanation)]
         return result
 
     def block(self, reason):
@@ -274,17 +287,23 @@ class BlutopiaSlotRules(SlotRules):
         if m.personalrelease:
             pending.append("Personal release: SHOULD requirements are MUST, including applicable sources, audio assets, tags, logs and subtitle hygiene")
         if screenshot_count(m) < 3:
-            pending.append("Verify at least three valid screenshots and required report/parser fields in the actual description")
+            pending.append(f"Screenshots: {screenshot_count(m)} available; BLU requires at least 3 valid screenshots in the actual description.")
         if not m.mediainfo:
-            pending.append("Supply required MediaInfo in the parser; missing reports are not a valid upload")
+            pending.append("MediaInfo: no parsed report was supplied for this upload; provide the required report in the tracker parser.")
         if not p.audio_languages or not m.original_language:
-            pending.append("Verify original primary audio language and allowed dub/supplementary roles; missing language metadata is not conformity proof")
+            pending.append(
+                f"Audio language: title primary language={m.original_language or 'unknown'}; detected audio languages={', '.join(sorted(p.audio_languages or [])) or 'unknown'}. Verify native primary audio and permitted dub/supplementary roles."
+            )
         elif str(m.original_language).casefold() not in {"en", "eng", "english"} and "en" not in (p.subtitle_languages or set()):
             pending.append("Non-English content must provide English subtitles, embedded or via the subtitle manager")
         return None, pending
 
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]):
         from src.trackers.UNIT3D.blutopia import Blutopia
+
+        self._related = []
+        self._pending = []
+        self._candidate = upload
 
         def normalize(p):
             flags = p.entry.get("flags") or []
@@ -298,7 +317,9 @@ class BlutopiaSlotRules(SlotRules):
             upload = replace(upload, hybrid=True)
         if (upload.group or "").casefold() in {g.lstrip("-").casefold() for g in Blutopia.banned_groups}:
             return self.block("This release group is banned on BLU")
+        self._candidate = upload
         violation, pending = self._requirements(upload)
+        self._pending = pending
         if violation:
             return self.block(violation)
         exact = [p for p in existing if p.exact]
@@ -310,10 +331,32 @@ class BlutopiaSlotRules(SlotRules):
             return self.decision(Verdict.REVIEW, "Unknown BLU format/resolution; verify eligibility and slot before uploading", why=" ".join(pending))
         if upload.resolution == SD and upload.kind in {REMUX, WEBDL}:
             pending.append("SD DVD remux/WEB-DL needs no non-upscaled HD version, never-HD OAR or important unique assets; absence from this search is not proof")
-        if isinstance(self.meta, Meta) and self.meta.category == "TV":
+            hd = [p for p in existing if p.resolution in {"720p", "1080p", "1440p", "2160p"} and (p.edition & CUTS) == (upload.edition & CUTS)]
+            if hd:
+                self._related.append((hd, "Potential HD source relevant to the SD exception. Verify native-HD, OAR and unique assets; this is not an SD trump target."))
+        if (
+            isinstance(self.meta, Meta)
+            and self.meta.category == "TV"
+            and any(p.resolution == upload.resolution and (p.edition & CUTS) == (upload.edition & CUTS) for p in existing)
+        ):
             pending.append(
                 "Complete same-source/same-quality seasons replace individual episodes/incomplete packs; WEB season packs replace HDTV unless inferior; individual seasons of the same source/resolution replace COMPLETE series packs. Verify source, quality and completeness rather than title markers alone"
             )
+        if isinstance(self.meta, Meta) and self.meta.category == "TV" and self.meta.tv_pack:
+            tv_sources = [
+                p
+                for p in existing
+                if p.resolution == upload.resolution
+                and (p.edition & CUTS) == (upload.edition & CUTS)
+                and (p.kind == HDTV or p.entry.get("complete_series") is True or re.search(r"\bcomplete[ ._-]+series\b", p.name, re.I))
+            ]
+            if tv_sources:
+                self._related.append(
+                    (
+                        tv_sources,
+                        "TV replacement context: verify same source/resolution/quality, complete-season versus COMPLETE-series rules, or WEB-over-HDTV superiority before claiming a trump.",
+                    )
+                )
         same = [p for p in existing if p.resolution == upload.resolution and (p.edition & CUTS) == (upload.edition & CUTS) and p.is_3d == upload.is_3d]
         if upload.kind == DISC:
             return self.decision(
@@ -329,8 +372,12 @@ class BlutopiaSlotRules(SlotRules):
                 for p in existing
                 if p.kind == WEBDL and (p.edition & CUTS) == (upload.edition & CUTS) and (not p.provider or not upload.provider or p.provider == upload.provider)
             ]
-            if web:
+            web_sourced = upload.kind == WEBRIP or (isinstance(self.meta, Meta) and str(self.meta.source or "").casefold() in {"web", "webrip", "web-dl"})
+            if web and web_sourced:
                 pending.append("WEBRip cannot coexist with its source WEB-DL without comparisons proving significant visual improvement")
+                self._related.append(
+                    (web, "Potential source WEB-DL for this WEBRip; compare actual source identity and prove significant visual improvement. Not a WEBRip replacement target.")
+                )
             limit = 2 if upload.resolution == "1080p" else 1
             return self.decision(
                 Verdict.REVIEW,
@@ -352,11 +399,15 @@ class BlutopiaSlotRules(SlotRules):
             native = [p for p in holders if p.hybrid != upload.hybrid]
             if native:
                 pending.append("Untouched original HDR and a valid derived hybrid coexist; do not report the original merely for lacking metadata")
+                self._related.append((native, "Original/derived HDR coexistence context. Verify lineage; added metadata alone does not authorize reporting this release."))
                 holders = [p for p in holders if p not in native]
         if upload.kind == WEBDL:
             rips = [p for p in same if p.kind == WEBRIP and (not p.provider or not upload.provider or p.provider == upload.provider)]
             if rips:
                 pending.append("WEB-DL trumps WEBRip of the same source/source resolution; verify source identity and any significant-improvement coexistence case")
+                self._related.append(
+                    (rips, "Potential same-source WEBRip. Verify source identity/resolution and any visual-improvement coexistence exception before claiming a replacement.")
+                )
         if upload.kind == REMUX:
             pending.append(
                 "Verify source/master and audio/asset completeness. P7 MEL cannot trump Blu-ray-sourced P8.1; FEL beats MEL only with same/better HDR10 base. Disc HDR10+/DV is SHOULD; profiles/source/grade/master differences require evidence, never numeric ranking"
@@ -375,7 +426,11 @@ class BlutopiaSlotRules(SlotRules):
         if unknown:
             return self.decision(Verdict.REVIEW, "Potential BLU slot occupants have unknown traits; verify before assuming vacancy", unknown, why=" ".join(pending))
         if pending:
-            return self.decision(Verdict.REVIEW, "Verify required BLU eligibility/source/quality/description evidence", why=" ".join(pending))
+            return self.decision(
+                Verdict.REVIEW,
+                f"BLU upload checks need review ({len(dict.fromkeys(pending))} unverified requirements); no competing slot occupant was identified",
+                why=" ".join(pending),
+            )
         return self.decision(
             Verdict.ALLOW,
             "No competing listed release occupies this provider/format/cut/resolution combination",

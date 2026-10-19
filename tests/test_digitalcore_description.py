@@ -1,7 +1,9 @@
 """Regression tests for DigitalCore description formatting and torrent download."""
+# ruff: noqa: S101
 
 import contextlib
 
+import bencodepy
 import pytest
 
 from src.get_desc import DescriptionBuilder
@@ -19,19 +21,22 @@ def test_digitalcore_rewrites_sized_img_tags_to_plain_img():
     assert "[img]https://img.example/1.png[/img]" in formatted
 
 
+TORRENT_BYTES = bencodepy.encode({b"info": {b"name": b"movie", b"piece length": 16384, b"length": 1, b"pieces": b"0" * 20}})
+
+
 def _patch_client(monkeypatch, fail):
     class Client:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *_args, **_kwargs):
             pass
 
         async def __aenter__(self):
             return self
 
-        async def __aexit__(self, *exc):
+        async def __aexit__(self, *_exc):
             return False
 
         @contextlib.asynccontextmanager
-        async def stream(self, method, url):
+        async def stream(self, _method, _url):
             yield self
 
         def raise_for_status(self):
@@ -39,7 +44,7 @@ def _patch_client(monkeypatch, fail):
                 raise RuntimeError("404")
 
         async def aiter_bytes(self):
-            yield b"torrent-data"
+            yield TORRENT_BYTES
 
     monkeypatch.setattr("src.trackers.common.httpx.AsyncClient", Client)
 
@@ -58,4 +63,6 @@ async def test_download_tracker_torrent_returns_the_path_only_on_success(tmp_pat
 
     _patch_client(monkeypatch, fail=False)
     assert await common.download_tracker_torrent(meta, "TESTTRK", downurl="https://example.invalid/dl")
-    assert torrent_path.read_bytes() == b"torrent-data"
+    assert torrent_path.read_bytes() == TORRENT_BYTES
+    assert meta.tracker_status["TESTTRK"]["torrent_download_failed"] is False
+    assert torrent_path.stat().st_mode & 0o777 == 0o600

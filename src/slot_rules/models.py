@@ -34,3 +34,7 @@ class SlotDecision:
     # Protected targets may be displayed for coexistence but never reported as replacements.
     protected_ids: list[str] = field(default_factory=list)
     constraint_violation: bool = False
+    # Display-only evidence. Never offer these as report targets implicitly.
+    comparisons: list[dict[str, Any]] = field(default_factory=list)
+    related_releases: list[dict[str, Any]] = field(default_factory=list)
+    requirements: list[str] = field(default_factory=list)

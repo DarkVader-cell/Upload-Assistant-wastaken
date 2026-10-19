@@ -89,6 +89,36 @@ def slot_label(key: SlotKey) -> str:
 REPACK_REASON = "A REPACK/PROPER replaces the original release from the same group."
 
 
+def describe_releases(profiles: Sequence[ReleaseProfile], reason: str, *, role: str = "context") -> list[dict[str, Any]]:
+    """Safe, display-only references; not a replacement/report candidate list."""
+    result = []
+    for p in profiles:
+        link = p.entry.get("link")
+        result.append(
+            {
+                "name": p.name,
+                "id": p.entry.get("id"),
+                "size": p.entry.get("size", p.size),
+                "link": link if isinstance(link, str) and link.startswith(("https://", "http://")) else None,
+                "traits": f"{p.resolution or 'unknown resolution'} · {p.kind or 'unknown format'} · {p.codec or 'unknown codec'} · {p.hdr_label}"
+                + (" · hybrid" if p.hybrid else ""),
+                "role": role,
+                "reason": reason + (" Details unavailable: " + str(p.entry["detail_error"]) if p.entry.get("detail_error") else ""),
+            }
+        )
+    return result
+
+
+def add_context(decision: SlotDecision, profiles: Sequence[ReleaseProfile], reason: str) -> SlotDecision:
+    decision.related_releases.extend(describe_releases(profiles, reason, role="eligibility"))
+    return decision
+
+
+def pair_reasons(decision: SlotDecision, pairs: Sequence[tuple[ReleaseProfile, str]]) -> SlotDecision:
+    decision.comparisons = [item for profile, reason in pairs for item in describe_releases([profile], reason or decision.reason, role="competing")]
+    return decision
+
+
 class SlotRules:
     """Base class: subclasses set the class attributes and implement ``decide``."""
 
@@ -117,6 +147,7 @@ class SlotRules:
             slot=slot,
             why=why,
             conflicts=[dict(conflict.entry) for conflict in conflicts],
+            comparisons=describe_releases(conflicts, why or reason, role="competing"),
             notes=list(notes),
         )
 
@@ -211,16 +242,21 @@ class SlotRules:
         blocking = [(profile, reason) for profile, verdict, reason in results if verdict is Verdict.BLOCK]
         if blocking:
             why = next((reason for _, reason in blocking if reason), "")
-            return self.decision(Verdict.BLOCK, "Another release already fills this slot.", [profile for profile, _ in blocking], notes, slot=label, why=why)
+            return pair_reasons(
+                self.decision(Verdict.BLOCK, "Another release already fills this slot.", [profile for profile, _ in blocking], notes, slot=label, why=why), blocking
+            )
         reviewing = [(profile, reason) for profile, verdict, reason in results if verdict is Verdict.REVIEW]
         if reviewing:
-            return self.decision(
-                Verdict.REVIEW,
-                "A release already fills this slot, but yours might still be accepted.",
-                [profile for profile, _ in reviewing],
-                notes,
-                slot=label,
-                why=reviewing[0][1],
+            return pair_reasons(
+                self.decision(
+                    Verdict.REVIEW,
+                    "A release already fills this slot, but yours might still be accepted.",
+                    [profile for profile, _ in reviewing],
+                    notes,
+                    slot=label,
+                    why=reviewing[0][1],
+                ),
+                reviewing,
             )
         reasons = " ".join(dict.fromkeys(reason for _, _, reason in results if reason))
         decision = self.decision(
@@ -232,7 +268,7 @@ class SlotRules:
             why=reasons,
         )
         decision.trump_recommended = True
-        return decision
+        return pair_reasons(decision, [(profile, reason) for profile, _verdict, reason in results])
 
     @staticmethod
     def default_trump(upload: ReleaseProfile, existing: ReleaseProfile) -> tuple[Verdict, str]:

@@ -7,7 +7,7 @@ from dataclasses import replace
 from datetime import date
 
 from src.meta import Meta
-from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, is_repack_of, size_diff_ratio, slot_label
+from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, add_context, is_repack_of, size_diff_ratio, slot_label
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import DISC, DV, DVDRIP, ENCODE, H264, H265, HDR10, HDR10P, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile
 
@@ -242,17 +242,17 @@ class AitherSlotRules(SlotRules):
         if upload.resolution == SD:
             hd = [p for p in same_cut if p.resolution in {"720p", "1080p", "1440p", "2160p"} and (p.kind in {DISC, WEBDL} or self._retail(p))]
             if hd:
-                return self.decision(Verdict.BLOCK, "An equivalent HD retail source exists; SD WEB/DVDRip/DVD Remux is not allowed")
+                return add_context(self.decision(Verdict.BLOCK, "An equivalent HD retail source exists; SD WEB/DVDRip/DVD Remux is not allowed"),hd,'This HD retail source precludes the proposed SD slot; it is not an SD trump target.')
             return self.review("Confirm that no equivalent HD retail media source exists before using an SD slot", family, slot=label)
         if upload.resolution == "1440p":
             uhd = [p for p in same_cut if p.resolution == "2160p"]
             if uhd:
-                return self.decision(Verdict.BLOCK, "A 2160p source is available; the 1440p slot cannot be used")
+                return add_context(self.decision(Verdict.BLOCK, "A 2160p source is available; the 1440p slot cannot be used"),uhd,'A 2160p source is listed for this cut; Aither only permits the 1440p slot when no 2160p source is available.')
             return self.review("Confirm that no 2160p source is available before using a 1440p slot", family, slot=label)
         other_cuts = [p for p in title if p.kind == upload.kind and p.resolution == upload.resolution
                       and (p.edition & CUTS) != (upload.edition & CUTS)]
         if other_cuts or (upload.edition & {"imax", "ultimate", "special"}):
-            return self.review("Alternate cuts may coexist only when actual content differences are documented; marketing labels alone are not new slots", slot=label)
+            return add_context(self.review("Alternate cuts may coexist only when actual content differences are documented; marketing labels alone are not new slots", slot=label),other_cuts,'Compare actual cut/content differences against this release; it is not automatically a replacement target.')
         occupants = []
         for profile in family:
             try:
