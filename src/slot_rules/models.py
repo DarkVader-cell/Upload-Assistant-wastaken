@@ -27,3 +27,5 @@ class SlotDecision:
     # Existing torrents that hold (or compete for) the upload's slot.
     conflicts: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())
     notes: list[str] = field(default_factory=lambda: list[str]())
+    # A replacement recommendation, not mere coexistence or a vacant slot.
+    trump_recommended: bool = False

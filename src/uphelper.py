@@ -429,6 +429,41 @@ class UploadHelper:
             approved = await self.prompt_yes_no("Have you checked the required evidence/staff approval and confirmed this PTP upload is permitted?", default=False)
             meta.we_asked = True
             return not approved, meta
+        # Slot recommendations can retain a replacement that the basic dupe
+        # filter removed, or recommend a trump before the API marks it trumpable.
+        if tracker_name in {"AITHER", "LST"} and interactive and meta.dupe is False:
+            recommended = bool(slot_decision and slot_verdict is Verdict.ALLOW and slot_decision.trump_recommended)
+            # A manual report is an explicit user choice, not an assertion that
+            # every duplicate/conflict is eligible or already flagged by staff.
+            raw_candidates = meta.get(f"{tracker_name}_report_candidates", [])
+            retained = [entry for entry in raw_candidates if isinstance(entry, dict)] if isinstance(raw_candidates, list) else []
+            pool = [*retained, *(slot_decision.conflicts if slot_decision else []), *(entry for entry in dupes_list if isinstance(entry, dict))]
+            unique = {str(entry["id"]): entry for entry in pool
+                      if str(entry.get("id") or "").isdigit() and len(str(entry["id"])) <= 20 and int(str(entry["id"])) > 0}
+            candidates = list(unique.values())
+            if candidates:
+                if slot_decision is not None:
+                    self._show_slot_decision(slot_decision, meta)
+                selected = candidates[0]
+                if len(candidates) > 1:
+                    choices = {f"{entry['id']}: {entry.get('name', '')}": entry for entry in candidates}
+                    answer = await prompt_in_thread(cli_ui.ask_choice, "Which torrent do you want to report as trumped?", choices=[*choices, "Skip trump reporting"])
+                    selected = choices.get(answer)
+                if selected is not None:
+                    logger.info(f"[cyan]Trump report target: {escape(str(selected.get('name', '')))} (ID {selected['id']})[/cyan]")
+                question = (f"Are you trumping this release on {tracker_name} and creating a report after a successful upload?" if recommended else
+                            f"Create a manual trump report on {tracker_name} after a successful upload? Confirm this replacement is permitted and any required comparisons are available.")
+                approved = selected is not None and await self.prompt_yes_no(question, default=False)
+                meta.we_asked = True
+                if approved and selected is not None:
+                    meta.were_trumping = True
+                    meta[f"{tracker_name}_cross_seed"] = False
+                    meta[f"{tracker_name}_trumpable_id"] = selected["id"]
+                    exact = meta.filename_match and meta.file_count_match and str(meta.get(f"{tracker_name}_matched_id")) == str(selected["id"])
+                    meta.trump_reason = "exact_match" if exact else "trumpable_release"
+                    return False, meta
+                upload = await self.prompt_yes_no(f"Upload to {tracker_name} anyway without creating a UA trump report?", default=slot_verdict is Verdict.ALLOW)
+                return not upload, meta
         if not dupes_list:
             needs_answer = slot_verdict is Verdict.BLOCK or (slot_verdict is Verdict.REVIEW and bool(slot_decision and slot_decision.conflicts))
             if slot_decision is not None and needs_answer:

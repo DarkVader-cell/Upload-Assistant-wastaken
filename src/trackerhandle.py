@@ -193,6 +193,9 @@ async def process_trackers(
             meta.name = meta.name.replace(" DUPE?", "")
 
         tracker = tracker.replace(" ", "").upper().strip()
+        if tracker in {"AITHER", "LST"} and meta.tracker_status.get(tracker, {}).get("upload"):
+            # A failed/retried upload must not report using a stale success/ID.
+            meta.tracker_status[tracker]["upload_success"] = None
 
         if meta.category == "BOOK" and not is_valid_cover_image(meta.artwork_path):
             status = meta.tracker_status.setdefault(tracker, {})

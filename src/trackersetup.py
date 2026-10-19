@@ -1332,6 +1332,11 @@ class TrackerSetup:
     async def make_trumpable_report(self, meta: Meta, tracker: str) -> bool:
         """Create a trump report by POSTing to the /create endpoint"""
         logger.debug(f"[bold green]Creating trump report on {tracker}[/bold green]")
+        status = (meta.tracker_status or {}).get(tracker, {})
+        approved = bool(meta.get(f"{tracker}_were_trumping", meta.were_trumping))
+        if not meta.debug and (status.get("upload_success") is not True or not approved):
+            logger.info(f"[yellow]{tracker}: no successful approved trump upload; skipping report creation.[/yellow]")
+            return False
 
         tracker_instance = self._create_tracker_instance(tracker)
         if not tracker_instance:
@@ -1344,8 +1349,9 @@ class TrackerSetup:
             return False
 
         reported_torrent_id = meta.get(f"{tracker}_reported_torrent_id", "")
-        if not reported_torrent_id:
-            logger.info(f"[red]No reported torrent ID found in meta for trump report creation on {tracker}[/red]")
+        report_id = str(reported_torrent_id or "")
+        if not report_id.isdigit() or len(report_id) > 20 or int(report_id) <= 0:
+            logger.info(f"[red]No valid reported torrent ID found for trump report creation on {tracker}[/red]")
             return False
         # Replace /filter with /create. For LST the URL requires a numeric ID segment.
         if tracker == "LST":
@@ -1380,11 +1386,15 @@ class TrackerSetup:
             # Set fallback for debug mode so payload construction doesn't fail
             trumping_torrent_id: str | None = None
 
+        trump_reason = meta.get(f"{tracker}_trump_reason", meta.trump_reason)
+        if not meta.debug and str(trumping_torrent_id) == str(reported_torrent_id):
+            logger.info(f"[yellow]{tracker}: refusing to report a torrent as trumping itself.[/yellow]")
+            return False
         if meta.tv_pack:
             message = f"{meta.ua_name} season pack trump"
-        elif meta.trump_reason == "exact_match":
+        elif trump_reason == "exact_match":
             message = f"{meta.ua_name} exact filename trump"
-        elif meta.trump_reason == "trumpable_release":
+        elif trump_reason == "trumpable_release":
             message = f"{meta.ua_name} trumpable release trump"
         else:
             message = f"{meta.ua_name} is trumping this torrent for reasons {meta.ua_name} has not correctly caught. User selected yes at a prompt."

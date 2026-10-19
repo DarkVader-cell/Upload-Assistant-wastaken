@@ -2668,7 +2668,8 @@ async def do_the_thing(base_dir: str) -> None:
             else:
                 meta = meta
                 if meta.were_trumping:
-                    trump_trackers = [t for t in cast(list[Any], meta.trackers) if isinstance(t, str)]
+                    trump_trackers = [t for t in cast(list[Any], meta.trackers)
+                                      if isinstance(t, str) and t in {"AITHER", "LST"} and meta.get(f"{t}_were_trumping", True)]
                     logger.info("[yellow]Checking for existing trump reports.....")
                     tracker_status = cast(dict[str, dict[str, Any]], meta.tracker_status or {})
                     trumping_trackers: list[str] = []

@@ -223,7 +223,7 @@ class SlotRules:
                 why=reviewing[0][1],
             )
         reasons = " ".join(dict.fromkeys(reason for _, _, reason in results if reason))
-        return self.decision(
+        decision = self.decision(
             Verdict.ALLOW,
             "Your release can replace the one in this slot. Report it as a trump after uploading.",
             competing,
@@ -231,6 +231,8 @@ class SlotRules:
             slot=label,
             why=reasons,
         )
+        decision.trump_recommended = True
+        return decision
 
     @staticmethod
     def default_trump(upload: ReleaseProfile, existing: ReleaseProfile) -> tuple[Verdict, str]:

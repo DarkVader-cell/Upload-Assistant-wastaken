@@ -329,6 +329,10 @@ class TrackerStatusManager:
                     # consult the legacy ``meta.skipping`` marker, which may
                     # have been set by a different tracker.
                     if not local_tracker_status["skipped"]:
+                        # Keep the title search targets available for explicit manual
+                        # reports even if the basic duplicate filter removes them.
+                        if tracker_name in {"AITHER", "LST"}:
+                            local_meta[f"{tracker_name}_report_candidates"] = [dict(entry) for entry in dupes if isinstance(entry, dict)]
                         # Slot rules need the unfiltered results; the basic filter drops releases they compare against.
                         slot_decision = await evaluate_slots(dupes, local_meta, tracker_name, self.config)
                         dupes = cast(list[Any], await dupe_checker.filter_dupes(dupes, local_meta, tracker_name))
@@ -354,7 +358,7 @@ class TrackerStatusManager:
                                 meta[f"{tracker_name}_matched_episode_ids"] = matched_episode_ids
                             if trumpable_id:
                                 meta.trumpable_id = trumpable_id
-                            if cross_seed_key in local_meta and cross_seed_value:
+                            if cross_seed_key in local_meta:
                                 meta[cross_seed_key] = cross_seed_value
 
                         if tracker_name in ["AITHER", "LST"]:
@@ -362,10 +366,12 @@ class TrackerStatusManager:
                             trump_reason = local_meta.get("trump_reason")
                             trumpable_id_after_dupe_check = local_meta.get(f"{tracker_name}_trumpable_id")
                             async with meta_lock:
+                                meta[f"{tracker_name}_were_trumping"] = bool(were_trumping)
                                 if were_trumping:
                                     meta.were_trumping = were_trumping
                                 if trump_reason:
                                     meta.trump_reason = trump_reason
+                                    meta[f"{tracker_name}_trump_reason"] = trump_reason
                                 if trumpable_id_after_dupe_check:
                                     meta[f"{tracker_name}_trumpable_id"] = trumpable_id_after_dupe_check
 
