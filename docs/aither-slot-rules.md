@@ -3,6 +3,29 @@
 Based on the guidelines supplied by the operator. These are recommendations,
 not a replacement for current site rules or staff decisions.
 
+## Understanding the recommendation (diagnostics updated 2026-10-20)
+
+`2160p · WEB · HDR` is the shared **HDR / DV-HDR slot**, not a statement
+that both releases are HDR-only. In that slot, detected DV/HDR replaces detected
+HDR-only. It does not replace an existing DV/HDR release merely for being larger,
+from another provider, or internal. HDR10+/DV-HDR10+ has its own 2160p WEB slot.
+
+The panel now states the detected incoming format and applicable matrix rule;
+blocked replacements compare incoming versus existing dynamic range explicitly.
+It no longer substitutes the vague "No supplied rule establishes a trump" for
+that explanation. Required hybrid/source/grade evidence is still a review, not
+waived by an HDR flag.
+
+The canonical metadata parser now recognises `DV/HDR`, `DV.HDR`, `DV_HDR`,
+`DOVI HDR`, and `Dolby Vision / HDR10`, including HDR10+ aliases. Previously,
+only whitespace-separated `DV` worked reliably: `DV/HDR` or `DOVI HDR` could be
+misread as HDR-only and lose the explicit replacement preference. These are
+**metadata-token** fixes; a DV word in a filename does not prove the payload has
+DV, and DV-only does not imply HDR10 compatibility. If displayed traits disagree
+with actual MediaInfo, correct/investigate the metadata rather than force a trump.
+Explicit converted WEB-DV provenance is treated as hybrid, not proof of native
+disc DV; grade-check requirements remain intact.
+
 ## Slot coverage
 
 - SD: one WEB-DL, DVDRip and DVD Remux slot. Any known equivalent HD retail

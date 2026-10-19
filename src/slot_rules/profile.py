@@ -218,19 +218,10 @@ def hdr_from_name(name: str) -> frozenset[str]:
 
 def hdr_from_meta_value(value: str | None) -> frozenset[str]:
     """Translate ``meta.hdr`` (for example "DV HDR10+", "HDR", "HLG") to HDR flags."""
-    found: set[str] = set()
-    text = (value or "").upper()
-    if "DV" in text.split():
-        found.add(DV)
-    if "HDR10+" in text:
-        found.add(HDR10P)
-    elif re.search(r"\bHDR(10)?\b", text):
-        found.add(HDR10)
-    if "HLG" in text:
-        found.add(HLG)
-    if "PQ10" in text:
-        found.add(PQ10)
-    return frozenset(found)
+    # Metadata and title tokens must understand the same aliases/separators.
+    # split() silently dropped DV from "DV/HDR" and from "DOVI HDR".
+    # This parses the explicit metadata value, never the release filename.
+    return hdr_from_name(value or "")
 
 
 def editions_from_text(text: str | None) -> frozenset[str]:

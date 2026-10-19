@@ -20,8 +20,43 @@ class AitherSlotRules(SlotRules):
     TRACKER = "AITHER"
     RULES_DATE = date(2026, 10, 19)
 
+    @staticmethod
+    def _policy(p: ReleaseProfile) -> str:
+        if p.kind == DISC:
+            return 'Unlimited unique full-disc slots; verify permitted retail format/content/regions.'
+        if p.resolution == SD:
+            return 'One SD WEB-DL, one SD DVDRip and one SD DVD Remux slot; only if no equivalent HD retail media source is available.'
+        if p.kind == WEBDL:
+            if p.resolution == '720p':
+                return 'One 720p H.264 WEB slot.'
+            if p.resolution in {'1080p','1440p'}:
+                prefix='1440p requires no available 2160p source. ' if p.resolution=='1440p' else ''
+                return prefix+'One H.264 WEB, one DV-only H.265 WEB, and one HDR or DV/HDR H.265 WEB slot. DV/HDR trumps HDR in the last slot.'
+            if p.resolution == '2160p':
+                return 'Four H.265 WEB slots: SDR; DV-only; HDR or DV/HDR (DV/HDR trumps HDR); HDR10+ or DV/HDR10+ (DV/HDR10+ trumps HDR10+). Providers do not create extra Aither slots.'
+        if p.kind in {ENCODE,WEBRIP}:
+            if p.resolution == '720p':
+                return 'One 720p H.264 encode slot.'
+            if p.resolution == '1080p' and p.codec == H264:
+                return 'Two x264 slots: Quality (transparent) and Retention (space-saving). Less than 20% size difference competes; a larger gap alone does not prove a valid alternative. WEB downscales/animation require comparisons.'
+            if p.resolution == '1080p':
+                return 'One ordinary x265 slot; one retail HDR/DV-HDR x265 slot (DV/HDR trumps HDR); one hybrid HDR10+/DV-HDR10+ x265 slot (DV/HDR10+ trumps HDR10+ and DV/HDR). Hybrid grading evidence is required.'
+            if p.resolution == '2160p':
+                return 'One SDR x265, one retail HDR/DV-HDR x265 (DV/HDR trumps HDR), one hybrid HDR10+/DV-HDR/DV-HDR10+ x265 (DV/HDR10+ trumps DV/HDR and HDR10+). Disc DV normally beats hybrid; grade checks/plots are required.'
+        if p.kind == REMUX:
+            if p.resolution == '1080p':
+                return 'One 1080p Remux slot.'
+            if p.resolution == '2160p':
+                return 'One SDR, one retail HDR/DV-HDR (DV/HDR trumps HDR), one hybrid HDR10+/DV-HDR/DV-HDR10+ Remux (DV/HDR10+ trumps DV/HDR and HDR10+). Disc DV normally beats hybrid unless proven inferior; grade checks/plots required.'
+        return 'Verify a listed Aither format/resolution slot and any required source/comparison/staff evidence.'
+
     def decision(self, verdict: Verdict, reason: str, conflicts: Sequence[ReleaseProfile] = (), notes: Sequence[str] = (), *, slot: str = "", why: str = "") -> SlotDecision:
-        result = super().decision(verdict, reason, conflicts, notes, slot=slot, why=why)
+        candidate = getattr(self, '_candidate', None)
+        details = list(notes)
+        if candidate is not None:
+            details.extend([f'Detected incoming: {candidate.resolution or "unknown resolution"} · {candidate.kind or "unknown type"} · {candidate.codec or "unknown codec"} · {candidate.hdr_label}.',
+                            'Aither rule: '+self._policy(candidate)])
+        result = super().decision(verdict, reason, conflicts, details, slot=slot, why=why)
         result.requires_evidence = verdict is Verdict.REVIEW
         return result
 
@@ -35,7 +70,7 @@ class AitherSlotRules(SlotRules):
         return profile.hybrid or profile.entry.get("hybrid") is True or any(str(flag).casefold() == "hybrid" for flag in flags)
 
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision | None:
-        declared_hybrid = isinstance(self.meta, Meta) and self.meta.get("AITHER_hybrid") is True
+        declared_hybrid = isinstance(self.meta, Meta) and (self.meta.get("AITHER_hybrid") is True or self.meta.webdv)
         upload = replace(upload, hybrid=self._hybrid(upload) or declared_hybrid)
         existing = [replace(p, hybrid=self._hybrid(p)) for p in existing]
         self._candidate = upload
@@ -172,7 +207,12 @@ class AitherSlotRules(SlotRules):
             return Verdict.REVIEW, "The proposed replacement loses HDR10+; verify quality and an applicable trump exception."
         if DV in new and new & {HDR10, HDR10P} and old & {HDR10, HDR10P} and DV not in old:
             return Verdict.ALLOW, "DV/HDR takes precedence over HDR in this slot."
-        return Verdict.BLOCK, "No supplied rule establishes a trump; being internal or larger alone is insufficient."
+        detected = f'Detected incoming: {upload.hdr_label}; existing: {existing.hdr_label}. '
+        if DV in old and DV not in new:
+            return Verdict.BLOCK, detected+'The existing release already has Dolby Vision; an HDR-only upload is not the DV/HDR upgrade required by this rule.'
+        if new == old:
+            return Verdict.BLOCK, detected+'Both have the same detected dynamic range, so the DV/HDR-over-HDR or DV/HDR10+-over-HDR10+ preference adds no upgrade. Size/internal status alone does not justify replacing this occupant.'
+        return Verdict.BLOCK, detected+'No applicable automatic Aither replacement condition is met. Check the slot rule and verified release traits, not internal status or size alone.'
 
     def decide(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision | None:
         family = [p for p in existing if self._family(upload, p)]
