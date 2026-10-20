@@ -3850,7 +3850,7 @@ def _validate_release_group_overrides(value: object) -> None:
                 try:
                     if isinstance(field_val, bool) or not isinstance(field_val, (str, int)) or int(field_val) < minimum:
                         raise ValueError
-                except (ValueError, TypeError):  # fmt: skip
+                except ValueError, TypeError:
                     raise ValueError(f"{field} for {name} must be an integer of at least {minimum}, or null.") from None
                 continue
             if not isinstance(field_val, str):
@@ -4766,6 +4766,7 @@ def stats_api():
 
 
 @app.route("/api/update_status")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def update_status():
     """Return the cached upstream release status for the shared application rail."""
     if not _is_authenticated():
@@ -4870,6 +4871,7 @@ def external_tools_status():
 
 
 @app.route("/api/csrf_token")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def csrf_token():
     """Return the per-session CSRF token for use by the frontend."""
     # Require authenticated web session for CSRF token access
@@ -5703,6 +5705,7 @@ def refresh_tracker_status():
 
 
 @app.route("/api/trackers")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def get_trackers():
     """Return supported trackers, including their default/configured status."""
     if not _is_authenticated():
@@ -7203,6 +7206,7 @@ def execution_preview():
 
 
 @app.route("/api/argument_presets", methods=["GET", "POST", "DELETE"])
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def argument_presets():
     """Read and persist shared Web UI argument presets in ``data``."""
     if not _is_authenticated():
@@ -7247,6 +7251,7 @@ def argument_presets():
 
 
 @app.route("/api/execution_preview_cover")
+@limiter.limit("7200 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def execution_preview_cover():
     """Serve a local preview cover image for the active execution session."""
     session_id = str(request.args.get("session_id", "")).strip()
@@ -7262,6 +7267,7 @@ def execution_preview_cover():
 
 
 @app.route("/api/execution_preview_cover/regenerate", methods=["POST"])
+@limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def regenerate_execution_preview_cover():
     """Regenerate the local XXX preview cover from another video frame."""
     if not _verify_csrf_header() or not _verify_same_origin():
@@ -7413,6 +7419,7 @@ def execution_description():
 
 
 @app.route("/api/execution_description", methods=["PUT"])
+@limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def save_execution_description():
     """Persist an edited draft for the current execution with optimistic locking."""
     if not _verify_csrf_header() or not _verify_same_origin():
@@ -7452,6 +7459,7 @@ def save_execution_description():
 
 
 @app.route("/api/execution_description/reset", methods=["POST"])
+@limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def reset_execution_description():
     """Restore the draft from one of the read-only sources."""
     if not _verify_csrf_header() or not _verify_same_origin():
@@ -7508,6 +7516,7 @@ def execution_screenshot_image(screenshot_id: str):
 
 
 @app.route("/api/execution_screenshots/add", methods=["POST"])
+@limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def add_execution_screenshot():
     """Capture one extra local screenshot for the active execution."""
     if not _verify_csrf_header() or not _verify_same_origin():
@@ -7563,6 +7572,7 @@ def regenerate_execution_screenshots():
 
 
 @app.route("/api/execution_screenshots/<screenshot_id>/<action>", methods=["POST"])
+@limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def mutate_execution_screenshot(screenshot_id: str, action: str):
     """Delete or replace a reviewed frame with CSRF and same-origin protection."""
     if action not in {"delete", "refill", "replace", "undo"}:
