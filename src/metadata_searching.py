@@ -23,15 +23,18 @@ def _coerce_int(value: Any) -> int | None:
         return None
 
 
-def _mark_tmdb_metadata_loaded(meta: Meta) -> None:
-    """Mark metadata loaded by a combined lookup for this preparation pass.
+def _mark_tmdb_metadata_loaded(meta: Meta, metadata: Any) -> None:
+    """Mark a complete combined lookup for this preparation pass.
 
     ``search_metadata`` used to call ``set_tmdb_metadata`` again after every
     combined lookup, repeating the same cache/API work before the upload loop.
-    This transient marker is intentionally not a dataclass field and therefore
-    is never written to ``meta.json``.
+    Only responses with the essential canonical fields suppress that fallback;
+    partial responses still get the normal retry path. This transient marker
+    is intentionally not a dataclass field and therefore is never written to
+    ``meta.json``.
     """
-    meta._tmdb_metadata_loaded = True
+    if isinstance(metadata, dict) and metadata.get("title") and metadata.get("year"):
+        meta._tmdb_metadata_loaded = True
 
 
 def _apply_tvdb_series_metadata(meta: Meta, episodes_data: Any, series_name: Any = None) -> None:
@@ -185,7 +188,7 @@ async def all_ids(meta: Meta, tvdb_handler: Any, tmdb_manager: TmdbManager) -> M
     # Process TMDB metadata
     if not isinstance(tmdb_metadata, Exception) and tmdb_metadata:
         meta.update(tmdb_metadata)
-        _mark_tmdb_metadata_loaded(meta)
+        _mark_tmdb_metadata_loaded(meta, tmdb_metadata)
     else:
         logger.warning("[yellow]Warning: Could not get TMDB metadata")
 
@@ -337,7 +340,7 @@ async def imdb_tmdb_tvdb(meta: Meta, filename: str, tvdb_handler: Any, tmdb_mana
         result_index += 1
         if not isinstance(tmdb_metadata, Exception) and tmdb_metadata:
             meta.update(tmdb_metadata)
-            _mark_tmdb_metadata_loaded(meta)
+            _mark_tmdb_metadata_loaded(meta, tmdb_metadata)
         else:
             logger.info(f"[yellow]TMDb metadata retrieval failed: {tmdb_metadata}[/yellow]")
 
@@ -568,7 +571,7 @@ async def imdb_tmdb(meta: Meta, filename: str, _tvdb_handler: Any, tmdb_manager:
     # Update meta with TMDB metadata
     if tmdb_metadata:
         meta.update(tmdb_metadata)
-        _mark_tmdb_metadata_loaded(meta)
+        _mark_tmdb_metadata_loaded(meta, tmdb_metadata)
 
     imdb_info_result = results[1]
 

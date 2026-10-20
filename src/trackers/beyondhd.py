@@ -637,6 +637,9 @@ class BEYONDHD:
         if meta.type in ("DISC", "REMUX") and meta.video_codec == "HEVC" and not meta.hdr and not re.search(r"\bSDR\b", name):
             name = re.sub(r"\bHEVC\b", "SDR HEVC", name, count=1)
         # Non-disc releases without a group tag must end with -NOGROUP; discs stay tagless.
-        if not meta.is_disc and not str(meta.tag or "").strip("- ") and not re.search(r"-NOGROUP$", name, flags=re.IGNORECASE):
+        # A tracker rename may already contain a conventional trailing group
+        # even when ``meta.tag`` is unset (for example ``...-GRP``).
+        has_group_suffix = bool(re.search(r"-[A-Za-z0-9][A-Za-z0-9_@!.&]*$", name))
+        if not meta.is_disc and not str(meta.tag or "").strip("- ") and not has_group_suffix:
             name = f"{name}-NOGROUP"
         return name
