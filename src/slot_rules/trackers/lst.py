@@ -6,9 +6,9 @@ from dataclasses import replace
 from datetime import date
 
 from src.meta import Meta
-from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, add_context, is_repack_of, slot_label
+from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, add_context, edition_text, is_repack_of, slot_label
 from src.slot_rules.models import SlotDecision, Verdict
-from src.slot_rules.profile import AV1, DISC, DV, DVDRIP, ENCODE, H264, H265, HDR10P, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile
+from src.slot_rules.profile import AV1, DISC, DV, DVDRIP, ENCODE, H264, H265, HDR10P, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, has_unrecognized_cut_claim
 
 UNLISTED = "unlisted"
 
@@ -182,6 +182,15 @@ class LstSlotRules(_LstSlotLayout):
         label = slot_label(key) + (" · 3D" if upload.is_3d else "")
         if UNLISTED in key:
             return self.decision(Verdict.REVIEW, "No listed LST slot covers this format; verify an exception/support ticket", why=" ".join(self._required))
+        possible = [p for p in existing if p.resolution in {None, "OTHER", upload.resolution} and (p.kind is None or p.kind == upload.kind)]
+        if has_unrecognized_cut_claim(edition_text(upload)):
+            return add_context(self.decision(Verdict.REVIEW, "The incoming edition claims an unrecognized cut; LST needs actual content-difference evidence before using an extra slot", slot=label,
+                                             why="The supplied LST rules recognize only documented alternate cuts; marketing/source labels do not create slots."), possible,
+                               "Possible same-format release; context only, not a trump/report target.")
+        ambiguous = [p for p in possible if has_unrecognized_cut_claim(edition_text(p))]
+        if ambiguous:
+            return add_context(self.decision(Verdict.REVIEW, "A relevant LST release has an unrecognized cut claim; occupancy needs manual comparison", slot=label), ambiguous,
+                               "This may be a substantive cut or a marketing label; do not infer a separate slot.")
         family = [p for p in existing if self._family(upload, p)]
         holders = []
         for old in family:

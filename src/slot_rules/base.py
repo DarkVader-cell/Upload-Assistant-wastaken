@@ -1,6 +1,7 @@
 # Upload Assistant © 2026 Audionut & wastaken7 — Licensed under UAPL v1.0
 """Shared machinery for tracker slot rules."""
 
+import re
 from collections.abc import Callable, Sequence
 from datetime import date
 from typing import Any, ClassVar
@@ -98,6 +99,48 @@ def slot_label(key: SlotKey) -> str:
 REPACK_REASON = "A REPACK/PROPER replaces the original release from the same group."
 
 
+def _entry_text(profile: ReleaseProfile, *keys: str) -> str:
+    for key in keys:
+        value = profile.entry.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def edition_text(profile: ReleaseProfile) -> str:
+    return _entry_text(profile, "edition", "RemasterTitle") or profile.name
+
+
+def profile_traits(profile: ReleaseProfile) -> str:
+    """Return a bounded, structured trait summary for operator diagnostics."""
+    raw_edition = _entry_text(profile, "edition", "RemasterTitle")
+    edition = raw_edition or (",".join(sorted(profile.edition)) if profile.edition else "standard/unspecified edition")
+    source = _entry_text(profile, "source", "Source")
+    if not source:
+        if re.search(r"blu[ ._-]?ray|\buhd[ ._-]?bd\b", profile.name, re.I):
+            source = "Blu-ray"
+        elif re.search(r"web[ ._-]?(?:dl|rip)\b", profile.name, re.I):
+            source = "WEB"
+        elif re.search(r"\bhdtv\b", profile.name, re.I):
+            source = "HDTV"
+        else:
+            source = "unknown source"
+    provider = _entry_text(profile, "provider", "Provider") or profile.provider
+    result = (
+        f"{profile.resolution or 'unknown resolution'} · {profile.kind or 'unknown format'} · "
+        f"{profile.codec or 'unknown codec'} · {profile.hdr_label} · edition={edition} · source={source}"
+    )
+    if provider:
+        result += f" · provider={provider}"
+    if profile.hybrid:
+        result += " · hybrid"
+    return result
+
+
+def incoming_traits(profile: ReleaseProfile) -> str:
+    return profile_traits(profile)
+
+
 def describe_releases(profiles: Sequence[ReleaseProfile], reason: str, *, role: str = "context") -> list[dict[str, Any]]:
     """Safe, display-only references; not a replacement/report candidate list."""
     result = []
@@ -109,8 +152,7 @@ def describe_releases(profiles: Sequence[ReleaseProfile], reason: str, *, role: 
                 "id": p.entry.get("id"),
                 "size": p.entry.get("size", p.size),
                 "link": link if isinstance(link, str) and link.startswith(("https://", "http://")) else None,
-                "traits": f"{p.resolution or 'unknown resolution'} · {p.kind or 'unknown format'} · {p.codec or 'unknown codec'} · {p.hdr_label}"
-                + (" · hybrid" if p.hybrid else ""),
+                "traits": profile_traits(p),
                 "role": role,
                 "reason": reason + (" Details unavailable: " + str(p.entry["detail_error"]) if p.entry.get("detail_error") else ""),
             }
@@ -148,6 +190,10 @@ class SlotRules:
         slot: str = "",
         why: str = "",
     ) -> SlotDecision:
+        details = list(notes)
+        candidate = getattr(self, "_candidate", None)
+        if isinstance(candidate, ReleaseProfile) and not any("incoming:" in note.casefold() for note in details):
+            details.insert(0, f"Incoming: {incoming_traits(candidate)}.")
         return SlotDecision(
             verdict=verdict,
             reason=reason,
@@ -157,7 +203,7 @@ class SlotRules:
             why=why,
             conflicts=[dict(conflict.entry) for conflict in conflicts],
             comparisons=describe_releases(conflicts, why or reason, role="competing"),
-            notes=list(notes),
+            notes=details,
         )
 
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision | None:

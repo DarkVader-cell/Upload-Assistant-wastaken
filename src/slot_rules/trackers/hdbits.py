@@ -10,9 +10,9 @@ from datetime import date
 from pathlib import Path
 
 from src.meta import Meta
-from src.slot_rules.base import SlotRules
+from src.slot_rules.base import SlotRules, add_context, edition_text
 from src.slot_rules.models import SlotDecision, Verdict
-from src.slot_rules.profile import DISC, ENCODE, H264, H265, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, codec_from_text, resolution_from_name
+from src.slot_rules.profile import DISC, ENCODE, H264, H265, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, codec_from_text, has_unrecognized_cut_claim, resolution_from_name
 
 BANNED = {"cddhd", "eureka", "ddr", "evo", "dnl", "barc0de", "spirit"}
 CUTS = {"directors", "extended", "uncut", "unrated", "final_cut", "open_matte"}
@@ -28,11 +28,13 @@ class HDBitsSlotRules(SlotRules):
         return result
 
     def review(self, reason, conflicts=(), *, why="") -> SlotDecision:
-        result = self.decision(Verdict.REVIEW, reason, conflicts, why=why)
-        result.notes.append("Also verify applicable lottery/signup rights, source/demux/conversion logs, audio/dub/forced-subtitle rules and screenshot coverage. These are not inferred from names or filesize.")
-        return result
+        # Keep the panel scoped to the branch that caused review. The branch
+        # supplies its own applicable requirements; a whole HDBits rulebook
+        # reminder obscures the actual release comparison.
+        return self.decision(Verdict.REVIEW, reason, conflicts, why=why)
 
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision:
+        self._candidate = upload
         meta = self.meta if isinstance(self.meta, Meta) else None
         if meta and meta.category in {"BOOK", "GAME", "APP"}:
             return self.decision(Verdict.BLOCK, "This content category is not eligible HDBits video/audio content")
@@ -93,6 +95,14 @@ class HDBitsSlotRules(SlotRules):
                 return self.review("Porn-site videos require at least one month's content per pack; single videos are prohibited")
             if meta.get("upscaled") is True:
                 return self.review("Upscales need a qualifying high-quality anime or lossless-multichannel concert exception")
+        possible = [p for p in existing if p.resolution in {None, "OTHER", upload.resolution} and (p.kind is None or p.kind == upload.kind)]
+        if has_unrecognized_cut_claim(edition_text(upload)):
+            return add_context(self.review("The incoming edition claims an unrecognized cut; HDBits needs actual content-difference evidence before treating it as separate"), possible,
+                               "Possible same-format release; context only, not a replacement target.")
+        ambiguous = [p for p in possible if has_unrecognized_cut_claim(edition_text(p))]
+        if ambiguous:
+            return add_context(self.review("A relevant HDBits release has an unrecognized cut claim; occupancy needs manual comparison"), ambiguous,
+                               "This may be a substantive cut or a marketing label; do not infer a separate slot.")
         if upload.resolution == SD:
             return self.review("SD/upscaled material is prohibited except qualifying anime or multichannel concerts; verify an exception")
         if upload.resolution not in {"720p", "1080p", "2160p"} and upload.kind != DISC:
@@ -126,7 +136,12 @@ class HDBitsSlotRules(SlotRules):
                 why += " Internal encode/WEB coexistence needs 4-6 source/new/WEB B-frame comparisons unless the other release is dead or 720p WEB."
             if high_sdr:
                 why += " Compare Blu-ray against the existing high-bitrate 4K SDR WEB before encoding; only the best source/version is allowed and lottery rules still apply."
-            return self.review("Encoding rights, source choice, comparisons and audio/subtitle compliance require verification", [*competitors, *relevant], why=why)
+            result = self.review("Encoding rights, source choice, comparisons and audio/subtitle compliance require verification", competitors, why=why)
+            if relevant:
+                result = add_context(result, relevant, "Existing WEB source context for the HDBits encode comparison; it is not an encode replacement target.")
+            if high_sdr and not relevant:
+                result = add_context(result, high_sdr, "Existing 4K SDR WEB source context for the required source comparison; it is not an encode replacement target.")
+            return result
         if upload.kind == WEBDL:
             if competitors:
                 return self.review("An equivalent WEB-DL exists; verify a permitted quality/source replacement, not an assumed extra provider/HDR slot", competitors)

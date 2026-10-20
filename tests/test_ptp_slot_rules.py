@@ -96,6 +96,22 @@ def test_distributor_remaster_name_does_not_create_a_cut():
     assert decide(p('Criterion.1080p.BluRay.x264-A'), p('Remastered.1080p.BluRay.x264-B')).verdict is REVIEW
 
 
+def test_structured_ptp_edition_overrides_ambiguous_release_name():
+    existing = p('Extended.1080p.BluRay.x264-OLD', RemasterTitle='Criterion Edition', id=42)
+    result = decide(p('1080p.BluRay.x264-NEW'), existing)
+    assert result.verdict is REVIEW
+    assert result.comparisons[0]['id'] == 42
+    assert 'edition=Criterion Edition' in result.comparisons[0]['traits']
+
+
+def test_unknown_cut_claim_requires_review_instead_of_inventing_a_slot():
+    result = decide(p('International.Cut.1080p.BluRay.x264-NEW'), p('1080p.BluRay.x264-OLD', id=42))
+    assert result.verdict is REVIEW
+    assert not result.conflicts
+    assert result.related_releases[0]['id'] == 42
+    assert result.related_releases[0]['role'] == 'eligibility'
+
+
 def test_actual_distinct_cut_has_independent_slots():
     assert decide(p('Extended.1080p.BluRay.x264-A'), p('1080p.BluRay.x264-B')).verdict is ALLOW
 
@@ -286,3 +302,9 @@ def test_possible_uhd_sdr_web_occupant_still_requires_review():
     candidate=p('2160p.WEB-DL.SDR.H265-NEW')
     uncertain=p('2160p.WEB-DL.H265-OLD')
     assert decide(candidate,uncertain).verdict is REVIEW
+
+
+def test_ptp_diagnostic_has_incoming_and_existing_source_edition_traits():
+    result = decide(p('1080p.BluRay.x264-NEW', id=1), p('1080p.BluRay.x264-OLD', id=42))
+    assert any('Incoming:' in note and 'edition=' in note and 'source=Blu-ray' in note for note in result.notes)
+    assert 'edition=standard/unspecified edition' in result.comparisons[0]['traits']

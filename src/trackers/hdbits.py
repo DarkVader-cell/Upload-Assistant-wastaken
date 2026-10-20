@@ -60,6 +60,7 @@ def _hdb_dupe_entry(each: dict[str, Any], base_url: str, passkey: str) -> dict[s
     tags = [item.strip() for item in raw_tags.split(",") if item.strip()] if isinstance(raw_tags, str) else [str(item).strip() for item in raw_tags if str(item).strip()] if isinstance(raw_tags, list) else []
     medium = _hdb_candidate_type(each.get("medium"))
     return {
+        "id": each.get("id"),
         "name": each.get("name", ""),
         "size": each.get("size"),
         "files": [],
@@ -391,6 +392,7 @@ class HDBits:
 
     async def search_existing(self, meta: Meta) -> list[dict[str, Any]]:
         dupes: list[dict[str, Any]] = []
+        meta.pop("HDBITS_title_releases", None)
 
         url = f"{self.base_url}/api/torrents"
         data: dict[str, Any] = {
@@ -400,6 +402,15 @@ class HDBits:
             "codec": await self.get_type_codec_id(meta),
             "medium": await self.get_type_medium_id(meta),
         }
+        # Slot evidence needs the title's other source/codec/resolution
+        # releases, not just the incoming filter bucket. The ordinary dupe
+        # filter still narrows its own list after evaluation.
+        from src.slot_rules.registry import slot_rules_apply
+
+        broad_slot_search = slot_rules_apply(meta, self.config)
+        if broad_slot_search:
+            data.pop("codec", None)
+            data.pop("medium", None)
 
         if meta.imdb_id or 0 != 0:
             data["imdb"] = {"id": meta.imdb}
@@ -426,13 +437,17 @@ class HDBits:
         if not search_terms:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url, json=data)
-                if response.status_code == 200:
-                    response_data = response.json()
-                    results = response_data.get("data", [])
-                    if results:
-                        dupes.extend(_hdb_dupe_entry(cast(dict[str, Any], each), self.base_url, self.passkey) for each in results)
-                else:
+                if response.status_code != 200:
                     logger.info(f"{self.tracker}: [bold red]HTTP request failed. Status: {response.status_code}")
+                    raise ValueError("HDBits duplicate search failed; occupancy is unknown")
+                response_data = response.json()
+                results = response_data.get("data") if isinstance(response_data, dict) else None
+                if not isinstance(results, list) or any(not isinstance(each, dict) for each in results):
+                    raise ValueError("HDBits duplicate search returned an invalid inventory; occupancy is unknown")
+                if results:
+                    dupes.extend(_hdb_dupe_entry(cast(dict[str, Any], each), self.base_url, self.passkey) for each in results)
+            if broad_slot_search:
+                meta["HDBITS_title_releases"] = list(dupes)
             return dupes
 
         # Otherwise, search for each term
@@ -442,14 +457,20 @@ class HDBits:
 
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url, json=data)
-                if response.status_code == 200:
-                    response_data = response.json()
-                    results = response_data.get("data", [])
-                    if results:
-                        dupes.extend(_hdb_dupe_entry(cast(dict[str, Any], each), self.base_url, self.passkey) for each in results)
-                else:
+                if response.status_code != 200:
                     logger.info(f"{self.tracker}: [bold red]HTTP request failed. Status: {response.status_code}")
+                    raise ValueError("HDBits duplicate search failed; occupancy is unknown")
+                response_data = response.json()
+                results = response_data.get("data") if isinstance(response_data, dict) else None
+                if not isinstance(results, list) or any(not isinstance(each, dict) for each in results):
+                    raise ValueError("HDBits duplicate search returned an invalid inventory; occupancy is unknown")
+                if results:
+                    dupes.extend(_hdb_dupe_entry(cast(dict[str, Any], each), self.base_url, self.passkey) for each in results)
 
+        if broad_slot_search:
+            # Keep the unfiltered, title-wide evidence separate from the list
+            # later used by basic duplicate checking.
+            meta["HDBITS_title_releases"] = list(dupes)
         return dupes
 
     async def validate_credentials(self, meta: Meta) -> bool:

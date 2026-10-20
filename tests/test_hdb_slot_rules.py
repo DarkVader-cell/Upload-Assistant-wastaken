@@ -2,6 +2,7 @@
 from dataclasses import replace
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from src.meta import Meta
@@ -9,6 +10,7 @@ from src.slot_rules.models import Verdict
 from src.slot_rules.profile import profile_from_entry
 from src.slot_rules.registry import evaluate_slots, has_slot_rules
 from src.slot_rules.trackers.hdbits import HDBitsSlotRules
+from src.trackers.hdbits import HDBits
 from src.uphelper import UploadHelper
 
 ALLOW, BLOCK, REVIEW = Verdict.ALLOW, Verdict.BLOCK, Verdict.REVIEW
@@ -130,6 +132,35 @@ def test_no_assumed_provider_or_dynamic_range_extra_slots():
 def test_numeric_resolution_api_field_falls_back_to_release_name():
     existing=p('2160p.WEB-DL.H265-B',res='3')
     assert decide(p('2160p.WEB-DL.H265-A'),existing).verdict is REVIEW
+
+
+@pytest.mark.asyncio
+async def test_hdb_search_keeps_title_wide_slot_evidence(monkeypatch):
+    requests = []
+    payload = {
+        "data": [
+            {"id": 1, "name": "Film.2020.1080p.BluRay.x264-OLD", "medium": "3", "codec": "1", "resolution": "1080p"},
+            {"id": 2, "name": "Film.2020.2160p.WEB-DL.H265-WEB", "medium": "6", "codec": "5", "resolution": "2160p"},
+        ]
+    }
+
+    def handler(request):
+        requests.append(request)
+        return httpx.Response(200, json=payload, request=request)
+
+    original = httpx.AsyncClient
+
+    def make(*args, **kwargs):
+        kwargs["transport"] = httpx.MockTransport(handler)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr("src.trackers.hdbits.httpx.AsyncClient", make)
+    meta = Meta(category="MOVIE", imdb_id=123, imdb="123", resolution="1080p", type="ENCODE", video_codec="AVC")
+    result = await HDBits({"DEFAULT": {}, "TRACKERS": {"HDBITS": {"username": "u", "passkey": "secret"}}}).search_existing(meta)
+    assert len(result) == 2
+    sent = requests[0].content.decode()
+    assert '"codec"' not in sent and '"medium"' not in sent
+    assert [entry["id"] for entry in meta["HDBITS_title_releases"]] == [1, 2]
 
 
 @pytest.mark.asyncio

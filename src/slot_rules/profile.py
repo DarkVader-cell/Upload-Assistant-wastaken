@@ -66,6 +66,22 @@ _ANT_FLAG_EDITIONS = {
     "4kremaster": "4kremaster",
 }
 
+# These are the cut claims for which the supplied tracker rules define a
+# separate comparison scope.  Other edition labels are not silently promoted
+# to a new slot: a possible cut claim is reviewed, while distributor/remaster
+# labels remain marketing/source metadata.
+RECOGNIZED_CUTS = frozenset({"directors", "extended", "uncut", "unrated", "final_cut"})
+_UNKNOWN_CUT_PATTERNS: tuple[str, ...] = (
+    r"\balternate[ ._-]+cut\b",
+    r"\balternative[ ._-]+cut\b",
+    r"\binternational[ ._-]+cut\b",
+    r"\beuropean[ ._-]+cut\b",
+    r"\btv[ ._-]+cut\b",
+    r"\bcensored[ ._-]+cut\b",
+    r"\buncensored[ ._-]+cut\b",
+    r"\b(?:longer|shorter)[ ._-]+version\b",
+)
+
 _LOSSLESS_AUDIO = re.compile(r"truehd|mlp|dts[ .\-]?hd[ .\-]?ma|dts[ .\-]?x\b|dts xll|xll|flac|lpcm|\bpcm\b", re.IGNORECASE)
 
 
@@ -232,6 +248,26 @@ def editions_from_text(text: str | None) -> frozenset[str]:
     if "4kremaster" in found:
         found.discard("remastered")
     return frozenset(found)
+
+
+def has_unrecognized_cut_claim(text: str | None) -> bool:
+    """Return whether text claims a cut that the supplied rules do not name.
+
+    This deliberately does not treat every arbitrary edition string as a cut:
+    Criterion, remaster, distributor and collector labels are not extra slots.
+    The conservative result for a possible cut is REVIEW, never an inferred
+    coexistence slot.
+    """
+    if not text:
+        return False
+    lowered = re.sub(r"[._]", " ", str(text).lower())
+    if re.search(r"\btheatrical(?:[ ._-]+cut)?\b", lowered):
+        return False
+    if any(re.search(pattern, lowered) for pattern in _UNKNOWN_CUT_PATTERNS):
+        return True
+    return "cut" in lowered and not any(
+        re.search(pattern, lowered) for _key, pattern in _EDITION_PATTERNS if _key in RECOGNIZED_CUTS
+    )
 
 
 def group_from_name(name: str) -> str | None:
@@ -439,6 +475,11 @@ def profile_from_meta(meta: Meta, *, provider: str | None = None) -> ReleaseProf
         scene=bool(meta.scene),
         repack=repack_level(f"{meta.repack} {meta.uuid}"),
         hi10p=mi.hi10p or bool(re.search(r"hi10p?", name, re.IGNORECASE)),
+        entry={
+            "source": meta.source,
+            "provider": meta.service,
+            "edition": meta.edition,
+        },
     )
 
 

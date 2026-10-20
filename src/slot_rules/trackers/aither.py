@@ -7,9 +7,9 @@ from dataclasses import replace
 from datetime import date
 
 from src.meta import Meta
-from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, add_context, is_repack_of, size_diff_ratio, slot_label
+from src.slot_rules.base import SlotKey, SlotRules, UnknownTraitError, add_context, edition_text, is_repack_of, size_diff_ratio, slot_label
 from src.slot_rules.models import SlotDecision, Verdict
-from src.slot_rules.profile import DISC, DV, DVDRIP, ENCODE, H264, H265, HDR10, HDR10P, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile
+from src.slot_rules.profile import DISC, DV, DVDRIP, ENCODE, H264, H265, HDR10, HDR10P, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, has_unrecognized_cut_claim
 
 UNLISTED = "unlisted"
 CUTS = frozenset({"directors", "extended", "uncut", "unrated", "final_cut"})
@@ -228,6 +228,14 @@ class AitherSlotRules(SlotRules):
             return self.review("Open Matte/OAR separate slots require staff approval before uploading")
         if isinstance(self.meta, Meta) and self.meta.extras:
             return self.review("Disc extras may have additional slots; verify packaging and the need for the extra slot")
+        possible = [p for p in title if p.resolution in {None, "OTHER", upload.resolution} and (p.kind is None or p.kind == upload.kind)]
+        if has_unrecognized_cut_claim(edition_text(upload)):
+            return add_context(self.review("The incoming edition claims an unrecognized cut; verify actual content differences before using a separate Aither slot"), possible,
+                               "Possible same-format release; the cut claim is context only, not an automatic coexistence or report target.")
+        ambiguous = [p for p in possible if has_unrecognized_cut_claim(edition_text(p))]
+        if ambiguous:
+            return add_context(self.review("A relevant Aither release has an unrecognized cut claim; occupancy needs manual comparison"), ambiguous,
+                               "This may be a substantive cut or a marketing label; do not infer a new slot or trump target.")
         web_encode = upload.kind in {ENCODE, WEBRIP} and bool(re.search(r"web[ ._-]?rip", upload.name, re.I))
         if upload.kind == ENCODE and isinstance(self.meta, Meta):
             web_encode = web_encode or str(self.meta.source or "").lower() in {"web", "webrip", "web-dl"}

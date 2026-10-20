@@ -1,7 +1,7 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 from collections.abc import Mapping
 from typing import Any
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from rich.markup import escape
 
@@ -29,21 +29,34 @@ def should_embed_links(default_config: Mapping[str, Any]) -> bool:
     return bool(default_config.get("embed_dupe_links", True))
 
 
+def _safe_display_url(url: str) -> str:
+    """Keep tracker IDs while removing credentials from diagnostic links."""
+    try:
+        parsed = urlsplit(url)
+        query = urlencode(
+            [(key, "[REDACTED]" if any(token in key.casefold() for token in ("pass", "token", "key", "auth", "cookie", "secret")) else value) for key, value in parse_qsl(parsed.query, keep_blank_values=True)]
+        )
+        return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, parsed.fragment))
+    except ValueError:
+        return url
+
+
 def format_terminal_link(text: str, url: str, default_config: Mapping[str, Any]) -> str:
     """Format a terminal link according to the configured output style."""
+    safe_display_url = _safe_display_url(url)
     if should_embed_links(default_config):
         try:
-            parsed_url = urlsplit(url)
+            parsed_url = urlsplit(safe_display_url)
             safe_url = urlunsplit(
                 (
                     parsed_url.scheme,
                     quote(parsed_url.netloc, safe=":@!$&'()*+,;=%"),
                     quote(parsed_url.path, safe="/:@!$&'()*+,;=%"),
-                    quote(parsed_url.query, safe="/:@!$&'()*+,;=%"),
+                    quote(parsed_url.query, safe="/:@!$&'()*+,;=%[]"),
                     quote(parsed_url.fragment, safe="/:@!$&'()*+,;=%"),
                 )
             )
         except ValueError:
-            safe_url = quote(url, safe=":/?#@!$&'()*+,;=%")
+            safe_url = quote(safe_display_url, safe=":/?#@!$&'()*+,;=%[]")
         return f"[link={safe_url}]{escape(text)}[/link]"
-    return escape(url)
+    return escape(safe_display_url)

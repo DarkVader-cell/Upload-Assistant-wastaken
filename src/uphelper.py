@@ -474,10 +474,10 @@ class UploadHelper:
             meta[f"{tracker_name}_cross_seed"] = False
             self._show_slot_decision(slot_decision, meta)
             if slot_verdict is Verdict.BLOCK:
-                logger.info("PASSTHEPOPCORN: skipping release rejected by the supplied PTP rules.")
+                logger.info(f"PASSTHEPOPCORN: skipping release rejected by the supplied PTP rules: {slot_decision.reason}")
                 return True, meta
             if not interactive:
-                logger.info("PASSTHEPOPCORN: skipping unattended upload requiring slot, comparison or staff-approval review.")
+                logger.info(f"PASSTHEPOPCORN: skipping unattended upload requiring PTP review: {slot_decision.reason}")
                 return True, meta
             approved = await self.prompt_yes_no("Have you checked the required evidence/staff approval and confirmed this PTP upload is permitted?", default=False)
             meta.we_asked = True

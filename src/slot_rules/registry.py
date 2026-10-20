@@ -152,6 +152,10 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
             existing.append(profile_from_entry(entry, provider=provider, exact=exact))
 
         rules = rules_cls(meta)
+        # Shared diagnostics need the exact normalized incoming profile even
+        # when a provider-specific rule returns early (content gate, exact
+        # duplicate, or an unknown-occupancy review).
+        rules._candidate = upload
         decision = rules.evaluate(upload, existing)
         if meta.get(f'{tracker}_search_failed') and (decision is None or decision.verdict is not Verdict.BLOCK):
             unavailable=rules.decision(Verdict.REVIEW,'Tracker search failed; existing-release occupancy is unknown',why='No reliable existing-release list was obtained. Retry the search or check the site manually; an empty result after a connection error does not establish a vacant slot.')

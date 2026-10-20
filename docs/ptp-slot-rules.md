@@ -9,8 +9,10 @@ authoritative.
 
 PTP searches retain **every torrent in the group**, including other quality
 bands, source/codec/container, edition, Not Main Movie, size and MediaInfo.
-Failed or malformed group lookups/inventories skip PTP rather than treating the
-failure as an empty group. Other selected trackers continue independently.
+Structured PTP fields such as `RemasterTitle`, `HDR`, `Codec` and `Source` take
+precedence over ambiguous name tokens. Failed or malformed group
+lookups/inventories skip PTP rather than treating the failure as an empty group.
+Other selected trackers continue independently.
 
 - **ALLOW**: a supported slot appears vacant. It is not quality approval.
 - **BLOCK**: prohibited content, exact release, SD WEB with an HD equivalent, or
@@ -22,9 +24,11 @@ failure as an empty group. Other selected trackers continue independently.
   approval have been checked; it defaults to No.
 
 Actual recognized cuts have independent slots. Distributor, Criterion and
-remaster labels do not manufacture additional cuts. Unrecognized cut claims
-need human review, rather than assuming a new slot. Extras and Open Matte have
-separate treatment; Open Matte needs OAR comparisons and correct form flags.
+remaster labels do not manufacture additional cuts. Unrecognized or ambiguous
+cut claims need human review, rather than assuming either a new slot or a
+trump target. Diagnostics show the incoming traits and each relevant existing
+release separately. Extras and Open Matte have separate treatment; Open Matte
+needs OAR comparisons and correct form flags.
 Encode retention/quality size differences (20%, or 40% for SD) are guidelines:
 filesize alone never authorizes a second encode or an automatic trump.
 

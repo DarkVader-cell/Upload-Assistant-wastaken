@@ -12,7 +12,7 @@ from datetime import date
 from pathlib import Path
 
 from src.meta import Meta
-from src.slot_rules.base import SlotRules, UnknownTraitError, size_diff_ratio
+from src.slot_rules.base import SlotRules, UnknownTraitError, add_context, pair_reasons, profile_traits, size_diff_ratio
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import (
     DISC,
@@ -23,6 +23,7 @@ from src.slot_rules.profile import (
     HDR10,
     HDR10P,
     HDTV,
+    RECOGNIZED_CUTS,
     REMUX,
     SD,
     WEBDL,
@@ -34,7 +35,7 @@ from src.slot_rules.profile import (
     kind_from_name,
 )
 
-CUTS = {"directors", "extended", "uncut", "unrated", "final_cut"}
+CUTS = RECOGNIZED_CUTS
 
 
 def ptp_entry(torrent: dict) -> dict:
@@ -50,11 +51,14 @@ def ptp_entry(torrent: dict) -> dict:
     elif container in {"iso", "vob ifo", "vob/ifo", "m2ts"}:
         kind = DISC
     elif source == "web" and kind not in {WEBDL, WEBRIP}:
-        kind = WEBRIP if codec.lower() in {"x264", "x265"} else WEBDL
+        quality = str(torrent.get("Quality") or torrent.get("SourceType") or "").casefold()
+        kind = WEBDL if "web-dl" in quality or "web dl" in quality else WEBRIP if codec.lower() in {"x264", "x265"} else WEBDL
     elif codec.lower() in {"x264", "x265"} and source in {"bluray", "uhd bluray", "hddvd", "dvd", "hdtv"}:
         kind = ENCODE
     entry.update(name=name or f"PTP torrent {torrent.get('Id', 'unknown')}", res=torrent.get("Resolution"),
                  type=kind, size=torrent.get("Size"), media_info=torrent.get("MediaInfo") or "",
+                 source=torrent.get("Source"), provider=torrent.get("Provider"),
+                 edition=torrent.get("RemasterTitle"),
                  link=f"https://passthepopcorn.me/torrents.php?torrentid={torrent.get('Id', '')}")
     return entry
 
@@ -62,21 +66,36 @@ def ptp_entry(torrent: dict) -> dict:
 def ptp_profile(profile: ReleaseProfile) -> ReleaseProfile:
     """Preserve structured API fields that cannot be guessed from a release name."""
     entry = profile.entry
-    edition = editions_from_text(str(entry.get("RemasterTitle") or ""))
+    structured_edition = str(entry.get("RemasterTitle") or "").strip()
+    # PTP's structured RemasterTitle is the authoritative edition field. A
+    # release name can carry a stale/ambiguous marketing token; unioning it
+    # with the API value incorrectly turns that token into a cut.
+    edition = editions_from_text(structured_edition) if structured_edition else profile.edition
     codec = codec_from_text(str(entry.get("Codec") or "")) or profile.codec
-    dynamic_text = str(entry.get("RemasterTitle") or "") + " " + str(entry.get("HDR") or "")
+    structured_hdr = str(entry.get("HDR") or "").strip()
+    dynamic_text = " ".join(value for value in (structured_edition, structured_hdr) if value)
     dynamic = hdr_from_name(dynamic_text)
-    hdr = (profile.hdr | dynamic) if profile.hdr is not None else (dynamic or None)
+    hdr = dynamic if structured_hdr else ((profile.hdr | dynamic) if profile.hdr is not None else (dynamic or None))
     if profile.resolution == "2160p" and not hdr:
         report = str(entry.get("media_info") or entry.get("MediaInfo") or "")
         explicit_sdr = re.search(r"\bSDR\b", profile.name + " " + dynamic_text, re.I) or re.search(r"Color primaries\s*:\s*BT\.709", report, re.I)
         hdr = frozenset() if explicit_sdr else None
-    return replace(profile, codec=codec, edition=profile.edition | edition, hdr=hdr)
+    return replace(profile, codec=codec, edition=edition, hdr=hdr)
 
 
 class PassThePopcornSlotRules(SlotRules):
     TRACKER = "PASSTHEPOPCORN"
     RULES_DATE = date(2026, 10, 19)
+
+    def decision(self, verdict, reason, conflicts=(), notes=(), *, slot="", why=""):
+        result = super().decision(verdict, reason, conflicts, notes, slot=slot, why=why)
+        candidate = getattr(self, "_candidate", None)
+        if candidate is not None and conflicts:
+            result = pair_reasons(
+                result,
+                [(profile, f"Incoming {profile_traits(candidate)}; existing {profile_traits(profile)}. {why or reason}") for profile in conflicts],
+            )
+        return result
 
     def _upload(self, profile: ReleaseProfile) -> bool:
         return getattr(self, "_candidate", None) is profile
@@ -85,6 +104,24 @@ class PassThePopcornSlotRules(SlotRules):
         if self._upload(profile) and isinstance(self.meta, Meta):
             return editions_from_text(self.meta.edition) & CUTS
         return profile.edition & CUTS
+
+    def _raw_edition(self, profile: ReleaseProfile) -> str:
+        if self._upload(profile) and isinstance(self.meta, Meta):
+            return str(self.meta.edition or "")
+        structured = profile.entry.get("RemasterTitle")
+        return str(structured if structured is not None and str(structured).strip() else profile.name)
+
+    def _has_ambiguous_cut(self, profile: ReleaseProfile) -> bool:
+        from src.slot_rules.profile import has_unrecognized_cut_claim
+
+        return has_unrecognized_cut_claim(self._raw_edition(profile))
+
+    @staticmethod
+    def _possible_competitor(upload: ReleaseProfile, existing: ReleaseProfile) -> bool:
+        return (
+            existing.resolution in {None, "OTHER", upload.resolution}
+            and (existing.kind is None or existing.kind == upload.kind)
+        )
 
     def _text(self, profile: ReleaseProfile) -> str:
         entry = profile.entry
@@ -297,6 +334,20 @@ class PassThePopcornSlotRules(SlotRules):
         if content and content.verdict is Verdict.BLOCK:
             return content
         same_cut = [p for p in existing if self._cut(p) == self._cut(upload)]
+        possible = [p for p in existing if self._possible_competitor(upload, p)]
+        if self._has_ambiguous_cut(upload):
+            return add_context(
+                self.decision(Verdict.REVIEW, "The incoming edition claims a cut that PTP's supplied slot rules do not identify", slot="unknown cut"),
+                possible,
+                "Possible same-title competitor; confirm the actual cut/content difference before treating this as a separate slot.",
+            )
+        ambiguous_existing = [p for p in possible if self._has_ambiguous_cut(p)]
+        if ambiguous_existing:
+            return add_context(
+                self.decision(Verdict.REVIEW, "A relevant existing release has an unrecognized cut claim; occupancy cannot be confirmed from the supplied metadata"),
+                ambiguous_existing,
+                "This edition may be a substantive cut or only a marketing/source label; it is context, not an automatic trump target.",
+            )
         web_source = upload.kind in {WEBDL, WEBRIP} or self._source(upload) in {"web", "webdl", "webrip"}
         if web_source and upload.resolution == "2160p" and upload.hdr and upload.hdr & {HDR10, HDR10P}:
             hdr_encodes = [p for p in same_cut if p.resolution == "2160p" and p.kind in {ENCODE, WEBRIP}

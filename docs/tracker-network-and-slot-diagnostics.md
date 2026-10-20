@@ -62,8 +62,9 @@ status and retry count without dumping authenticated URLs or response bodies.
    legacy paragraph and unconditional whole-site reminders are not repeated.
 4. When no particular existing release caused the check, the panel says so. An
    eligibility/provenance check is not presented as a duplicate, and does not prove
-   that a slot is vacant. A failed search explicitly means **occupancy unknown**;
-   stale cached title lists do not establish vacancy. Known MUST blocks remain
+   that a slot is vacant. A failed or malformed search explicitly means
+   **occupancy unknown**; title-wide inventories are cleared before a new search
+   so stale cached results do not establish vacancy. Known MUST blocks remain
    blocks; required reviews are default-No attended and skipped unattended.
 
 BLU no longer gives a Blu-ray-source encode a WEBRip-versus-WEB-DL restriction
@@ -75,5 +76,7 @@ credential-bearing download URLs. Conflicts/protected IDs and successful-upload,
 explicit-target report safeguards are preserved. Context cannot authorize a trump.
 
 The panel bounds long lists at 25 references and says when more are omitted.
-Actual quality, source lineage, grade checks and staff approval still require
-real evidence; a descriptive panel does not manufacture any of them.
+Structured tracker fields remain associated with the original search entry and
+are preferred over ambiguous title tokens. Actual quality, source lineage, grade
+checks and staff approval still require real evidence; a descriptive panel does
+not manufacture any of them.

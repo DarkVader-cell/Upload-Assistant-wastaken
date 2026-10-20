@@ -32,3 +32,10 @@ def test_embed_links_encodes_ipv6_authority_brackets_for_rich() -> None:
 def test_embed_dupe_links_remains_a_backward_compatible_alias() -> None:
     assert not should_embed_links({"embed_dupe_links": False})
     assert should_embed_links({"embed_links": True, "embed_dupe_links": False})
+
+
+def test_diagnostic_links_redact_passkeys_without_hiding_tracker_ids() -> None:
+    rendered = format_terminal_link("Open", "https://example.test/details.php?id=42&passkey=secret-value", {"embed_links": False})
+    assert "id=42" in rendered
+    assert "secret-value" not in rendered
+    assert "REDACTED" in rendered
