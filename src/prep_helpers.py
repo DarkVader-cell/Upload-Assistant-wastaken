@@ -936,6 +936,11 @@ async def search_metadata(
     _bdinfo: dict[str, Any],
     mi: dict[str, Any] | None,
 ) -> None:
+    # Combined metadata helpers and ``set_tmdb_metadata`` share the same
+    # canonical TMDB response. Keep this marker per preparation pass so a
+    # successful combined lookup is not immediately repeated.
+    meta._tmdb_metadata_loaded = False
+
     # Ensure all manual IDs have proper default values
     meta.tmdb_manual = meta.tmdb_manual or 0
     meta.imdb_manual = meta.imdb_manual or 0
@@ -1251,8 +1256,9 @@ async def search_metadata(
         meta = await prep_instance.metadata_searching_manager.imdb_tmdb(meta, filename)
 
     # we should have tmdb id one way or another, so lets get data if needed
-    if int(meta.tmdb_id or 0) != 0:
+    if int(meta.tmdb_id or 0) != 0 and not getattr(meta, "_tmdb_metadata_loaded", False):
         await prep_instance.tmdb_manager.set_tmdb_metadata(meta, filename)
+        meta._tmdb_metadata_loaded = True
         if meta.no_imdb:
             _clear_imdb_metadata(meta)
 
@@ -1311,8 +1317,9 @@ async def search_metadata(
         meta.no_ids = filename_search
 
     tmdb_id_value = _to_int(meta.tmdb_id)
-    if tmdb_id_value != 0 and meta.category not in ("BOOK", "GAME", "XXX"):
+    if tmdb_id_value != 0 and meta.category not in ("BOOK", "GAME", "XXX") and not getattr(meta, "_tmdb_metadata_loaded", False):
         await prep_instance.tmdb_manager.set_tmdb_metadata(meta, filename)
+        meta._tmdb_metadata_loaded = True
         if meta.no_imdb:
             _clear_imdb_metadata(meta)
 

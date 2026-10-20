@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 
 from src.meta import Meta
+from src.slot_rules.base import SlotRules, slot_label
 from src.slot_rules.models import SlotDecision, Verdict
+from src.slot_rules.profile import ReleaseProfile
 from src.slot_rules.registry import evaluate_slots, slot_rules_enabled
 from src.uphelper import UploadHelper
 
@@ -31,6 +33,13 @@ def make_meta(**overrides: Any) -> Meta:
 
 def decision(verdict: Verdict) -> SlotDecision:
     return SlotDecision(verdict=verdict, reason="test reason", tracker="AITHER", rules_date=date(2026, 10, 15))
+
+
+class DemoRules(SlotRules):
+    TRACKER = "DEMO"
+
+    def decide(self, upload: ReleaseProfile, existing: list[ReleaseProfile]) -> SlotDecision:
+        return self.by_slot(upload, existing, lambda profile: (profile.resolution, profile.hdr), slot_label((upload.resolution or "", upload.hdr or frozenset())))
 
 
 class Tracker:
@@ -150,6 +159,33 @@ async def test_no_notice_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     helper.config = {"DEFAULT": {"slot_rules": False}}
     await helper.dupe_check(["other release"], make_meta(unattended=True), "NOSLOTS", None)
     assert not any("slot rules" in message for message in messages)
+
+
+def test_slot_messages_include_the_specific_slot_and_dynamic_range() -> None:
+    upload = ReleaseProfile(name="new", resolution="1080p", hdr=frozenset())
+    existing = ReleaseProfile(name="old", resolution="1080p", hdr=frozenset())
+    result = DemoRules().evaluate(upload, [existing])
+    assert result is not None
+    assert result.verdict is Verdict.BLOCK
+    assert result.slot == "1080p"
+    assert "1080p slot" in result.reason
+    assert slot_label(("2160p", frozenset({"HDR10"}))) == "2160p · HDR10"
+
+
+@pytest.mark.asyncio
+async def test_slot_provider_lookup_is_cached_per_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[str] = []
+
+    async def provider(name: str) -> str:
+        calls.append(name)
+        return "AMZN"
+
+    monkeypatch.setattr("src.slot_rules.registry._provider", provider)
+    meta = make_meta(name=NAME, service="AMZN")
+    duplicate = {"name": "Fictional Film 2021 1080p AMZN WEB-DL DDP 5.1 H.264-NOGRPA"}
+    result = await evaluate_slots([duplicate, dict(duplicate)], meta, "HOMIEHELPDESK", {"DEFAULT": {}})
+    assert result is not None
+    assert calls == [duplicate["name"]]
 
 
 def test_describe_size_compares_with_the_upload() -> None:

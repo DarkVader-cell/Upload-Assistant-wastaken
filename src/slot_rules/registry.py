@@ -124,6 +124,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
 
         existing: list[ReleaseProfile] = []
         season_packs: list[ReleaseProfile] = []
+        provider_cache: dict[str, str | None] = {}
         for dupe in dupes:
             entry = _as_entry(dupe)
             name = str(entry.get("name") or "")
@@ -134,13 +135,21 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
                 matches, is_season_pack = await DupeChecker.is_season_episode_match(normalized, meta.season, meta.episode)
                 if not matches:
                     if tracker == "BLUTOPIA" and meta.tv_pack and (entry.get("complete_series") is True or re.search(r"\bcomplete[ ._-]+series\b", name, re.I)):
-                        existing.append(profile_from_entry(entry, provider=await _provider(name)))
+                        if name not in provider_cache:
+                            provider_cache[name] = await _provider(name)
+                        existing.append(profile_from_entry(entry, provider=provider_cache[name]))
                     continue
                 if is_season_pack and meta.episode and not meta.tv_pack:
                     season_packs.append(profile_from_entry(entry))
                     continue
             exact = await DupeChecker.is_exact_match(entry, meta) or name.strip().lower() == (meta.name or "").strip().lower()
-            existing.append(profile_from_entry(entry, provider=None if tracker == "PASSTHEPOPCORN" else await _provider(name), exact=exact))
+            if tracker == "PASSTHEPOPCORN":
+                provider = None
+            else:
+                if name not in provider_cache:
+                    provider_cache[name] = await _provider(name)
+                provider = provider_cache[name]
+            existing.append(profile_from_entry(entry, provider=provider, exact=exact))
 
         rules = rules_cls(meta)
         decision = rules.evaluate(upload, existing)

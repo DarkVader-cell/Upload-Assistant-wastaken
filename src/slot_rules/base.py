@@ -82,8 +82,17 @@ _LABEL_WORDS = {"H264": "H.264", "H265": "H.265", "encode": "Encode", "x264 enco
 
 
 def slot_label(key: SlotKey) -> str:
-    """Readable slot name from the text parts of a slot key, e.g. "1080p · WEB-DL · AMZN · H.264"."""
-    return " · ".join(_LABEL_WORDS.get(part, part) for part in key if isinstance(part, str) and part)
+    """Readable slot name from a slot key without hiding structured traits."""
+    parts: list[str] = []
+    for part in key:
+        if isinstance(part, str) and part:
+            parts.append(_LABEL_WORDS.get(part, part))
+        elif isinstance(part, frozenset) and part:
+            # Slot keys use frozensets for dynamic range and edition traits.
+            # Keep those details visible in diagnostics instead of reducing
+            # every conflict to the same generic "slot" message.
+            parts.append("/".join(sorted(str(value) for value in part)))
+    return " · ".join(parts)
 
 
 REPACK_REASON = "A REPACK/PROPER replaces the original release from the same group."
@@ -218,13 +227,13 @@ class SlotRules:
             if unknown:
                 return self.decision(
                     Verdict.REVIEW,
-                    "The slot looks free, but some releases on the site could not be identified.",
+                    f"The {label} slot looks free, but some releases on the site could not be identified.",
                     unknown,
                     notes,
                     slot=label,
                     why="Their names or MediaInfo are missing details this check needs; compare them yourself.",
                 )
-            return self.decision(Verdict.ALLOW, "No release on the site is using this slot yet.", notes=notes, slot=label)
+            return self.decision(Verdict.ALLOW, f"No release on the {label} slot is listed on the site yet.", notes=notes, slot=label)
 
         competing = [profile for profile in occupants if not (coexists and coexists(upload, profile))]
         if not competing:
@@ -232,7 +241,7 @@ class SlotRules:
                 return self.decision(Verdict.BLOCK, f"All {capacity} places in this slot are already taken.", occupants, notes, slot=label)
             return self.decision(
                 Verdict.ALLOW,
-                "There is still room in this slot, and your release is different enough from the one there.",
+                f"There is still room in the {label} slot, and your release is different enough from the one there.",
                 notes=notes,
                 slot=label,
             )
@@ -243,14 +252,14 @@ class SlotRules:
         if blocking:
             why = next((reason for _, reason in blocking if reason), "")
             return pair_reasons(
-                self.decision(Verdict.BLOCK, "Another release already fills this slot.", [profile for profile, _ in blocking], notes, slot=label, why=why), blocking
+                self.decision(Verdict.BLOCK, f"Another release already fills the {label} slot.", [profile for profile, _ in blocking], notes, slot=label, why=why), blocking
             )
         reviewing = [(profile, reason) for profile, verdict, reason in results if verdict is Verdict.REVIEW]
         if reviewing:
             return pair_reasons(
                 self.decision(
                     Verdict.REVIEW,
-                    "A release already fills this slot, but yours might still be accepted.",
+                    f"Another release occupies the {label} slot, but yours might still be accepted.",
                     [profile for profile, _ in reviewing],
                     notes,
                     slot=label,
@@ -261,7 +270,7 @@ class SlotRules:
         reasons = " ".join(dict.fromkeys(reason for _, _, reason in results if reason))
         decision = self.decision(
             Verdict.ALLOW,
-            "Your release can replace the one in this slot. Report it as a trump after uploading.",
+            f"Your release can replace the one in the {label} slot. Report it as a trump after uploading.",
             competing,
             notes,
             slot=label,
