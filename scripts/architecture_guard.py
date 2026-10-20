@@ -18,8 +18,10 @@ LIMITS = {
     "direct_async_subprocesses": 16,
     # v4.7 adds the authenticated MediaInfo review endpoint and screenshot
     # capture guards; no additional async client/subprocess allowances.
-    # Two wiring lines register the separate comparison blueprint; logic stays extracted.
-    "web_ui_server_lines": 8682,
+    # Upstream #759 adds ten explicit per-upload rate-limit decorators; keep
+    # those security controls in the migration baseline without permitting
+    # unrelated Web UI growth.
+    "web_ui_server_lines": 8692,
 }
 LONG_FUNCTION_ALLOWLIST = {
     ("src/region.py", "get_distributor"),
