@@ -6,7 +6,9 @@
   let timer;
   const report = (text) => { $('message').textContent = text; };
   async function api(url, options = {}) {
-    const response = await fetch(url, { credentials: 'same-origin', ...options });
+    const headers = new Headers(options.headers || {});
+    if (window.UA_COMPARISON_CSRF && !headers.has('X-CSRF-Token')) headers.set('X-CSRF-Token', window.UA_COMPARISON_CSRF);
+    const response = await fetch(url, { ...options, credentials: 'same-origin', headers });
     const data = await response.json();
     if (!response.ok || data.success === false) throw new Error(data.error || 'Request failed');
     return data;
