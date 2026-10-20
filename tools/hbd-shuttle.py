@@ -443,8 +443,15 @@ class Peer:
         import paramiko
 
         self.cfg = cfg
+        known_hosts = cfg.get("known_hosts")
+        require(
+            isinstance(known_hosts, str)
+            and Path(known_hosts).is_file()
+            and not Path(known_hosts).is_symlink(),
+            "Pinned SSH known_hosts file is required",
+        )
         self.ssh = paramiko.SSHClient()
-        self.ssh.load_system_host_keys(filename=cfg.get('known_hosts'))
+        self.ssh.load_system_host_keys(filename=known_hosts)
         self.ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
         self.ssh.connect(
             cfg["remote"]["host"],
@@ -571,6 +578,7 @@ class Controller:
         record = {"hash": hash_, "source": source, "save_path": str(savepath), "origins": origins, "state": "planned"}
         self.ledger["returns"][hash_] = record
         self.save()
+        source_needs_restore = initially_paused
         try:
             if initially_paused:
                 self.peer.qb("torrents/start", {"hashes": hash_}, post=True, binary=True)
@@ -652,6 +660,7 @@ class Controller:
             target.post("torrents/rename", hash=hash_, name=source["name"])
             fresh = self.peer.qb("torrents/info", {"hashes": hash_})[0]
             require(fresh.get("category", "") == category and fresh.get("tags", "") == source.get("tags", ""), "VPS metadata changed during return; keep source")
+            source_needs_restore = True
             self.peer.qb("torrents/stop", {"hashes": hash_}, post=True, binary=True)
             if not initially_paused:
                 if source.get("force_start"):
@@ -667,15 +676,21 @@ class Controller:
                 "Final Dedi verification/settings mismatch; keep VPS registration",
             )
             self.peer.qb("torrents/delete", {"hashes": hash_, "deleteFiles": "false"}, post=True, binary=True)
+            source_needs_restore = False
             record["state"] = "returned"
             self.save()
             print("Returned and verified. VPS data retained until explicit verified cleanup. Local history counters are not transplanted.")
         except Exception:
             record["state"] = "needs_review"
             self.save()
-            if initially_paused:
+            if source_needs_restore:
                 with contextlib.suppress(Exception):
-                    self.peer.qb("torrents/stop", {"hashes": hash_}, post=True, binary=True)
+                    self.peer.qb(
+                        "torrents/stop" if initially_paused else "torrents/start",
+                        {"hashes": hash_},
+                        post=True,
+                        binary=True,
+                    )
             raise
 
     def cleanup(self):
@@ -698,6 +713,17 @@ class Controller:
         print("Only returned VPS tracker links and unreferenced, unchanged staged copies are eligible. Dedi originals are NEVER removed.")
         require(input("Type CLEAN VERIFIED VPS COPIES: ") == "CLEAN VERIFIED VPS COPIES", "Cancelled")
         result = self.peer.rpc("clean", links=links, stages=sorted(stages))
+        cleaned_at = time.time()
+        for record in self.ledger["returns"].values():
+            if record["state"] == "returned":
+                record["state"] = "cleaned"
+                record["cleaned_time"] = cleaned_at
+        for id_ in stages:
+            stage = self.ledger["stages"].get(id_)
+            if stage and stage["state"] == "ready":
+                stage["state"] = "cleaned"
+                stage["cleaned_time"] = cleaned_at
+        self.save()
         print(result)
 
 
@@ -806,7 +832,25 @@ def tui(screen, controller):
                 remote = controller.cfg["remote"]
                 command = shlex.join([*controller.cfg["remote_ua_command"], chosen["remote_input"]])
                 subprocess.run(  # noqa: S603 -- fixed SSH executable and shlex-quoted remote argv
-                    ["/usr/bin/ssh", "-tt", "-p", str(remote["port"]), "-o", "StrictHostKeyChecking=yes", '-o', 'UserKnownHostsFile='+controller.cfg.get('known_hosts',str(Path.home()/'.ssh/known_hosts')), remote["user"] + "@" + remote["host"], command], check=True
+                    [
+                        "/usr/bin/ssh",
+                        "-tt",
+                        "-p",
+                        str(remote["port"]),
+                        "-o",
+                        "StrictHostKeyChecking=yes",
+                        "-o",
+                        "UserKnownHostsFile=" + controller.cfg["known_hosts"],
+                        "-o",
+                        "ConnectTimeout=20",
+                        "-o",
+                        "ServerAliveInterval=20",
+                        "-o",
+                        "ServerAliveCountMax=3",
+                        remote["user"] + "@" + remote["host"],
+                        command,
+                    ],
+                    check=True,
                 )
             elif action == 2:
                 for hash_ in chosen:

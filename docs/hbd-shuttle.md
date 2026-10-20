@@ -33,8 +33,11 @@ configuration and matching worker on the VPS.
    returned VPS links without live torrent references; original staging copies
    additionally need link count one and their original checksum. Active UA
    sessions defer cleanup. Unknown files/audit records are not recursively deleted.
+   A successful cleanup marks the exact returned records and stages as `cleaned`,
+   retaining their audit records without making later cleanup retry an already-
+   removed VPS registration.
 
-The free-space reserve is 8 GiB. This VPS was inspected with **31.9 GiB free**, not
+The free-space reserve is 8 GiB. This VPS was inspected with **27.8 GiB free**, not
 100 GiB free; UA/Python dependencies reduce that slightly. Do not delete existing
 VPS downloads to make room without explicitly inspecting/authorizing them.
 
@@ -54,9 +57,12 @@ VPS downloads to make room without explicitly inspecting/authorizing them.
   account/hash history is not rewritten. Resume files are never patched.
 - No source torrent is needed until the **return** step. Missing historical
   staging records do not authorize deletion by a matching filename/size.
-- Interrupted/failed transfers and `needs_review` records retain data. Inspect
-  the private ledger and both exact registrations before retrying; automatic
-  recovery/discard of ambiguous partial states is deliberately not enabled.
+- Interrupted/failed transfers and `needs_review` records retain data. If a
+  return fails after temporarily stopping a previously running VPS torrent, the
+  shuttle attempts to restore that source registration to running; the record
+  remains `needs_review` if any step failed. Inspect the private ledger and both
+  exact registrations before retrying; automatic recovery/discard of ambiguous
+  partial states is deliberately not enabled.
 - UI filesystem lists are bounded at 1000 entries per directory and the return
   picker currently shows the first 200 completed VPS torrents. No global Dedi
   scan is used to populate either picker.

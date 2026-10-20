@@ -204,3 +204,142 @@ def test_return_reannounce_proof_then_registration_only_delete(tmp_path, monkeyp
     assert events.index("reannounce") < events.index("proof") < events.index("add") < events.index("source-registration-delete")
     assert original.read_bytes() == data and (target_root / "Uploads" / "renamed.mkv").samefile(original)
     assert ctl.ledger["returns"][hash_]["state"] == "returned"
+
+
+def test_return_failure_restores_previously_running_source(tmp_path, monkeypatch):
+    data = b"abcdefghijk"
+    raw, hash_ = torrent(data)
+    original = tmp_path / "original.mkv"
+    original.write_bytes(data)
+    target_root = tmp_path / "return"
+    target_root.mkdir()
+    events = []
+    source = {
+        "hash": hash_,
+        "name": "Renamed title",
+        "save_path": "/ssd/Uploads",
+        "state": "uploading",
+        "progress": 1,
+        "amount_left": 0,
+        "category": "",
+        "tags": "test",
+        "auto_tmm": False,
+    }
+
+    class FakeTarget:
+        info_ = None
+
+        def info(self, selected):
+            assert selected == hash_
+            return self.info_
+
+        def call(self, path, args=None, **_kw):
+            if path == "torrents/categories":
+                return {}
+            if path == "torrents/trackers":
+                return []
+            if path == "torrents/add":
+                self.info_ = {**source, "save_path": args["savepath"], "state": "stoppedUP"}
+                events.append("target-add")
+                return b"Ok."
+            raise AssertionError(path)
+
+        def post(self, path, **_kw):
+            events.append(path)
+
+        def state(self, _hash, _start):
+            events.append("target-start")
+            self.info_["state"] = "uploading"
+
+    class FakePeer:
+        def qb(self, path, _args=None, **_kw):
+            if path == "torrents/info":
+                return [source]
+            if path == "torrents/export":
+                return raw
+            if path == "torrents/files":
+                return [{"name": "renamed.mkv", "size": len(data), "priority": 1}]
+            if path == "torrents/trackers":
+                return []
+            if path == "torrents/reannounce":
+                events.append("reannounce")
+                return b""
+            if path == "torrents/stop":
+                events.append("source-stop")
+                return b""
+            if path == "torrents/delete":
+                events.append("source-delete-failed")
+                raise s.Refuse("injected source deletion failure")
+            if path == "torrents/start":
+                events.append("source-start-restore")
+                return b""
+            raise AssertionError(path)
+
+        def rpc(self, action, **_kw):
+            assert action == "inspect"
+            return [{"path": "/ssd/Uploads/renamed.mkv", "size": len(data), "origin": ["c" * 32, "raw.mkv"], "inode": [1, 2]}]
+
+    target = FakeTarget()
+    cfg = {"state_dir": str(tmp_path / "state"), "return_root": str(target_root), "target_roots": [str(target_root)]}
+    ctl = s.Controller(cfg, FakePeer())
+    ctl.ledger["stages"]["c" * 32] = {
+        "state": "ready",
+        "files": [{"relative": "raw.mkv", "source": str(original), "size": len(data), "sha256": hashlib.sha256(data).hexdigest()}],
+    }
+    monkeypatch.setattr(s, "QB", lambda _cfg: target)
+    monkeypatch.setattr("builtins.input", lambda _p: "RETURN")
+    with pytest.raises(s.Refuse, match="injected source deletion"):
+        ctl.return_torrent(hash_)
+    assert events.index("source-stop") < events.index("source-delete-failed") < events.index("source-start-restore")
+    assert ctl.ledger["returns"][hash_]["state"] == "needs_review"
+    assert (target_root / "renamed.mkv").samefile(original)
+
+
+def test_cleanup_marks_exactly_verified_records_cleaned(tmp_path, monkeypatch):
+    data = b"cleanup-proof"
+    raw, hash_ = torrent(data, b"cleanup.bin")
+    original = tmp_path / "cleanup.bin"
+    original.write_bytes(data)
+    payload = tmp_path / "returned"
+    payload.mkdir()
+    returned = payload / "cleanup.bin"
+    returned.write_bytes(data)
+    stage_id = "b" * 32
+    info = {
+        "hash": hash_,
+        "save_path": str(payload),
+        "progress": 1,
+        "amount_left": 0,
+        "state": "pausedUP",
+    }
+
+    class FakeTarget:
+        def info(self, selected):
+            assert selected == hash_
+            return info
+
+        def call(self, path, args=None, **kw):
+            assert path == "torrents/export" and args == {"hash": hash_} and kw["binary"]
+            return raw
+
+    class FakePeer:
+        def rpc(self, action, **fields):
+            assert action == "clean"
+            assert fields["stages"] == [stage_id]
+            assert fields["links"][0]["inode"] == [7, 8]
+            return {"removed_files": 2}
+
+    cfg = {"state_dir": str(tmp_path / "state")}
+    ctl = s.Controller(cfg, FakePeer())
+    ctl.ledger["stages"][stage_id] = {"state": "ready", "files": []}
+    ctl.ledger["returns"][hash_] = {
+        "state": "returned",
+        "origins": [{"path": "/ssd/Uploads/cleanup.bin", "inode": [7, 8], "origin": [stage_id, "cleanup.bin"]}],
+    }
+    monkeypatch.setattr(s, "QB", lambda _cfg: FakeTarget())
+    monkeypatch.setattr("builtins.input", lambda _p: "CLEAN VERIFIED VPS COPIES")
+    ctl.cleanup()
+    assert ctl.ledger["returns"][hash_]["state"] == "cleaned"
+    assert ctl.ledger["stages"][stage_id]["state"] == "cleaned"
+    assert "cleaned_time" in ctl.ledger["returns"][hash_]
+    assert original.read_bytes() == data
