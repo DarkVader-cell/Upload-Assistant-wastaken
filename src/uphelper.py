@@ -545,8 +545,12 @@ class UploadHelper:
                     return False, meta
                 if not interactive:
                     if slot_verdict is Verdict.REVIEW:
-                        # Unattended review keeps the basic result, which found no dupes.
-                        return False, meta
+                        # A known slot conflict is unresolved in unattended mode;
+                        # do not silently upload just because the filtered dupe
+                        # list is empty. Independent allowed slots returned above
+                        # still proceed normally.
+                        logger.info(f"{tracker_name}: skipping unattended upload while slot occupancy requires review.")
+                        return True, meta
                     logger.info(f"[bold red]{tracker_name}: skipping upload, slot rules recommend against it.[/bold red]")
                     return True, meta
                 try:

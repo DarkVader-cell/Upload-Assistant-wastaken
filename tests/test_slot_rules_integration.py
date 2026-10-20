@@ -223,7 +223,7 @@ async def test_interactive_review_with_conflicts_asks_even_without_basic_dupes(m
     assert prompts == [("Upload to AITHER anyway?", False)]
     assert is_dupe is True
     is_dupe, _meta = await helper.dupe_check([], make_meta(unattended=True), "AITHER", review)
-    assert is_dupe is False
+    assert is_dupe is True
 
 
 @pytest.mark.asyncio
