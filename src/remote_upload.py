@@ -50,7 +50,7 @@ class Jobs:
         self.save()
         return id_
 
-    def run(self, id_, trackers, runner=subprocess.run, *, unattended=False):
+    def run(self, id_, trackers, runner=subprocess.run, *, unattended=False, arguments=()):
         job = self.jobs[id_]
         if job["state"] != "staged":
             raise ValueError("Only staged jobs can run; ambiguous jobs require manual recovery")
@@ -66,7 +66,7 @@ class Jobs:
         self.save()  # A crash must never automatically replay an upload POST.
         try:
             remote = c.cfg["remote"]
-            command = shlex.join([*c.cfg["remote_ua_command"], stage["remote_input"], "-tk", ",".join(trackers), *(["--unattended"] if unattended else [])])
+            command = shlex.join([*c.cfg["remote_ua_command"], stage["remote_input"], *arguments, "-tk", ",".join(trackers), *(["--unattended"] if unattended else [])])
             argv = ["/usr/bin/ssh", "-T" if unattended else "-tt", "-p", str(remote["port"]), "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + c.cfg["known_hosts"]]
             if c.cfg.get("ssh_key"):
                 argv += ["-i", c.cfg["ssh_key"], "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes"]
@@ -133,6 +133,7 @@ def main():
     execute.add_argument("source", type=Path)
     execute.add_argument("--return-after", type=float, default=86400)
     execute.add_argument("--trackers", nargs="+", required=True)
+    execute.add_argument("--arguments-json", default="[]")
     commands.add_parser("tick", help="Return due registrations; suitable for a timer with SSH key authentication")
     commands.add_parser("status")
     args = parser.parse_args()
@@ -157,7 +158,7 @@ def main():
             jobs.run(args.job, args.trackers)
         elif args.action == "execute":
             id_ = jobs.stage(args.source, args.return_after)
-            jobs.run(id_, args.trackers, unattended=True)
+            jobs.run(id_, args.trackers, unattended=True, arguments=json.loads(args.arguments_json))
         else:
             jobs.tick()
     finally:

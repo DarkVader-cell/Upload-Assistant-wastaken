@@ -51,6 +51,6 @@ def test_import_idempotent_skips_invalid_and_renders_page(tmp_path):
     assert len(rows)==1 and rows[0]['attempts']==1
     assert rows[0]['successful_trackers']==['A']
     response=client.get('/upload-library')
-    assert response.status_code==200
-    assert b'Upload Library' in response.data
+    assert response.status_code==302
+    assert response.location=='/?workspace=library'
     assert store.search()[0]['source']=='metadata-import'

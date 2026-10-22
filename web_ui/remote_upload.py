@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import shlex
 import subprocess
 import sys
 import uuid
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, request
 
 from src.config_io import atomic_write_text
 
@@ -27,6 +28,7 @@ def backends():
 
 
 def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
+    del csrf_token  # Native workspace uses the main application's CSRF token.
     bp = Blueprint("remote_upload", __name__)
 
     @bp.before_request
@@ -39,7 +41,7 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
 
     @bp.get("/remote-upload")
     def page():
-        return render_template("remote_upload.html", csrf_token=csrf_token())
+        return redirect('/?workspace=remote')
 
     @bp.get("/api/remote-upload")
     def status():
@@ -83,7 +85,25 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                 trackers = data.get("trackers")
                 if not isinstance(trackers, list) or not trackers or any(not isinstance(t, str) or not t.replace("_", "").isalnum() for t in trackers):
                     raise ValueError("Select explicit trackers")
-                arguments = [str(source), "--return-after", str(delay), "--trackers", *trackers]
+                options = shlex.split(str(data.get("arguments", "")))
+                allowed = {"--edition", "-edition", "--imdb", "-imdb", "--tmdb", "-tmdb", "--tvdb", "-tvdb", "--tag", "-tag", "--year", "-year", "--category", "-category", "--type", "-type", "--source", "-source", "--resolution", "-resolution", "--screens", "-s", "--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}
+                forwarded = []
+                index = 0
+                while index < len(options):
+                    token = options[index]
+                    if token in {"-tk", "--trackers"}:
+                        index += 2
+                        continue
+                    if token not in allowed:
+                        raise ValueError("This option needs remote staging support")
+                    forwarded.append(token)
+                    index += 1
+                    if token not in {"--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}:
+                        if index >= len(options) or options[index].startswith(("-", "/", "~")):
+                            raise ValueError("Missing or unsupported remote option value")
+                        forwarded.append(options[index])
+                        index += 1
+                arguments = [str(source), "--return-after", str(delay), "--arguments-json", json.dumps(forwarded), "--trackers", *trackers]
             state = Path(cfg["state_dir"]).expanduser() / "operations"
             state.mkdir(parents=True, exist_ok=True, mode=0o700)
             state.chmod(0o700)

@@ -10,4 +10,5 @@ def test_modules_accept_browser_session_without_api_credentials(monkeypatch):
     client=server.app.test_client()
     for path in ('/upload-library','/remote-upload'):
         response=client.get(path)
-        assert response.status_code==200, (path,response.data[:200])
+        assert response.status_code==302, (path,response.data[:200])
+        assert '?workspace=' in response.location

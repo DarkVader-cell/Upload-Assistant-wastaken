@@ -3,12 +3,13 @@ import hashlib
 import json
 from pathlib import Path
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, jsonify, redirect, request
 
 from src.upload_library import filter_releases, releases
 
 
 def create_blueprint(*, store, trackers, validate_path, metadata_root, authenticated, csrf_valid, same_origin, csrf_token):
+    del csrf_token  # Native workspace uses the main application's CSRF token.
     bp = Blueprint('upload_library', __name__)
 
     @bp.before_request
@@ -21,7 +22,7 @@ def create_blueprint(*, store, trackers, validate_path, metadata_root, authentic
 
     @bp.get('/upload-library')
     def page():
-        return render_template('upload_library.html', csrf_token=csrf_token())
+        return redirect('/?workspace=library')
 
     @bp.get('/api/upload-library')
     def listing():

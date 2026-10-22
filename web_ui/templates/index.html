@@ -99,7 +99,6 @@
     </style>
   </head>
   <body>
-    <nav style="position:fixed;bottom:12px;left:12px;z-index:1000;background:#182230;color:#fff;padding:8px;border-radius:6px"><a href="/remote-upload" style="color:inherit">Remote uploads</a> | <a href="/upload-library" style="color:inherit">Upload Library</a></nav>
     <div id="root">
       <div
         id="root-loading"
@@ -187,6 +186,7 @@
     <script src="{{ url_for('static', filename='js/prompt_sound.js') }}"></script>
     <script src="{{ url_for('static', filename='js/language_flags_data.js') }}"></script>
     <script src="{{ url_for('static', filename='js/language_flags.js') }}"></script>
+    <script type="text/babel" src="{{ url_for('static', filename='js/native_workspaces.js') }}"></script>
     <script
       type="text/babel"
       src="{{ url_for('static', filename='js/app.js') }}?v={{ config.get('APP_ASSET_VERSION', '2026-08-12') }}"

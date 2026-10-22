@@ -52,7 +52,7 @@ def test_submit_and_prevent_duplicate_workers(context):
     assert result['backends']['nvme']['operations'][0]['state'] == 'queued'
 
 
-@pytest.mark.parametrize('changes', [{'source': '/etc/passwd'}, {'backend': '../../backend.json'}, {'trackers': ['PTP;echo']}, {'return_after': -1}, {'return_after': 'nan'}, {'action': 'delete'}])
+@pytest.mark.parametrize('changes', [{'source': '/etc/passwd'}, {'backend': '../../backend.json'}, {'trackers': ['PTP;echo']}, {'return_after': -1}, {'return_after': 'nan'}, {'action': 'delete'}, {'arguments': '--descfile /etc/passwd'}, {'arguments': 'other-file.mkv'}, {'arguments': '--edition'}, {'arguments': '--edition --webui'}])
 def test_invalid_submission(context, changes):
     client, _, launch, root = context
     data = {'backend': 'nvme', 'action': 'execute', 'source': str(root / 'test.mkv'), 'trackers': ['PTP']}

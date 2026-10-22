@@ -1461,6 +1461,7 @@ const ApplicationRail = ({
   onOpenOperations,
   onOpenHelp,
   onLogout,
+  onWorkspace,
 }) => {
   const workspaceLinks = [
     {
@@ -1468,6 +1469,12 @@ const ApplicationRail = ({
       label: "Upload",
       href: `${appBase}/`,
       icon: <UploadRailIcon />,
+    },
+    {
+      id: "library", label: "Library", href: `${appBase}/?workspace=library`, icon: <StatsIcon />,
+    },
+    {
+      id: "remote", label: "Remote", href: `${appBase}/?workspace=remote`, icon: <UploadRailIcon />,
     },
     {
       id: "config",
@@ -1511,7 +1518,7 @@ const ApplicationRail = ({
               className="ua-app-rail-button rounded-lg"
               data-active={isActive ? "true" : "false"}
               aria-current={isActive ? "page" : undefined}
-              onClick={isActive ? (event) => event.preventDefault() : undefined}
+              onClick={onWorkspace && ["upload", "library", "remote"].includes(workspace.id) ? (event) => {event.preventDefault();onWorkspace(workspace.id);} : isActive ? (event) => event.preventDefault() : undefined}
             >
               {workspace.icon}
               <span>{workspace.label}</span>
@@ -2061,6 +2068,11 @@ function AudionutsUAGUI() {
   const queueListRef = useRef(null);
   const [, setSelectedName] = useState("");
   const [customArgs, setCustomArgs] = useState("");
+  const [workspace, setWorkspace] = useState(["library", "remote"].includes(new URLSearchParams(window.location.search).get("workspace")) ? new URLSearchParams(window.location.search).get("workspace") : "upload");
+  const [uploadDestination, setUploadDestination] = useState("");
+  const [remoteBackends, setRemoteBackends] = useState([]);
+  const [remoteSeedHours, setRemoteSeedHours] = useState(24);
+  useEffect(() => {apiFetch(`${API_BASE}/remote-upload`).then(r=>r.json()).then(data=>setRemoteBackends(Object.keys(data.backends || {}))).catch(()=>{});}, []);
   const [argumentPresets, setArgumentPresets] = useState([]);
   const [argumentPresetName, setArgumentPresetName] = useState("");
   const [selectedArgumentPreset, setSelectedArgumentPreset] = useState("");
@@ -7066,6 +7078,18 @@ function AudionutsUAGUI() {
       return;
     }
     setPathInputError("");
+    if (uploadDestination) {
+      if (!selectedTrackers.size) {setPathInputError("Select explicit trackers for remote upload");return;}
+      if (items.length !== 1) {setPathInputError("Remote staging currently accepts one release per job");return;}
+      try {
+        const item=items[0];
+        const response = await apiFetch(`${API_BASE}/remote-upload`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({backend:uploadDestination,action:"execute",source:item.path,trackers:Array.from(selectedTrackers),return_after:Number(remoteSeedHours)*3600,arguments:[customArgs,item.args].filter(Boolean).join(" ")})});
+        const data=await response.json();if(!response.ok)throw new Error(data.error || "Remote request failed");
+        appendSystemMessage(`Remote upload queued: ${data.id}`, "info", tabId);
+        setWorkspace("remote");
+      } catch(error) {setPathInputError(error.message);}
+      return;
+    }
     updateTabRun(tabId, { isExecuting: true });
     setUploadTabs((tabs) =>
       tabs.map((tab) =>
@@ -9041,6 +9065,9 @@ function AudionutsUAGUI() {
   );
 
   // Mobile Layout
+  if (isMobile && workspace !== "upload" && window.UANativeWorkspace) {
+    return <div className={`ua-upload-page flex h-screen flex-col ${isDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`} data-mode={isDarkMode ? "dark" : "light"}><nav className="flex gap-3 border-b p-3">{["upload","library","remote"].map(name=><button key={name} onClick={()=>setWorkspace(name)}>{name}</button>)}</nav><window.UANativeWorkspace workspace={workspace} apiFetch={apiFetch} onRetry={(plans)=>{setSelectedTrackers(new Set(plans.flatMap(plan=>plan.trackers)));setSelectedPaths(plans.map(plan=>({path:plan.path,args:`-tk ${plan.trackers.join(",")}`})));setManualPathsText(null);setWorkspace("upload");}} /></div>;
+  }
   if (isMobile) {
     const navButton = (panel, icon, label) => (
       <button
@@ -9065,6 +9092,7 @@ function AudionutsUAGUI() {
         className={`ua-upload-page flex flex-col h-screen ${isDarkMode ? "bg-gray-900" : "bg-gray-50"}`}
         data-mode={isDarkMode ? "dark" : "light"}
       >
+        <nav className="flex flex-wrap gap-3 border-b p-2 text-sm"><button onClick={()=>setWorkspace("library")}>Library</button><button onClick={()=>setWorkspace("remote")}>Remote</button><select value={uploadDestination} onChange={e=>setUploadDestination(e.target.value)} className="bg-transparent"><option value="">This UA host</option>{remoteBackends.map(name=><option key={name}>{name}</option>)}</select>{uploadDestination&&<input aria-label="Return after hours" type="number" min="0" className="w-16 bg-transparent" value={remoteSeedHours} onChange={e=>setRemoteSeedHours(e.target.value)}/>}</nav>
         {screenshotMode && (
           <ScreenshotModeControls
             onPoster={(poster) =>
@@ -9835,7 +9863,8 @@ function AudionutsUAGUI() {
 
       <ApplicationRail
         trackers={trackers}
-        activeWorkspace="upload"
+        activeWorkspace={workspace}
+        onWorkspace={setWorkspace}
         appBase={APP_BASE}
         appearanceControl={renderRailAppearance()}
         updateStatus={visibleUpdateStatus}
@@ -9847,7 +9876,12 @@ function AudionutsUAGUI() {
         onLogout={handleLogout}
       />
 
-      <div className="ua-upload-desktop-shell flex min-w-0 flex-1 flex-col overflow-hidden">
+      {workspace !== "upload" && window.UANativeWorkspace && <window.UANativeWorkspace workspace={workspace} apiFetch={apiFetch} onRetry={(plans) => {setSelectedTrackers(new Set(plans.flatMap(plan=>plan.trackers)));setSelectedPaths(plans.map(plan=>({path:plan.path,args:`-tk ${plan.trackers.join(",")}`})));setManualPathsText(null);setWorkspace("upload");}} />}
+      <div className={`ua-upload-desktop-shell min-w-0 flex-1 flex-col overflow-hidden ${workspace === "upload" ? "flex" : "hidden"}`}>
+        <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-sm">
+          <label>Upload destination <select className="rounded border bg-transparent p-1" value={uploadDestination} onChange={e=>setUploadDestination(e.target.value)}><option value="">This UA host</option>{remoteBackends.map(name=><option key={name} value={name}>{name}</option>)}</select></label>
+          {uploadDestination && <label>Return after (hours) <input className="w-20 rounded border bg-transparent p-1" type="number" min="0" value={remoteSeedHours} onChange={e=>setRemoteSeedHours(e.target.value)} /></label>}
+        </div>
         <header className="ua-upload-context-header flex h-20 shrink-0 border-b">
           <div
             className="ua-upload-context-title flex shrink-0 items-center border-r px-5"
