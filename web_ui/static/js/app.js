@@ -197,6 +197,8 @@ const createUploadTabForm = () => ({
   selectedPaths: [],
   manualPathsText: null,
   customArgs: "",
+  uploadDestination: "",
+  remoteSeedHours: 24,
   pathInputError: "",
   selectedArgumentPreset: "",
   userInput: "",
@@ -6828,6 +6830,9 @@ function AudionutsUAGUI() {
           label,
           // The server starts it now, or schedules it if every slot is busy.
           schedule: schedulingEnabled,
+          remote_backend: uploadDestination || undefined,
+          remote_return_after: Number(remoteSeedHours) * 3600,
+          remote_trackers: uploadDestination ? Array.from(selectedTrackers) : undefined,
         }),
         signal: controller.signal,
       });
@@ -6991,7 +6996,7 @@ function AudionutsUAGUI() {
       if (!runtime || runtime.run.isExecuting || runtime.sessionRecord) return;
       const form =
         tab.id === activeTabId
-          ? { selectedPath, selectedPaths, manualPathsText, customArgs }
+          ? { selectedPath, selectedPaths, manualPathsText, customArgs, uploadDestination, remoteSeedHours }
           : runtime.view.form;
       if (!uploadTabFormHasContent(form)) return;
       drafts.push({
@@ -7000,6 +7005,8 @@ function AudionutsUAGUI() {
           selectedPaths: form.selectedPaths || [],
           manualPathsText: form.manualPathsText ?? null,
           customArgs: form.customArgs || "",
+          uploadDestination: form.uploadDestination || "",
+          remoteSeedHours: form.remoteSeedHours ?? 24,
         },
       });
     });
@@ -7012,6 +7019,8 @@ function AudionutsUAGUI() {
     selectedPaths,
     manualPathsText,
     customArgs,
+    uploadDestination,
+    remoteSeedHours,
   ]);
 
   /** Show a path error; `itemNumber` (1-based) marks the queue item it names. */
@@ -7081,14 +7090,8 @@ function AudionutsUAGUI() {
     if (uploadDestination) {
       if (!selectedTrackers.size) {setPathInputError("Select explicit trackers for remote upload");return;}
       if (items.length !== 1) {setPathInputError("Remote staging currently accepts one release per job");return;}
-      try {
-        const item=items[0];
-        const response = await apiFetch(`${API_BASE}/remote-upload`, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({backend:uploadDestination,action:"execute",source:item.path,trackers:Array.from(selectedTrackers),return_after:Number(remoteSeedHours)*3600,arguments:[customArgs,item.args].filter(Boolean).join(" ")})});
-        const data=await response.json();if(!response.ok)throw new Error(data.error || "Remote request failed");
-        appendSystemMessage(`Remote upload queued: ${data.id}`, "info", tabId);
-        setWorkspace("remote");
-      } catch(error) {setPathInputError(error.message);}
-      return;
+      // Use the standard execution session: SSH inherits its input/output so
+      // remote prompts use the SAME terminal, Send Input and Kill controls.
     }
     updateTabRun(tabId, { isExecuting: true });
     setUploadTabs((tabs) =>
@@ -7189,6 +7192,8 @@ function AudionutsUAGUI() {
           selectedPaths,
           manualPathsText,
           customArgs,
+          uploadDestination,
+          remoteSeedHours,
           pathInputError,
           selectedArgumentPreset,
           userInput,
@@ -7205,6 +7210,8 @@ function AudionutsUAGUI() {
     setSelectedPaths(form.selectedPaths);
     setManualPathsText(form.manualPathsText);
     setCustomArgs(form.customArgs);
+    setUploadDestination(form.uploadDestination || "");
+    setRemoteSeedHours(form.remoteSeedHours ?? 24);
     setPathInputError(form.pathInputError);
     setSelectedArgumentPreset(form.selectedArgumentPreset);
     setUserInput(form.userInput);

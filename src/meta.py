@@ -291,6 +291,8 @@ class Meta:
     folder_id: int | None = None
     force_recheck: bool = False
     force_upload: bool = False
+    remote_backend: str | None = None
+    remote_return_after: float = 86400
     foreign: bool = False
     format: str = ""
     found_preferred_piece_size: str | None = None

@@ -14,10 +14,37 @@ from pathlib import Path
 from flask import Blueprint, jsonify, redirect, request
 
 from src.config_io import atomic_write_text
+from src.remote_transfer_control import control_transfer, transfer_status
 
 
 class RequestValidationError(ValueError):
     """Safe, operator-facing validation error (never include config contents)."""
+
+
+def remote_options(arguments):
+    """Forward supported metadata only; never local paths or arbitrary positionals."""
+    options = shlex.split(arguments)
+    values = {"--edition", "-edition", "--imdb", "-imdb", "--tmdb", "-tmdb", "--tvdb", "-tvdb", "--tag", "-tag", "--year", "-year", "--category", "-category", "--type", "-type", "--source", "-source", "--resolution", "-resolution", "--screens", "-s"}
+    flags = {"--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}
+    forwarded = []
+    index = 0
+    while index < len(options):
+        token = options[index]
+        if token in {"-tk", "--trackers"}:
+            if index + 1 >= len(options):
+                raise RequestValidationError("Missing tracker selection")
+            index += 2
+            continue
+        if token not in values | flags:
+            raise RequestValidationError("An upload option is not supported remotely; remove local-only options before retrying")
+        forwarded.append(token)
+        index += 1
+        if token in values:
+            if index >= len(options) or options[index].startswith(("-", "/", "~")):
+                raise RequestValidationError("An upload option has a missing or local-only value")
+            forwarded.append(options[index])
+            index += 1
+    return forwarded
 
 
 def backends():
@@ -57,10 +84,27 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                 ledger = state / "ledger.json"
                 data = json.loads(ledger.read_text()) if ledger.exists() else {}
                 operations = [json.loads(record.read_text()) for record in sorted((state / "operations").glob("*.json"))[-100:]]
-                result[name] = {"jobs": data.get("upload_jobs", {}), "operations": operations, "background_ready": bool(cfg.get("ssh_key")), "transfers": [{"id": s.get("id"), "name": Path(s.get("source", "")).name, "state": s.get("state"), "bytes_total": s.get("bytes_total", 0), "bytes_sent": s.get("bytes_sent", 0), "bytes_per_second": s.get("bytes_per_second", 0)} for s in list(data.get("stages", {}).values())[-100:]]}
+                result[name] = {"jobs": data.get("upload_jobs", {}), "operations": operations, "background_ready": bool(cfg.get("ssh_key")), "transfers": [{"id": s.get("id"), "name": Path(s.get("source", "")).name, "state": s.get("state"), "protocol": s.get("protocol", "sftp"), "bytes_total": s.get("bytes_total", 0), "bytes_sent": s.get("bytes_sent", 0), "bytes_per_second": s.get("bytes_per_second", 0), **transfer_status(state, s)} for s in list(data.get("stages", {}).values())[-100:]]}
             return jsonify(backends=result)
         except (OSError, ValueError, KeyError):
             return jsonify(error="Remote backend configuration unavailable"), 503
+
+    @bp.post("/api/remote-upload/control")
+    def control():
+        try:
+            data = request.get_json()
+            config = backends().get(data.get("backend"))
+            if config is None:
+                raise RequestValidationError("Unknown backend")
+            cfg = json.loads(config.read_text())
+            state = Path(cfg["state_dir"]).expanduser()
+            ledger = json.loads((state / "ledger.json").read_text())
+            record = ledger["stages"][data["stage"]]
+            return jsonify(control_transfer(state, record, data["action"]))
+        except (ValueError, KeyError, TypeError, AttributeError):
+            return jsonify(error="No matching controllable transfer; legacy/completed jobs are not signalled"), 409
+        except OSError:
+            return jsonify(error="Transfer control unavailable; data retained"), 503
 
     @bp.post("/api/remote-upload")
     def submit():
@@ -75,7 +119,7 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
             if not cfg.get("ssh_key"):
                 raise RequestValidationError("Backend needs SSH-key authentication")
             action = data.get("action")
-            if action not in {"execute", "tick"}:
+            if action not in {"execute", "tick", "discard"}:
                 raise RequestValidationError("Unknown remote action")
             arguments = []
             if action == "execute":
@@ -89,25 +133,14 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                 trackers = data.get("trackers")
                 if not isinstance(trackers, list) or not trackers or any(not isinstance(t, str) or not t.replace("_", "").isalnum() for t in trackers):
                     raise RequestValidationError("Select explicit tracker identifiers")
-                options = shlex.split(str(data.get("arguments", "")))
-                allowed = {"--edition", "-edition", "--imdb", "-imdb", "--tmdb", "-tmdb", "--tvdb", "-tvdb", "--tag", "-tag", "--year", "-year", "--category", "-category", "--type", "-type", "--source", "-source", "--resolution", "-resolution", "--screens", "-s", "--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}
-                forwarded = []
-                index = 0
-                while index < len(options):
-                    token = options[index]
-                    if token in {"-tk", "--trackers"}:
-                        index += 2
-                        continue
-                    if token not in allowed:
-                        raise RequestValidationError("An upload option is not supported remotely; remove local-only options before retrying")
-                    forwarded.append(token)
-                    index += 1
-                    if token not in {"--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}:
-                        if index >= len(options) or options[index].startswith(("-", "/", "~")):
-                            raise RequestValidationError("An upload option has a missing or local-only value")
-                        forwarded.append(options[index])
-                        index += 1
+                forwarded = remote_options(str(data.get("arguments", "")))
                 arguments = [str(source), "--return-after", str(delay), "--arguments-json", json.dumps(forwarded), "--trackers", *trackers]
+            if action == "discard":
+                state_root = Path(cfg["state_dir"]).expanduser()
+                record = json.loads((state_root / "ledger.json").read_text())["stages"][data["stage"]]
+                if not transfer_status(state_root, record)["can_discard"]:
+                    raise RequestValidationError("Stop the recorded transfer before removing partial data")
+                arguments = [record["id"]]
             state = Path(cfg["state_dir"]).expanduser() / "operations"
             state.mkdir(parents=True, exist_ok=True, mode=0o700)
             state.chmod(0o700)

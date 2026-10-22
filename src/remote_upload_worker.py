@@ -20,6 +20,8 @@ def main():
     try:
         result = subprocess.run([sys.executable, '-m', 'src.remote_upload', '--config', config, action, *arguments], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         data['state'] = 'completed' if result.returncode == 0 else 'needs_review'
+    except KeyboardInterrupt:
+        data['state'] = 'cancelled'
     except Exception:
         data['state'] = 'needs_review'
     atomic_write_text(path, json.dumps(data), default_mode=0o600)

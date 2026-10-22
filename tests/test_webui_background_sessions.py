@@ -441,3 +441,35 @@ def test_session_settings_are_reparsed_only_when_a_config_changes(monkeypatch) -
     first = server._webui_session_settings()
     assert server._webui_session_settings() == first
     assert len(calls) == 2  # user and example config, parsed once
+
+
+def test_remote_upload_uses_existing_prompt_and_input_session(start_session, tmp_path, monkeypatch):
+    _warm_up(start_session)
+    cfg = tmp_path / 'remote.json'
+    cfg.write_text(json.dumps({'source_roots': [str(tmp_path)]}))
+    registry = tmp_path / 'backends.json'
+    registry.write_text(json.dumps({'dummy': str(cfg)}))
+    monkeypatch.setenv('UA_REMOTE_UPLOAD_BACKENDS', str(registry))
+    process = FakeProcess()
+    launches = []
+    def spawn(command, _base, _env):
+        launches.append(command)
+        return process, 'subprocess'
+    monkeypatch.setattr(server, '_spawn_webui_upload_process', spawn)
+    client = server.app.test_client()
+    response = client.post('/api/execute', json={'path':'dummy', 'session_id':'remote-interactive', 'args':'--edition "Extended Edition"', 'remote_backend':'dummy', 'remote_trackers':['PASSTHEPOPCORN'], 'remote_return_after':3600}, buffered=False)
+    try:
+        events = _events(response)
+        _read_until(events, lambda event: event['type']=='replay_done')
+        assert '--remote-backend' in launches[0]
+        assert '--unattended' not in launches[0]
+        process.stdout.feed('Continue? (y/N)')
+        prompt = _read_until(events, lambda event: event['type']=='prompt_state' and event['awaiting'] is True)[-1]
+        assert prompt['input_type']=='yes_no'
+        answer = client.post('/api/input', json={'session_id':'remote-interactive','input':'y'})
+        assert answer.status_code==200
+        assert process.stdin.getvalue()=='y\n'
+    finally:
+        process.exit(0)
+        response.close()
+        _join_session_threads()

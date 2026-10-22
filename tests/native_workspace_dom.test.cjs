@@ -61,3 +61,35 @@ test('native checkbox filters auto-update, facets combine, bulk retry and reset 
   assert.match(button('Prepare retry').textContent,/\(0\)/);
   await act(async()=>root.unmount());
 });
+
+
+test('remote workspace shows ETA and submits pause/resume/cancel/discard controls',async()=>{
+  const transfer={id:'a'.repeat(32),name:'Dummy transfer',state:'copying',bytes_total:1000,bytes_sent:400,bytes_per_second:50,eta_seconds:12,can_control:true,can_discard:false,protocol:'rsync'};
+  const actions=[];
+  window.confirm=()=>true;
+  const apiFetch=async(url,options)=>{
+    if(options?.method==='POST'){
+      const body=JSON.parse(options.body);actions.push({url,...body});
+      if(body.action==='pause'){transfer.state='paused';transfer.eta_seconds=null;}
+      if(body.action==='resume'){transfer.state='copying';transfer.eta_seconds=12;}
+      if(body.action==='cancel'){transfer.state='interrupted';transfer.can_control=false;transfer.can_discard=true;transfer.eta_seconds=null;}
+      if(body.action==='discard'){transfer.state='discarded';transfer.can_discard=false;}
+    }
+    return {ok:true,json:async()=>({backends:{dummy:{background_ready:true,transfers:[{...transfer}],jobs:{},operations:[]}}})};
+  };
+  const root=createRoot(document.getElementById('root'));
+  await act(async()=>root.render(React.createElement(window.UANativeWorkspace,{workspace:'remote',apiFetch,onRetry:()=>{}})));
+  await settle();
+  assert.match(document.body.textContent,/ETA 0m 12s/);
+  await act(async()=>button('Pause transfer').click());await settle();
+  assert.ok(button('Resume transfer'));
+  await act(async()=>button('Resume transfer').click());await settle();
+  assert.ok(button('Pause transfer'));
+  await act(async()=>button('Cancel transfer').click());await settle();
+  assert.ok(button('Remove partial VPS data'));
+  await act(async()=>button('Remove partial VPS data').click());await settle();
+  assert.deepEqual(actions.map(a=>a.action),['pause','resume','cancel','discard']);
+  assert.ok(actions.every(a=>a.stage==='a'.repeat(32)&&a.backend==='dummy'));
+  assert.equal(actions[0].url,'/api/remote-upload/control');
+  await act(async()=>root.unmount());
+});

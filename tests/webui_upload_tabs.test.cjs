@@ -45,6 +45,8 @@ const STATE = {
   selectedPaths: [],
   manualPathsText: null,
   customArgs: "",
+  uploadDestination: "",
+  remoteSeedHours: 24,
   pathInputError: "",
   selectedArgumentPreset: "",
   userInput: "",
@@ -122,6 +124,18 @@ function setup() {
 
 const statusOf = (context, id) =>
   context.uploadTabs.find((tab) => tab.id === id).status;
+
+test("remote destination and return interval belong only to their upload tab", () => {
+  const context = setup();
+  context.uploadDestination = "HBD SSD VPS";
+  context.remoteSeedHours = 1;
+  context.addUploadTab();
+  assert.equal(context.uploadDestination, "");
+  assert.equal(context.remoteSeedHours, 24);
+  context.switchUploadTab("tab-1");
+  assert.equal(context.uploadDestination, "HBD SSD VPS");
+  assert.equal(context.remoteSeedHours, 1);
+});
 
 test("background tab output, progress and run state never touch the visible tab", () => {
   const context = setup();

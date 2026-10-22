@@ -338,6 +338,8 @@ def rpc(cfg, request):
     root.mkdir(parents=True, exist_ok=True, mode=0o700)
     if action == "space":
         return {"free": shutil.disk_usage(root).free}
+    if action == "capabilities":
+        return {"rsync": shutil.which("rsync") is not None}
     if action == "prepare":
         id_ = request["id"]
         require(bool(re.fullmatch(r"[a-f0-9]{32}", id_)), "Invalid staging ID")
@@ -372,6 +374,40 @@ def rpc(cfg, request):
             require((s.st_dev, s.st_ino) in index, "VPS file has no proven raw-file staging origin; refuse name/size guesses")
             result.append({"path": str(path), "origin": index[(s.st_dev, s.st_ino)], "size": s.st_size, "inode": [s.st_dev, s.st_ino]})
         return result
+    if action == "discard_partial":
+        record = request["record"]
+        require(bool(re.fullmatch(r"[a-f0-9]{32}", record["id"])), "Invalid stage ID")
+        directory = confined(root, root / "stages" / record["id"])
+        payload = directory / "payload"
+        for cmdline in Path("/proc").glob("[0-9]*/cmdline"):
+            with contextlib.suppress(OSError):
+                command = cmdline.read_bytes()
+                require(b"upload.py" not in command or b"--webui" in command, "An upload is active; partial cleanup deferred")
+                require(b"rsync\x00--server" not in command and b"sftp-server" not in command and b"internal-sftp" not in command, "A remote file writer is still active; partial cleanup deferred")
+        rows = qb_pages(QB(cfg))
+        require(all(t.get("content_path") for t in rows), "Incomplete torrent references; keep partial data")
+        refs = [Path(t["content_path"]).resolve() for t in rows]
+        expected = {str(safe_relative(f["relative"])): f for f in record["files"]}
+        removable = []
+        require(payload.is_dir() and not payload.is_symlink(), "Partial payload directory unavailable")
+        for path in payload.rglob("*"):
+            require(not path.is_symlink(), "Symlink found; partial data retained")
+            if path.is_dir():
+                continue
+            rel = str(path.relative_to(payload))
+            item = expected.get(rel)
+            s = path.stat()
+            require(item is not None and stat.S_ISREG(s.st_mode) and s.st_nlink == 1 and s.st_size <= item["size"], "Unknown or linked partial file; retained")
+            resolved = path.resolve()
+            require(not any(resolved == r or resolved.is_relative_to(r) or r.is_relative_to(resolved) for r in refs), "Torrent still references partial data")
+            removable.append(path)
+        for path in removable:
+            path.unlink()
+        for path in sorted(payload.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+            if path.is_dir():
+                path.rmdir()
+        payload.rmdir()
+        return {"removed_files": len(removable)}
     if action == "qb":
         require(
             request["path"]
@@ -438,6 +474,40 @@ def rpc(cfg, request):
     raise Refuse("Unknown worker action")
 
 
+def native_transfer(cfg, source_parent, target, files, progress):
+    """One native SSH stream, whole-file transfer, no compression/delta scan.
+
+    The caller still verifies independent SHA-256 and source fingerprints.
+    Never enable rsync deletion or copy outside the prepared manifest.
+    """
+    remote = cfg["remote"]
+    ssh = ["/usr/bin/ssh", "-4", "-T", "-p", str(remote["port"]), "-i", cfg["ssh_key"],
+           "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "StrictHostKeyChecking=yes",
+           "-o", "UserKnownHostsFile=" + cfg["known_hosts"], "-o", "Compression=no", "-c", cfg.get("ssh_ciphers", "aes128-gcm@openssh.com,chacha20-poly1305@openssh.com,aes256-gcm@openssh.com"),
+           "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=3"]
+    destination = remote["user"] + "@" + remote["host"] + ":" + target.rstrip("/") + "/"
+    command = ["/usr/bin/rsync", "--from0", "--files-from=-", "--relative", "--whole-file", "--inplace",
+               "--protect-args", "--info=progress2", "--outbuf=L", "--no-compress", "--rsh=" + shlex.join(ssh),
+               "--", str(source_parent) + "/", destination]
+    # Keep stderr in a private spool rather than exposing config data.
+    import tempfile
+    with tempfile.TemporaryFile() as errors:  # noqa: SIM117 -- stderr spool must outlive the subprocess
+        with subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors) as process:  # noqa: S603 -- fixed executable, validated manifest and operator-owned SSH config
+            process.stdin.write(b"".join(str(safe_relative(f["relative"])).encode() + b"\0" for f in files))
+            process.stdin.close()
+            pending = b""
+            while block := os.read(process.stdout.fileno(), 4096):
+                pending += block
+                parts = re.split(rb"[\r\n]", pending)
+                pending = parts.pop()
+                for line in parts:
+                    match = re.match(rb"\s*([0-9,]+)\s+[0-9]+%", line)
+                    if match:
+                        progress(int(match[1].replace(b",", b"")))
+                require(len(pending) < 65536, "Unexpected native transfer output")
+            require(process.wait() == 0, "Native SSH transfer failed; partial files retained for inspection")
+
+
 class Peer:
     def __init__(self, cfg):
         import paramiko
@@ -463,7 +533,9 @@ class Peer:
             allow_agent=False,
             timeout=20,
         )
-        self.sftp = paramiko.SFTPClient.from_transport(self.ssh.get_transport(), window_size=32 * CHUNK, max_packet_size=256 * 1024)
+        transport = self.ssh.get_transport()
+        transport.set_keepalive(30)
+        self.sftp = paramiko.SFTPClient.from_transport(transport, window_size=32 * CHUNK, max_packet_size=256 * 1024)
 
     def rpc(self, action, **fields):
         command = shlex.join(["python3", self.cfg["remote_script"], "--rpc"])
@@ -496,6 +568,16 @@ class Controller:
         atomic_json(self.path, self.ledger)
 
     def stage(self, source):
+        before = set(self.ledger["stages"])
+        try:
+            return self._stage(source)
+        except BaseException:
+            for id_ in set(self.ledger["stages"]) - before:
+                self.ledger["stages"][id_]["state"] = "interrupted"
+            self.save()
+            raise
+
+    def _stage(self, source):
         files = manifest(source, self.cfg["source_roots"])
         total = sum(f["size"] for f in files)
         free = self.peer.rpc("space")["free"]
@@ -504,11 +586,39 @@ class Controller:
         id_ = uuid.uuid4().hex
         target = self.peer.rpc("prepare", id=id_, files=files)
         record = {"id": id_, "source": str(source), "remote_input": target + "/" + Path(source).name, "files": files, "state": "copying", "bytes_total": total, "bytes_sent": 0, "bytes_per_second": 0}
+        record.update(writer_pid=os.getpid(), writer_pgid=os.getpgrp(), writer_start=Path(f"/proc/{os.getpid()}/stat").read_text().rsplit(")", 1)[1].split()[19])
         transferred = 0
         transfer_started = time.monotonic()
         progress_saved = transfer_started
         self.ledger["stages"][id_] = record
         self.save()
+        protocol = self.cfg.get("transfer_protocol", "sftp")
+        require(protocol in {"sftp", "rsync"}, "Unsupported transfer protocol")
+        record["protocol"] = protocol
+        if protocol == "rsync":
+            require(self.cfg.get("ssh_key") and shutil.which("rsync"), "Native transfer requires rsync and SSH-key authentication")
+            require(self.peer.rpc("capabilities").get("rsync"), "Remote rsync is unavailable")
+            def progress(sent):
+                nonlocal progress_saved
+                now = time.monotonic()
+                record.update(bytes_sent=sent, bytes_per_second=sent / max(0.01, now - transfer_started), progress_at=time.time())
+                if now - progress_saved >= 1 or sent >= total:
+                    self.save()
+                    print(f"Native SSH transfer {sent / CHUNK:.1f} / {total / CHUNK:.1f} MiB", flush=True)
+                    progress_saved = now
+            native_transfer(self.cfg, Path(source).parent, target, files, progress)
+            progress(total)
+            record["state"] = "verifying"
+            self.save()
+            for f in files:
+                require(fingerprint(f["source"]) == f["fingerprint"], "Source changed during native transfer")
+                f["sha256"] = sha_file(f["source"])
+                require(fingerprint(f["source"]) == f["fingerprint"], "Source changed during verification")
+            self.peer.rpc("commit", record=record)
+            record["state"] = "ready"
+            self.save()
+            print("\nVerified raw files ready on SSD. No original was deleted. Stage:", id_)
+            return
         for f in files:
             require(fingerprint(f["source"]) == f["fingerprint"], "Source changed before SFTP")
             digest = hashlib.sha256()
@@ -541,6 +651,22 @@ class Controller:
         record["state"] = "ready"
         self.save()
         print("Verified raw files ready on SSD. No original was deleted. Stage:", id_)
+
+    def discard_partial(self, id_):
+        record = self.ledger["stages"][id_]
+        require(record.get("state") in {"interrupted", "copying"} and record.get("writer_start"), "Only recorded interrupted transfers can be discarded")
+        proc = Path(f"/proc/{int(record['writer_pid'])}/stat")
+        if proc.exists():
+            require(proc.read_text().rsplit(")", 1)[1].split()[19] != record["writer_start"], "Transfer writer is still alive; stop it first")
+        # Close our own unused SFTP channel before checking remote writer processes.
+        # A still-draining cancelled writer makes the RPC refuse, never race deletion.
+        sftp = getattr(self.peer, "sftp", None)
+        if sftp is not None:
+            sftp.close()
+        result = self.peer.rpc("discard_partial", record=record)
+        record["state"] = "discarded"
+        self.save()
+        return result
 
     def return_torrent(self, hash_, *, confirmed=False):
         require(bool(HASH.fullmatch(hash_)), "Invalid selected hash")

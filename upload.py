@@ -3362,6 +3362,10 @@ async def main() -> None:
 
 
 def run() -> None:
+    if "--remote-backend" in sys.argv[1:]:
+        from src.remote_upload import webui_entry
+        webui_entry(sys.argv[1:])
+        return
     check_python_version()
 
     # Register signal handlers only when run as main script (not when imported)

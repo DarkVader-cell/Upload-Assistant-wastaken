@@ -12,7 +12,8 @@ test('native navigation and upload destination integrate without iframe',()=>{
   const app=read('app.js'),modules=read('native_workspaces.js');
   assert.match(app,/onWorkspace=\{setWorkspace\}/);
   assert.match(app,/Upload destination/);
-  assert.match(app,/arguments:\[customArgs,item.args\]/);
+  assert.match(app,/remote_backend: uploadDestination/);
+  assert.match(app,/remote_trackers: uploadDestination/);
   assert.match(app,/setSelectedTrackers\(new Set\(plans.flatMap/);
   assert.match(modules,/apiFetch\(url/);
   assert.match(modules,/onRetry\(plans\)/);

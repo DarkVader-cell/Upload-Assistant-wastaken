@@ -9,8 +9,9 @@ The normal Upload form has a destination selector. Local execution is unchanged.
 For a configured remote destination, select the file using the existing browser,
 choose explicit trackers and set the remote seed interval. Supported metadata
 arguments (edition, IDs, source/type/resolution, year, tag, screenshots and common
-boolean flags) are forwarded as quoted argv, not shell fragments. Remote jobs
-run unattended: policy reviews are not bypassed. The Remote workspace displays
+boolean flags) are forwarded as quoted argv, not shell fragments. Upload-form
+remote jobs use the existing interactive WebUI terminal; policy reviews are not
+bypassed. Detached remote API jobs remain explicitly unattended. The Remote workspace displays
 transfer bytes, MiB/s, operations, jobs and return deadlines.
 
 Local auxiliary paths (description files, custom screenshots and other files)
@@ -25,7 +26,8 @@ loads server-validated paths and only missing tracker targets into the existing
 Upload form. Choose local or remote destination and review normal UA options
 before executing. Library preparation does not itself upload anything.
 
-Known scope: remote jobs use persisted remote operation status, rather than the
-local interactive terminal's screenshot/prompt stream. Local-only features are
-not claimed to work remotely. This integration does not transplant local files
+Known scope: remote temporary screenshot/MediaInfo preview files are not all
+mirrored back to local preview endpoints. Terminal prompts and input are bridged
+through the normal execution session. Local-only file features are not claimed
+to work remotely. See [remote-transfer-controls.md](remote-transfer-controls.md). This integration does not transplant local files
 referenced by arbitrary CLI flags.

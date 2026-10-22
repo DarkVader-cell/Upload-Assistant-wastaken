@@ -7800,6 +7800,28 @@ def execute_command():
                         return
                     command.extend(validated_args)
 
+                if data.get("remote_backend"):
+                    from web_ui.remote_upload import backends, remote_options
+                    try:
+                        backend_name = str(data["remote_backend"])
+                        backend_path = backends().get(backend_name)
+                        if backend_path is None or _is_generated_queue(validated_path):
+                            raise ValueError("Select one release and a configured remote destination")
+                        backend_cfg = json.loads(backend_path.read_text())
+                        if not any(Path(validated_path).is_relative_to(Path(root).resolve()) for root in backend_cfg["source_roots"]):
+                            raise ValueError("Release outside remote backend source roots")
+                        delay = float(data.get("remote_return_after", 86400))
+                        if not math.isfinite(delay) or delay < 0:
+                            raise ValueError("Invalid remote return interval")
+                        targets = data.get("remote_trackers")
+                        if not isinstance(targets, list) or not targets or any(not isinstance(t, str) or not t.replace("_", "").isalnum() for t in targets):
+                            raise ValueError("Select explicit trackers for remote upload")
+                        remote_options(args)
+                        command.extend(["-tk", ",".join(targets), "--remote-backend", backend_name, "--remote-return-after", str(delay)])
+                    except (ValueError, KeyError, TypeError, OSError) as error:
+                        yield _sse({"type": "error", "data": f"Remote execution refused: {error}"})
+                        return
+
                 item_paths = _execution_item_paths(validated_path)
                 content_paths = frozenset(item_paths)
                 keep_running, prompt_timeout = _webui_session_settings()

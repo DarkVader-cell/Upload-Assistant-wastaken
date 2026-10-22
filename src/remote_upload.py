@@ -50,7 +50,7 @@ class Jobs:
         self.save()
         return id_
 
-    def run(self, id_, trackers, runner=subprocess.run, *, unattended=False, arguments=()):
+    def run(self, id_, trackers, runner=subprocess.run, *, unattended=False, arguments=(), webui=False):
         job = self.jobs[id_]
         if job["state"] != "staged":
             raise ValueError("Only staged jobs can run; ambiguous jobs require manual recovery")
@@ -66,8 +66,9 @@ class Jobs:
         self.save()  # A crash must never automatically replay an upload POST.
         try:
             remote = c.cfg["remote"]
-            command = shlex.join([*c.cfg["remote_ua_command"], stage["remote_input"], *arguments, "-tk", ",".join(trackers), *(["--unattended"] if unattended else [])])
-            argv = ["/usr/bin/ssh", "-T" if unattended else "-tt", "-p", str(remote["port"]), "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + c.cfg["known_hosts"]]
+            ui_env = ["env", "PYTHONUNBUFFERED=1", "UA_WEBUI_FORCE_COLOR=1", "UA_WEBUI_PROGRESS_STDOUT=1", "UA_WEBUI_PROMPT_SOUND_STDOUT=1", "UA_STATS_SOURCE=webui"] if webui else []
+            command = shlex.join([*ui_env, *c.cfg["remote_ua_command"], stage["remote_input"], *arguments, "-tk", ",".join(trackers), *(["--unattended"] if unattended else [])])
+            argv = ["/usr/bin/ssh", "-T" if unattended or webui else "-tt", "-p", str(remote["port"]), "-o", "StrictHostKeyChecking=yes", "-o", "UserKnownHostsFile=" + c.cfg["known_hosts"]]
             if c.cfg.get("ssh_key"):
                 argv += ["-i", c.cfg["ssh_key"], "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes"]
             argv += ["-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=3"]
@@ -90,7 +91,7 @@ class Jobs:
                     job["torrents"][hash_] = {"state": "seeding", "due": self.clock() + job["delay"]}
             job["state"] = "seeding" if job["torrents"] else "needs_review"
             self.save()
-        except Exception:
+        except BaseException:
             job["state"] = "needs_review"
             self.save()
             raise
@@ -119,6 +120,41 @@ class Jobs:
             self.save()
 
 
+def webui_entry(argv):
+    """Run under the EXISTING WebUI process/session pump, inheriting stdin/stdout."""
+    from web_ui.remote_upload import backends, remote_options
+
+    source = Path(argv[0]).resolve(strict=True)
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--remote-backend", required=True)
+    parser.add_argument("--remote-return-after", type=float, default=86400)
+    parser.add_argument("-tk", "--trackers", required=True)
+    args, remaining = parser.parse_known_args(argv[1:])
+    config = backends().get(args.remote_backend)
+    if config is None:
+        raise ValueError("Unknown remote backend")
+    cfg = json.loads(config.read_text())
+    if cfg.get("role") != "dedi" or not cfg.get("ssh_key"):
+        raise ValueError("Remote WebUI needs a dedicated backend with SSH-key authentication")
+    if not any(source.is_relative_to(Path(root).resolve()) and source != Path(root).resolve() for root in cfg["source_roots"]):
+        raise ValueError("Release is outside backend source roots")
+    options = remote_options(shlex.join(remaining))
+    trackers = args.trackers.split(",")
+    if not trackers or any(not t.replace("_", "").isalnum() for t in trackers):
+        raise ValueError("Invalid explicit tracker selection")
+    engine = load_engine()
+    peer = engine.Peer(cfg)
+    try:
+        controller = engine.Controller(cfg, peer)
+        jobs = Jobs(controller, engine)
+        id_ = jobs.stage(source, args.remote_return_after)
+        print("Staging verified. Starting interactive remote UA in this terminal.", flush=True)
+        jobs.run(id_, trackers, arguments=options, webui=True)
+    finally:
+        peer.sftp.close()
+        peer.ssh.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True, help="Private shuttle configuration for the selected remote backend")
@@ -134,6 +170,8 @@ def main():
     execute.add_argument("--return-after", type=float, default=86400)
     execute.add_argument("--trackers", nargs="+", required=True)
     execute.add_argument("--arguments-json", default="[]")
+    discard = commands.add_parser("discard", help="Remove only a stopped stage's verified unreferenced partial files")
+    discard.add_argument("stage")
     commands.add_parser("tick", help="Return due registrations; suitable for a timer with SSH key authentication")
     commands.add_parser("status")
     args = parser.parse_args()
@@ -146,7 +184,7 @@ def main():
         return
     if cfg.get("role") != "dedi":
         raise ValueError("Run remote upload jobs on the payload-owning dedicated host")
-    if args.action in {"execute", "tick"} and not cfg.get("ssh_key"):
+    if args.action in {"execute", "tick", "discard"} and not cfg.get("ssh_key"):
         raise ValueError("Background operations require a configured SSH key")
     peer = engine.Peer(cfg)
     try:
@@ -156,6 +194,8 @@ def main():
             print(jobs.stage(args.source, args.return_after))
         elif args.action == "upload":
             jobs.run(args.job, args.trackers)
+        elif args.action == "discard":
+            print(controller.discard_partial(args.stage))
         elif args.action == "execute":
             id_ = jobs.stage(args.source, args.return_after)
             jobs.run(id_, args.trackers, unattended=True, arguments=json.loads(args.arguments_json))
