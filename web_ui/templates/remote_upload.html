@@ -9,5 +9,5 @@
 <button type="submit">Stage and upload</button></form>
 <p>Unattended jobs require an SSH key. Review-required tracker uploads are not forced.</p>
 <button id="refresh">Refresh status</button> <button id="tick">Process due returns now</button>
-<p id="message" role="status"></p><pre id="status"></pre>
+<p id="message" role="status"></p><section id="transfers" aria-live="polite"></section><pre id="status"></pre>
 <script src="{{ url_for('static', filename='js/remote_upload.js') }}" defer></script></body></html>

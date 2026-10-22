@@ -503,7 +503,10 @@ class Controller:
         require(total <= free - reserve, "Insufficient SSD space after the safety reserve")
         id_ = uuid.uuid4().hex
         target = self.peer.rpc("prepare", id=id_, files=files)
-        record = {"id": id_, "source": str(source), "remote_input": target + "/" + Path(source).name, "files": files, "state": "copying"}
+        record = {"id": id_, "source": str(source), "remote_input": target + "/" + Path(source).name, "files": files, "state": "copying", "bytes_total": total, "bytes_sent": 0, "bytes_per_second": 0}
+        transferred = 0
+        transfer_started = time.monotonic()
+        progress_saved = transfer_started
         self.ledger["stages"][id_] = record
         self.save()
         for f in files:
@@ -517,6 +520,12 @@ class Controller:
                     remote.write(block)
                     digest.update(block)
                     sent += len(block)
+                    transferred += len(block)
+                    now = time.monotonic()
+                    record.update(bytes_sent=transferred, bytes_per_second=transferred / max(0.01, now - transfer_started))
+                    if now - progress_saved >= 1:
+                        self.save()
+                        progress_saved = now
                     print(
                         f"\rSFTP {Path(f['relative']).name}: {sent / CHUNK:.0f} MiB / {f['size'] / CHUNK:.0f} MiB  {sent / CHUNK / max(0.01, time.monotonic() - started):.1f} MiB/s",
                         end="",
@@ -526,6 +535,8 @@ class Controller:
             require(fingerprint(f["source"]) == f["fingerprint"], "Source changed during SFTP; copy not approved")
             f["sha256"] = digest.hexdigest()
             self.save()
+        record["state"] = "verifying"
+        self.save()
         self.peer.rpc("commit", record=record)
         record["state"] = "ready"
         self.save()

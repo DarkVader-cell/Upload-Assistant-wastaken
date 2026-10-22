@@ -55,6 +55,7 @@ dependencies = [
     "mutagen==1.47.0",
     "numpy==2.4.4",
     "packaging>=21,<25",
+    "paramiko>=3.5,<5",
     "pillow==13.0.0",
     "psutil==7.2.2",
     "pycountry==24.6.1",

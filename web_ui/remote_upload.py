@@ -51,7 +51,7 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                 ledger = state / "ledger.json"
                 data = json.loads(ledger.read_text()) if ledger.exists() else {}
                 operations = [json.loads(record.read_text()) for record in sorted((state / "operations").glob("*.json"))[-100:]]
-                result[name] = {"jobs": data.get("upload_jobs", {}), "operations": operations, "background_ready": bool(cfg.get("ssh_key"))}
+                result[name] = {"jobs": data.get("upload_jobs", {}), "operations": operations, "background_ready": bool(cfg.get("ssh_key")), "transfers": [{"id": s.get("id"), "name": Path(s.get("source", "")).name, "state": s.get("state"), "bytes_total": s.get("bytes_total", 0), "bytes_sent": s.get("bytes_sent", 0), "bytes_per_second": s.get("bytes_per_second", 0)} for s in list(data.get("stages", {}).values())[-100:]]}
             return jsonify(backends=result)
         except (OSError, ValueError, KeyError):
             return jsonify(error="Remote backend configuration unavailable"), 503

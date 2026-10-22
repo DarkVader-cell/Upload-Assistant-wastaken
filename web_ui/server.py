@@ -8181,9 +8181,9 @@ def _library_config():
     return _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
 
 
-app.register_blueprint(create_upload_library_blueprint(store=lambda: ReleaseHistoryStore(STATE_DIR, _library_config()), trackers=lambda: set(_library_config().get("TRACKERS", {})) - {"DEFAULT"}, validate_path=_validate_execution_path, metadata_root=STATE_DIR / "tmp", authenticated=_webui_auth_ok, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
+app.register_blueprint(create_upload_library_blueprint(store=lambda: ReleaseHistoryStore(STATE_DIR, _library_config()), trackers=lambda: set(_library_config().get("TRACKERS", {})) - {"DEFAULT"}, validate_path=_validate_execution_path, metadata_root=STATE_DIR / "tmp", authenticated=lambda: _is_authenticated() or _webui_auth_ok(), csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
 
-app.register_blueprint(create_remote_upload_blueprint(authenticated=_webui_auth_ok, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
+app.register_blueprint(create_remote_upload_blueprint(authenticated=lambda: _is_authenticated() or _webui_auth_ok(), csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
 
 # Keep these helpers referenced so static analysis does not flag them as unused.
 _ = _cfg_delete
