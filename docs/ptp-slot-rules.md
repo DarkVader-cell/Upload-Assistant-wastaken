@@ -40,7 +40,10 @@ does not create a third HDR10 encode slot. SDR and HDR10 encodes each have two
 quality/retention positions; Profile 5 is separate. WEB vacancy is separated by
 these dynamic-range classes, not by provider. **Once an HDR Blu-ray UHD encode
 exists for the same cut, no further HDR UHD WEB upload is allowed**, even with
-comparisons. An SDR Blu-ray encode does not trigger that HDR prohibition.
+comparisons. If the incoming release explicitly identifies a different edition
+that is not a recognized cut token, the rule presents REVIEW so an attended
+operator can confirm the distinction; it is not an automatic approval. An SDR
+Blu-ray encode does not trigger that HDR prohibition.
 
 SDR 1080p HEVC WEB still requires exhaustive AVC comparisons and superior
 picture quality. Unknown DV profiles and unsupported HDR formats require

@@ -52,6 +52,14 @@ def test_hdr_web_prohibition_is_cut_specific():
     assert decide(p('Extended.2160p.WEB-DL.HDR10.H265-A'), p('2160p.BluRay.HDR10.x265-B')).verdict is ALLOW
 
 
+def test_hdr_web_different_unrecognized_edition_can_be_manually_reviewed():
+    meta = Meta(category='MOVIE', imdb_id='123', imdb_info={'type': 'movie'}, edition='Collector Edition', type='WEBDL', resolution='2160p', hdr='HDR10', video_codec='HEVC')
+    existing = p('2160p.BluRay.HDR10.x265-B', Source='Blu-ray')
+    result = decide(p('2160p.WEB-DL.HDR10.H265-A'), existing, meta=meta)
+    assert result.verdict is REVIEW
+    assert 'different edition' in result.reason
+
+
 def test_sdr_is_not_hdr_and_has_its_own_uhd_slots():
     assert decide(p('2160p.WEB-DL.H265-A'), p('2160p.BluRay.HDR10.x265-B')).verdict is ALLOW
     assert decide(p('2160p.BluRay.x264-A'), p('2160p.BluRay.HDR10.x265-B')).verdict is ALLOW

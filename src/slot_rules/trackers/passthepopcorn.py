@@ -116,6 +116,29 @@ class PassThePopcornSlotRules(SlotRules):
 
         return has_unrecognized_cut_claim(self._raw_edition(profile))
 
+    def _edition_differs(self, existing: ReleaseProfile) -> bool:
+        """Return whether an explicitly named edition differs from the existing release.
+
+        PTP's HDR WEB prohibition is cut-scoped, but API ``RemasterTitle`` values
+        can describe editions that are not one of the recognized cut tokens. Keep
+        those cases out of the unconditional hard block so an attended operator
+        can review and manually confirm the upload instead of being trapped by a
+        false same-edition match.
+        """
+        if not isinstance(self.meta, Meta):
+            return False
+        incoming = re.sub(r"[^a-z0-9]+", " ", str(self.meta.edition or "").casefold()).strip()
+        raw_existing = existing.entry.get("RemasterTitle")
+        if raw_existing is None or not str(raw_existing).strip():
+            existing_label = ""
+        else:
+            raw_text = str(raw_existing).casefold().strip()
+            # PTP sometimes stores HDR/DV metadata in RemasterTitle; that is
+            # dynamic-range data, not an edition distinction.
+            dynamic_only = re.fullmatch(r"(?:dv|dovi|dolby vision|hdr|hdr10|hdr10\\+|sdr)(?:[ ./_-]+(?:dv|dovi|dolby vision|hdr|hdr10|hdr10\\+|sdr))*", raw_text)
+            existing_label = "" if dynamic_only else re.sub(r"[^a-z0-9]+", " ", raw_text).strip()
+        return bool(incoming or existing_label) and incoming != existing_label
+
     @staticmethod
     def _possible_competitor(upload: ReleaseProfile, existing: ReleaseProfile) -> bool:
         return (
@@ -354,6 +377,13 @@ class PassThePopcornSlotRules(SlotRules):
                            and p.hdr is not None and bool(p.hdr & {HDR10, HDR10P})]
             bluray_hdr = [p for p in hdr_encodes if self._source(p) == "bluray"]
             if bluray_hdr:
+                distinct_edition = [p for p in bluray_hdr if self._edition_differs(p)]
+                if distinct_edition:
+                    return self.decision(
+                        Verdict.REVIEW,
+                        "An HDR Blu-ray UHD encode exists for a different edition; confirm the edition difference before uploading HDR WEB",
+                        distinct_edition,
+                    )
                 return self.decision(Verdict.BLOCK, "An HDR Blu-ray UHD encode exists: no further HDR WEB uploads are allowed", bluray_hdr)
             unknown_source = [p for p in hdr_encodes if self._source(p) is None]
             if unknown_source:
