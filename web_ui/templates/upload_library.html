@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token }}"><title>Upload Library</title><style>body{font:15px system-ui;margin:24px}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #aaa;padding:8px;text-align:left}label{display:inline-block;margin:8px}select[multiple]{height:120px}button{margin:5px}</style></head><body>
+<nav><a href="/">Upload</a> | <a href="/remote-upload">Remote uploads</a> | <strong>Upload Library</strong></nav>
+<h1>Upload Library</h1><p>“Missing” means no recorded successful upload, not verified absence on the tracker. Retry uses normal UA duplicate and policy checks.</p>
+<label>Search <input id="query"></label><label>Trackers (multi-select)<select multiple id="trackers"></select></label>
+<label>Tracker filter<select id="mode"><option value="missing">No recorded success</option><option value="uploaded">Uploaded</option><option value="failed">Failed</option><option value="unattempted">Never selected</option></select></label>
+<label>Category<input id="category" placeholder="MOVIE"></label><label>Resolution<input id="resolution" placeholder="2160p"></label><label><input id="errors" type="checkbox">Errors only</label>
+<button id="filter">Apply filters</button><button id="import">Import retained UA metadata</button><br>
+<button id="select-page">Select page</button><button id="select-all">Select all filtered</button><button id="clear">Clear selection</button><button id="retry">Retry selected → selected trackers</button>
+<p id="message" role="status"></p><table><thead><tr><th>Select</th><th>Release</th><th>Format</th><th>Successful trackers</th><th>Failed trackers</th><th>Last status / attempts</th></tr></thead><tbody id="rows"></tbody></table>
+<button id="previous">Previous</button><span id="count"></span><button id="next">Next</button>
+<script src="{{url_for('static',filename='js/upload_library.js')}}" defer></script></body></html>

@@ -48,6 +48,9 @@ from src.external_tools import EXTERNAL_TOOL_KEYS, check_external_tools
 from src.meta import Meta
 from src.version import __version__
 from src.update_checker import get_changelog_history, get_update_status
+from src.runtime.history import ReleaseHistoryStore
+from web_ui.upload_library import create_blueprint as create_upload_library_blueprint
+from web_ui.remote_upload import create_blueprint as create_remote_upload_blueprint
 
 APP_VERSION = __version__
 
@@ -8173,6 +8176,14 @@ with contextlib.suppress(Exception):
     if _load_user_record() is None:
         _first_run_setup_code()
 
+
+def _library_config():
+    return _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+
+
+app.register_blueprint(create_upload_library_blueprint(store=lambda: ReleaseHistoryStore(STATE_DIR, _library_config()), trackers=lambda: set(_library_config().get("TRACKERS", {})) - {"DEFAULT"}, validate_path=_validate_execution_path, metadata_root=STATE_DIR / "tmp", authenticated=_webui_auth_ok, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
+
+app.register_blueprint(create_remote_upload_blueprint(authenticated=_webui_auth_ok, csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
 
 # Keep these helpers referenced so static analysis does not flag them as unused.
 _ = _cfg_delete

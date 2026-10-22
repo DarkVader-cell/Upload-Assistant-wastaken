@@ -3014,6 +3014,13 @@ async def do_the_thing(base_dir: str) -> None:
                     if config["DEFAULT"].get("cross_seeding", True):
                         await process_cross_seeds(meta)
 
+                    if not meta.debug:
+                        try:
+                            from src.runtime.history import ReleaseHistoryStore
+                            ReleaseHistoryStore(STATE_DIR, config).record_release(meta, record_id=f"attempt-{time.time_ns()}")
+                        except Exception:
+                            logger.warning("Could not record upload history")
+
                     if "queue" in meta and meta.queue is not None:
                         processed_files_count += 1
                         tracker_statuses = [status for status in meta.tracker_status.values() if isinstance(status, Mapping)]
@@ -3095,6 +3102,12 @@ async def do_the_thing(base_dir: str) -> None:
 
     except Exception as e:
         logger.info(f"[bold red]An unexpected error occurred: {escape(str(e))}[/bold red]")
+        if not meta.debug:
+            try:
+                from src.runtime.history import ReleaseHistoryStore
+                ReleaseHistoryStore(STATE_DIR, config).record_release(meta, status="failed", record_id=f"attempt-{time.time_ns()}")
+            except Exception:
+                logger.warning("Could not record failed upload history")
         if sanitize_meta:
             meta = await Redaction.clean_meta_for_export(meta)
         logger.info(traceback.format_exc(), extra={"markup": False})

@@ -457,8 +457,9 @@ class Peer:
             cfg["remote"]["host"],
             port=cfg["remote"]["port"],
             username=cfg["remote"]["user"],
-            password=getpass.getpass("SSD VPS SSH password (not saved): "),
-            look_for_keys=False,
+            password=None if cfg.get("ssh_key") else getpass.getpass("SSD VPS SSH password (not saved): "),
+            key_filename=cfg.get("ssh_key"),
+            look_for_keys=bool(cfg.get("ssh_key")),
             allow_agent=False,
             timeout=20,
         )
@@ -530,7 +531,7 @@ class Controller:
         self.save()
         print("Verified raw files ready on SSD. No original was deleted. Stage:", id_)
 
-    def return_torrent(self, hash_):
+    def return_torrent(self, hash_, *, confirmed=False):
         require(bool(HASH.fullmatch(hash_)), "Invalid selected hash")
         rows = self.peer.qb("torrents/info", {"hashes": hash_})
         require(len(rows) == 1 and complete(rows[0]), "Select one completed VPS torrent")
@@ -573,7 +574,7 @@ class Controller:
             require(not dest.exists() or local.samefile(dest), "Destination collision; never overwrite existing files")
             plan.append((local, dest, f["sha256"]))
         print("Return:", source["name"], "\nCategory:", category or "(none)", "\nTags:", source.get("tags", ""), "\nDedi save path:", savepath)
-        require(input("Type RETURN to reannounce, link, import/recheck and transfer ONLY this torrent: ") == "RETURN", "Cancelled")
+        require(confirmed or input("Type RETURN to reannounce, link, import/recheck and transfer ONLY this torrent: ") == "RETURN", "Cancelled")
         initially_paused = paused(source)
         record = {"hash": hash_, "source": source, "save_path": str(savepath), "origins": origins, "state": "planned"}
         self.ledger["returns"][hash_] = record
