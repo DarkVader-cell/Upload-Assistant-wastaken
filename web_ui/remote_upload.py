@@ -16,6 +16,10 @@ from flask import Blueprint, jsonify, redirect, request
 from src.config_io import atomic_write_text
 
 
+class RequestValidationError(ValueError):
+    """Safe, operator-facing validation error (never include config contents)."""
+
+
 def backends():
     """Operator-controlled mapping, never accept config filenames from HTTP."""
     path = os.environ.get("UA_REMOTE_UPLOAD_BACKENDS")
@@ -63,28 +67,28 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
         try:
             data = request.get_json()
             if not isinstance(data, dict):
-                raise ValueError("Expected JSON object")
+                raise RequestValidationError("Expected JSON object")
             config = backends().get(data.get("backend"))
             if config is None:
-                raise ValueError("Unknown backend")
+                raise RequestValidationError("Select a configured remote backend on this UA host")
             cfg = json.loads(config.read_text())
             if not cfg.get("ssh_key"):
-                raise ValueError("Backend needs SSH-key authentication")
+                raise RequestValidationError("Backend needs SSH-key authentication")
             action = data.get("action")
             if action not in {"execute", "tick"}:
-                raise ValueError("Unknown action")
+                raise RequestValidationError("Unknown remote action")
             arguments = []
             if action == "execute":
                 source = Path(data["source"]).expanduser().resolve(strict=True)
                 roots = [Path(p).expanduser().resolve() for p in cfg["source_roots"]]
                 if not any(source.is_relative_to(root) and source != root for root in roots):
-                    raise ValueError("Source outside approved roots")
+                    raise RequestValidationError("Selected release is outside the backend's approved source folders")
                 delay = float(data.get("return_after", 86400))
                 if not math.isfinite(delay) or delay < 0:
-                    raise ValueError("Invalid return interval")
+                    raise RequestValidationError("Return interval must be a finite, nonnegative number")
                 trackers = data.get("trackers")
                 if not isinstance(trackers, list) or not trackers or any(not isinstance(t, str) or not t.replace("_", "").isalnum() for t in trackers):
-                    raise ValueError("Select explicit trackers")
+                    raise RequestValidationError("Select explicit tracker identifiers")
                 options = shlex.split(str(data.get("arguments", "")))
                 allowed = {"--edition", "-edition", "--imdb", "-imdb", "--tmdb", "-tmdb", "--tvdb", "-tvdb", "--tag", "-tag", "--year", "-year", "--category", "-category", "--type", "-type", "--source", "-source", "--resolution", "-resolution", "--screens", "-s", "--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}
                 forwarded = []
@@ -95,12 +99,12 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                         index += 2
                         continue
                     if token not in allowed:
-                        raise ValueError("This option needs remote staging support")
+                        raise RequestValidationError("An upload option is not supported remotely; remove local-only options before retrying")
                     forwarded.append(token)
                     index += 1
                     if token not in {"--anon", "-anon", "--debug", "-debug", "--personalrelease", "-pr", "--unattended", "-ua"}:
                         if index >= len(options) or options[index].startswith(("-", "/", "~")):
-                            raise ValueError("Missing or unsupported remote option value")
+                            raise RequestValidationError("An upload option has a missing or local-only value")
                         forwarded.append(options[index])
                         index += 1
                 arguments = [str(source), "--return-after", str(delay), "--arguments-json", json.dumps(forwarded), "--trackers", *trackers]
@@ -122,7 +126,13 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                     atomic_write_text(record, json.dumps({"id": id_, "action": action, "state": "failed"}), default_mode=0o600)
                     raise
             return jsonify(id=id_, state="queued"), 202
-        except (ValueError, KeyError, TypeError, OSError):
-            return jsonify(error="Invalid remote-upload request or unavailable configuration"), 400
+        except RequestValidationError as error:
+            return jsonify(error=str(error)), 400
+        except PermissionError:
+            return jsonify(error="UA cannot write remote job state; check service sandbox permissions"), 503
+        except OSError:
+            return jsonify(error="Remote source/configuration unavailable or job-state filesystem is read-only"), 503
+        except (ValueError, KeyError, TypeError):
+            return jsonify(error="Invalid remote request fields or backend configuration"), 400
 
     return bp

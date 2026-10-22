@@ -4,7 +4,12 @@ Open **Upload Library** in UA's module navigation (`/upload-library`).
 It lists release paths across recorded attempts, combining successful tracker
 results so a later failure does not erase an earlier success.
 
-- Search by release name/source path.
+- Search by release name/source path. Filters update automatically after a short
+  debounce; no Apply button or Ctrl-click selection is required.
+- Searchable tracker checkbox panel, multi-selection chips, All/Clear controls,
+  and category/resolution dropdowns derived from retained history.
+- Stale filter responses are discarded, pagination resets when filters change,
+  and selection is cleared to prevent retrying an old hidden selection.
 - Filter by one or more configured trackers: no recorded success, uploaded,
   failed, or never selected. Multiple trackers use **any-match** semantics.
 - Filter by category, resolution, or recorded errors.

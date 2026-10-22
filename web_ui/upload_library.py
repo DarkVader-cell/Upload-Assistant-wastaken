@@ -31,10 +31,13 @@ def create_blueprint(*, store, trackers, validate_path, metadata_root, authentic
             selected = request.args.getlist('tracker')
             if set(selected) - set(names):
                 raise ValueError('Unknown tracker')
-            rows = filter_releases(releases(store()), query=request.args.get('q', ''), trackers=selected, mode=request.args.get('mode', 'missing'), category=request.args.get('category', ''), resolution=request.args.get('resolution', ''), errors=request.args.get('errors') == '1')
+            all_rows = releases(store())
+            facets = {key: sorted({r.get(key) for r in all_rows if r.get(key)}) for key in ('category', 'resolution')}
+            counts = {name: {'uploaded': sum(name in r['successful_trackers'] for r in all_rows), 'failed': sum(name in r['failed_trackers'] for r in all_rows)} for name in names}
+            rows = filter_releases(all_rows, query=request.args.get('q', ''), trackers=selected, mode=request.args.get('mode', 'missing'), category=request.args.get('category', ''), resolution=request.args.get('resolution', ''), errors=request.args.get('errors') == '1')
             offset = max(0, int(request.args.get('offset', 0)))
             limit = min(200, max(1, int(request.args.get('limit', 100))))
-            return jsonify(rows=rows[offset:offset+limit], total=len(rows), trackers=names, offset=offset, limit=limit)
+            return jsonify(rows=rows[offset:offset+limit], total=len(rows), trackers=names, facets=facets, tracker_counts=counts, offset=offset, limit=limit)
         except (ValueError, TypeError):
             return jsonify(error='Invalid filters'), 400
 
