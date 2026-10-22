@@ -35,7 +35,7 @@ def main():
     units = Path.home() / '.config/systemd/user'
     units.mkdir(parents=True, exist_ok=True)
     name = 'ua-remote-return-' + args.name
-    (units / (name + '.service')).write_text('[Unit]\nDescription=UA verified remote registration return\nAfter=network-online.target\n\n[Service]\nType=oneshot\nUMask=0077\nWorkingDirectory=' + quote(root) + '\nExecStart=' + quote(python) + ' -m src.remote_upload --config ' + quote(config) + ' tick\nStandardInput=null\nTimeoutStartSec=infinity\n')
+    (units / (name + '.service')).write_text('[Unit]\nDescription=UA verified remote registration return\nAfter=network-online.target\n\n[Service]\nType=oneshot\nUMask=0077\nWorkingDirectory=' + str(root).replace('%', '%%') + '\nExecStart=' + quote(python) + ' -m src.remote_upload --config ' + quote(config) + ' tick\nStandardInput=null\nTimeoutStartSec=infinity\n')
     (units / (name + '.timer')).write_text('[Unit]\nDescription=Check due UA remote returns every minute\n\n[Timer]\nOnCalendar=*-*-* *:*:00\nPersistent=true\nRandomizedDelaySec=10\nUnit=' + name + '.service\n\n[Install]\nWantedBy=timers.target\n')
     subprocess.run(['/usr/bin/systemctl', '--user', 'daemon-reload'], check=True)
     if args.enable:
