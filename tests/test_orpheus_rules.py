@@ -9,10 +9,14 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
+import httpx
+
 from src.meta import Meta
 from src.music.analyzer import _embedded_image_bytes, _flac_has_id3
 from src.music.models import AudioTrack, MetadataSource, MusicRelease
 from src.music.validation import OrpheusMusicValidator, lame_preset, resolve_orpheus_edition
+from src.slot_rules.models import Verdict
+from src.slot_rules.trackers.orpheus import SLOT_DECISION_KEY
 from src.trackers.GAZELLE.orpheus import Orpheus
 from src.trackers.GAZELLE.orpheus_tags import orpheus_tags
 
@@ -231,16 +235,6 @@ def test_release_description_documents_hybrids_scene_watermark_and_lineage(tmp_p
     assert "Turntable > preamp > ADC" in description
 
 
-def test_lossy_trump_relations():
-    relation = Orpheus._lossy_relation
-    assert relation("V0 (VBR)", "V0 (VBR)") == "dupe"
-    assert relation("V0 (VBR)", "APX (VBR)") == "trumps"
-    assert relation("APS (VBR)", "V2 (VBR)") == "trumped"
-    assert relation("320", "V0 (VBR)") == "coexists"
-    assert relation("192", "V0 (VBR)") == "trumped"
-    assert relation("320", "256") == "trumps"
-
-
 def test_duplicate_search_assesses_each_torrent_in_the_matching_group():
     release = _release(release_label="Fictional Records", release_year="2019")
     # A folder catalogue number is not sent, but it identifies the release.
@@ -267,12 +261,15 @@ def test_duplicate_search_assesses_each_torrent_in_the_matching_group():
         dupes = asyncio.run(_adapter().search_existing(meta))
 
     flags = [dupe["flags"][0] for dupe in dupes]
-    assert flags[0].startswith("DUPE: same release")
-    assert "site lists this catalogue as 2018" in flags[0]
-    assert flags[1].startswith("LIKELY DUPE: same edition year")
-    assert flags[2].startswith("different edition year")
+    assert flags[0].startswith("DUPE: A 16-bit FLAC already exists")
+    assert flags[1].startswith("REVIEW: A release from the same year")
+    assert flags[2] == "coexists with your upload"
     assert flags[3] == "different release group"
     assert dupes[0]["link"].endswith("torrentid=7")
+    decision = meta[SLOT_DECISION_KEY]
+    assert decision.verdict is Verdict.BLOCK
+    assert [conflict["id"] for conflict in decision.conflicts] == [7]
+    assert any("catalogue FR-0042 / FR-0043 as 2018" in note for note in decision.notes)
 
 
 def test_request_search_uses_the_music_category_and_reports_compatibility():
@@ -503,8 +500,8 @@ def test_dupe_search_finds_a_group_written_differently():
     with patch.object(Orpheus, "_api_get", new=fake_get), patch("asyncio.sleep", new=AsyncMock()):
         dupes = asyncio.run(_adapter().search_existing(meta))
 
-    assert len(calls) == 3
-    assert dupes[0]["flags"][0].startswith("LIKELY DUPE")
+    assert [call["action"] for call in calls] == ["browse", "browse", "browse", "torrentgroup"]
+    assert dupes[0]["flags"][0].startswith("DUPE")
 
 
 def test_group_matching_rejects_other_shows_and_artists():
@@ -541,3 +538,200 @@ def test_artist_matching_is_strict_for_title_only_results():
     assert not Orpheus._shares_artist(single, "Various Artists", strict=True)
     compilation = _release(release_type="Compilation")
     assert Orpheus._shares_artist(compilation, "Various Artists", strict=True)
+
+
+def test_accepted_upload_writes_the_torrent_link_into_the_client_torrent(tmp_path):
+    from torf import Torrent
+
+    content = tmp_path / "Fictional Band - Paper Moons (2019)"
+    content.mkdir()
+    (content / "01 - Song 1.flac").write_bytes(b"fLaC" + b"\0" * 4096)
+    meta = Meta(category="MUSIC", base_dir=str(tmp_path), uuid="ops-comment")
+    torrent_path = tmp_path / "tmp" / "ops-comment" / "[ORPHEUS].torrent"
+    torrent_path.parent.mkdir(parents=True)
+    torrent = Torrent(path=content, private=True, trackers=["https://example.invalid/announce"])
+    torrent.metainfo["info"]["source"] = "OPS"
+    torrent.generate()
+    torrent.write(torrent_path)
+    info_hash = Torrent.read(torrent_path).infohash
+
+    adapter = Orpheus({"TRACKERS": {"ORPHEUS": {"api_key": "fictional-token", "announce_url": "https://example.invalid/announce"}}})
+    response = {"status": "success", "response": {"torrentId": 42, "groupId": 7, "warnings": []}}
+    assert adapter._record_upload_response(meta, response)
+    asyncio.run(adapter._write_torrent_comment(meta))
+
+    written = Torrent.read(torrent_path)
+    assert written.comment == "https://orpheus.network/torrents.php?id=7&torrentid=42"
+    assert written.infohash == info_hash
+
+
+def _client_torrent(tmp_path: Path) -> tuple[Meta, Path]:
+    from torf import Torrent
+
+    content = tmp_path / "Fictional Band - Paper Moons (2019)"
+    content.mkdir(exist_ok=True)
+    (content / "01 - Song 1.flac").write_bytes(b"fLaC" + b"\0" * 4096)
+    meta = Meta(category="MUSIC", base_dir=str(tmp_path), uuid="ops-download")
+    torrent_path = tmp_path / "tmp" / "ops-download" / "[ORPHEUS].torrent"
+    torrent_path.parent.mkdir(parents=True, exist_ok=True)
+    torrent = Torrent(path=content, private=True, trackers=["https://example.invalid/announce"])
+    torrent.generate()
+    torrent.write(torrent_path, overwrite=True)
+    meta.tracker_status["ORPHEUS"] = {"torrent_id": 42, "group_id": 7}
+    return meta, torrent_path
+
+
+def _fake_download(content: bytes | None):
+    """Serve the site response through the real shared downloader."""
+    client = httpx.AsyncClient
+    requests: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200 if content is not None else 503, content=content or b"")
+
+    def create_client(**kwargs: Any) -> httpx.AsyncClient:
+        return client(transport=httpx.MockTransport(handle), **kwargs)
+
+    return create_client, requests
+
+
+def test_accepted_upload_seeds_the_torrent_downloaded_from_orpheus(tmp_path):
+    import bencodepy
+
+    meta, torrent_path = _client_torrent(tmp_path)
+    site_torrent = bencodepy.decode(torrent_path.read_bytes())
+    site_torrent[b"comment"] = b"https://orpheus.network/torrents.php?torrentid=42"
+    site_file = bencodepy.encode(site_torrent)
+    client, requests = _fake_download(site_file)
+    with patch("src.trackers.common.httpx.AsyncClient", new=client):
+        assert asyncio.run(_adapter()._download_site_torrent(meta))
+
+    assert len(requests) == 1
+    assert dict(requests[0].url.params) == {"action": "download", "id": "42"}  # never "usetoken"
+    assert str(requests[0].url.copy_with(query=None)) == "https://orpheus.network/ajax.php"
+    assert torrent_path.read_bytes() == site_file
+    assert meta.tracker_status["ORPHEUS"]["torrent_link"] == "https://orpheus.network/torrents.php?torrentid=42"
+
+
+def test_a_failed_download_keeps_the_local_torrent(tmp_path):
+    meta, torrent_path = _client_torrent(tmp_path)
+    original = torrent_path.read_bytes()
+    # The API reports errors as JSON with HTTP 200; the helper must reject it.
+    for content in (b'{"status":"failure","error":"rate limit"}', None):
+        client, _ = _fake_download(content)
+        with patch("src.trackers.common.httpx.AsyncClient", new=client):
+            assert not asyncio.run(_adapter()._download_site_torrent(meta))
+        assert torrent_path.read_bytes() == original
+
+
+def test_file_error_after_upload_keeps_the_accepted_result(tmp_path):
+    meta, torrent_path = _client_torrent(tmp_path)
+    original = torrent_path.read_bytes()
+    meta.music_release = _release(release_year="2019").to_dict()
+    adapter = Orpheus({"TRACKERS": {"ORPHEUS": {"api_key": "fictional-token", "announce_url": "https://example.invalid/announce"}}})
+    response = httpx.Response(
+        200,
+        request=httpx.Request("POST", "https://orpheus.network/ajax.php?action=upload"),
+        json={"status": "success", "response": {"torrentId": 42, "groupId": 7}},
+    )
+    with (
+        patch.object(adapter, "get_additional_checks", new=AsyncMock(return_value=True)),
+        patch.object(adapter, "_check_logs", new=AsyncMock(return_value=[])),
+        patch.object(adapter, "_verify_request_fill", new=AsyncMock(return_value=("", ""))),
+        patch.object(adapter, "_verify_group", new=AsyncMock(return_value=("", ""))),
+        patch.object(adapter.common, "create_torrent_for_upload", new=AsyncMock()),
+        patch.object(httpx.AsyncClient, "post", new=AsyncMock(return_value=response)),
+        patch.object(adapter.common, "download_tracker_torrent", new=AsyncMock(side_effect=OSError("replacement failed"))),
+        patch.object(adapter, "_write_torrent_comment", new=AsyncMock()) as fallback,
+    ):
+        assert asyncio.run(adapter.upload(meta))
+    fallback.assert_awaited_once_with(meta)
+    assert meta.tracker_status["ORPHEUS"]["status_message"] == "Upload accepted by Orpheus."
+    assert torrent_path.read_bytes() == original
+
+
+def test_title_fallback_query_drops_joining_words():
+    # A combined credit ("A and B") misses groups listing A and B separately,
+    # and the cleaned title must not turn "&" into a required word "and".
+    release = _release(artist="Fictional Violin and Pretend Piano", artists=["Fictional Violin and Pretend Piano"], album="Bowstring & Keys")
+    meta = Meta(category="MUSIC", music_release=release.to_dict())
+    existing = {
+        "groupId": 9,
+        "groupName": "Bowstring & Keys",
+        "artist": "Fictional Violin & Pretend Piano",
+        "torrents": [{"torrentId": 1, "remasterYear": 2019, "media": "WEB", "format": "FLAC", "encoding": "Lossless"}],
+    }
+    calls: list[dict[str, str]] = []
+
+    async def fake_get(_self: Orpheus, _meta: Meta, params: dict[str, str], _timeout_seconds: float, _purpose: str) -> dict[str, Any]:
+        calls.append(params)
+        return {"results": [existing] if params.get("groupname") == "bowstring keys" and "artistname" not in params else []}
+
+    with patch.object(Orpheus, "_api_get", new=fake_get), patch("asyncio.sleep", new=AsyncMock()):
+        dupes = asyncio.run(_adapter().search_existing(meta))
+
+    assert {"action": "browse", "groupname": "bowstring keys"} in calls
+    assert dupes and dupes[0]["flags"][0].startswith(("DUPE", "LIKELY DUPE"))
+
+
+def test_classical_group_credits_compare_the_performers():
+    duo = _release(artist="Fictional Violin and Pretend Piano", artists=["Fictional Violin and Pretend Piano"])
+    credit = "Various Composers performed by Pretend Piano and Fictional Violin"
+    assert Orpheus._shares_artist(duo, credit, strict=True)
+    assert Orpheus._shares_artist(duo, "Imagined Composer performed by Fictional Violin and Pretend Piano under Some Conductor", strict=True)
+    assert not Orpheus._shares_artist(duo, "Various Composers performed by Someone Else Entirely", strict=True)
+
+
+def test_featuring_in_the_main_credit_and_named_remixes_become_roles():
+    release = _release(
+        tracks=1,
+        artist="Neon Tide feat. Imaginary Singer",
+        artists=["Neon Tide feat. Imaginary Singer"],
+        album="Paper Boat (Imaginary Singer Remix)",
+        release_type="Single",
+    )
+    release.tracks[0] = _track(1, artist="Neon Tide feat. Imaginary Singer", title="Paper Boat (Imaginary Singer Remix)")
+    credits = Orpheus._artist_credits(Meta(category="MUSIC"), release)
+    # Main artist only; the featured remixer is credited once, as remixer.
+    assert credits == [("Neon Tide", 1), ("Imaginary Singer", 3)]
+
+    plain = _release(tracks=1, artist="Neon Tide feat. Guest Voice", artists=["Neon Tide feat. Guest Voice"], release_type="Single")
+    assert Orpheus._artist_credits(Meta(category="MUSIC"), plain) == [("Neon Tide", 1), ("Guest Voice", 2)]
+    assert Orpheus._title_remixers("Paper Boat (Extended Mix)") == []
+    assert Orpheus._title_remixers("Paper Boat (Original Remix)") == []
+
+
+def test_release_type_markers_do_not_split_groups():
+    assert Orpheus._strip_type_marker("Paper Boat EP") == ("Paper Boat", "ep")
+    assert Orpheus._strip_type_marker("Paper Boat - Single") == ("Paper Boat", "single")
+    assert Orpheus._strip_type_marker("Night Shift (Live)") == ("Night Shift", "live")
+    for title in ("The EP", "EP", "Stay Live", "Steep"):
+        assert Orpheus._strip_type_marker(title) == (title, "")
+    assert Orpheus._same_group_title("Paper Boat EP", "Paper Boat")
+    assert Orpheus._same_group_title("Night Shift (Live)", "Night Shift")
+
+
+def test_upload_title_drops_a_marker_that_repeats_the_release_type():
+    ep = _release(album="Paper Boat EP", release_type="EP")
+    assert _adapter().build_upload_payload(Meta(category="MUSIC"), ep)["title"] == "Paper Boat"
+    # A marker that does not match the release type is part of the title.
+    album = _release(album="Paper Boat EP", release_type="Album")
+    assert _adapter().build_upload_payload(Meta(category="MUSIC"), album)["title"] == "Paper Boat EP"
+
+
+def test_dupe_search_ignores_a_trailing_type_marker():
+    release = _release(album="Paper Boat EP", release_type="EP", release_year="2019")
+    meta = Meta(category="MUSIC", music_release=release.to_dict())
+    existing = {"groupId": 3, "groupName": "Paper Boat", "artist": "Fictional Band", "torrents": [{"torrentId": 8, "remasterYear": 2019, "media": "WEB", "format": "FLAC", "encoding": "Lossless"}]}
+    calls: list[dict[str, str]] = []
+
+    async def fake_get(_self: Orpheus, _meta: Meta, params: dict[str, str], _timeout_seconds: float, _purpose: str) -> dict[str, Any]:
+        calls.append(params)
+        return {"results": [existing] if params.get("groupname") == "Paper Boat" else []}
+
+    with patch.object(Orpheus, "_api_get", new=fake_get), patch("asyncio.sleep", new=AsyncMock()):
+        dupes = asyncio.run(_adapter().search_existing(meta))
+
+    assert calls[0] == {"action": "browse", "artistname": "Fictional Band", "groupname": "Paper Boat"}
+    assert dupes and dupes[0]["flags"][0].startswith(("DUPE", "LIKELY DUPE"))

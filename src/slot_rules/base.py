@@ -141,6 +141,16 @@ def incoming_traits(profile: ReleaseProfile) -> str:
     return profile_traits(profile)
 
 
+def _generic_traits(profile: Any) -> str:
+    """Describe tracker-specific profiles without requiring video traits."""
+    fields = []
+    for key in ("media", "format", "encoding", "edition", "sample_rate", "bit_depth"):
+        value = getattr(profile, key, None)
+        if value not in (None, ""):
+            fields.append(f"{key}={value}")
+    return "; ".join(fields) or "tracker-specific release profile"
+
+
 def describe_releases(profiles: Sequence[ReleaseProfile], reason: str, *, role: str = "context") -> list[dict[str, Any]]:
     """Safe, display-only references; not a replacement/report candidate list."""
     result = []
@@ -148,11 +158,11 @@ def describe_releases(profiles: Sequence[ReleaseProfile], reason: str, *, role: 
         link = p.entry.get("link")
         result.append(
             {
-                "name": p.name,
+                "name": getattr(p, "name", p.entry.get("name", "unknown release")),
                 "id": p.entry.get("id"),
-                "size": p.entry.get("size", p.size),
+                "size": p.entry.get("size", getattr(p, "size", None)),
                 "link": link if isinstance(link, str) and link.startswith(("https://", "http://")) else None,
-                "traits": profile_traits(p),
+                "traits": profile_traits(p) if isinstance(p, ReleaseProfile) else _generic_traits(p),
                 "role": role,
                 "reason": reason + (" Details unavailable: " + str(p.entry["detail_error"]) if p.entry.get("detail_error") else ""),
             }
