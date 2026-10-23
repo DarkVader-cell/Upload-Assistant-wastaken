@@ -49,11 +49,15 @@ def test_native_transfer_parameters_and_progress(engine,tmp_path,monkeypatch):
     assert progress==[512,1024]
 
 
-def test_native_staging_keeps_independent_checksum_proof(engine,tmp_path,monkeypatch):
+@pytest.mark.parametrize('verify', [True, False])
+def test_native_staging_respects_optional_sha_mode(engine,tmp_path,monkeypatch,verify):
     source=tmp_path/'original.mkv'
     source.write_bytes(b'dummy payload')
     payload=tmp_path/'ssd'/'payload'
     cfg={'state_dir':str(tmp_path/'state'),'source_roots':[str(tmp_path)],'transfer_protocol':'rsync','ssh_key':'/dummy/key','reserve_bytes':0}
+    if not verify:
+        cfg['verify_stage_sha256']=False
+        monkeypatch.setattr(engine,'sha_file',Mock(side_effect=AssertionError('No extra source scan allowed')))
     class Peer:
         def rpc(self,action,**fields):
             if action=='space':
@@ -65,7 +69,11 @@ def test_native_staging_keeps_independent_checksum_proof(engine,tmp_path,monkeyp
                 return {'rsync':True}
             if action=='commit':
                 f=fields['record']['files'][0]
-                assert hashlib.sha256((payload/f['relative']).read_bytes()).hexdigest()==f['sha256']
+                if verify:
+                    assert hashlib.sha256((payload/f['relative']).read_bytes()).hexdigest()==f['sha256']
+                else:
+                    assert f['sha256'] is None
+                    assert fields['record']['verify_stage_sha256'] is False
                 return True
             raise AssertionError(action)
     def transfer(_cfg,parent,target,files,progress):

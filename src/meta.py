@@ -292,6 +292,7 @@ class Meta:
     force_recheck: bool = False
     force_upload: bool = False
     remote_backend: str | None = None
+    remote_stage: str | None = None
     remote_return_after: float = 86400
     foreign: bool = False
     format: str = ""

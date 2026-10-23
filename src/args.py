@@ -41,7 +41,7 @@ MUSIC_RELEASE_TYPE_CHOICES = (
 )
 
 PATHS_FROM_STDIN_OPTION = "--paths-from-stdin"
-WEBUI_UNSUPPORTED_OPTIONS = {"--help", "--webui", PATHS_FROM_STDIN_OPTION, "--remote-backend", "--remote-return-after"}
+WEBUI_UNSUPPORTED_OPTIONS = {"--help", "--webui", PATHS_FROM_STDIN_OPTION, "--remote-backend", "--remote-return-after", "--remote-stage"}
 TRACKER_CONFIGURATION_KEYS = ("api_key", "auth_key", "username", "password", "passkey", "cookie_file", "cookies", "ApiUser", "bioma_api_key", "image_host_api_key", "ptgen_api")
 
 
@@ -440,6 +440,7 @@ class Args:
         parser.add_argument("--prepare-only", action="store_true", help=argparse.SUPPRESS)
         parser.add_argument("--remote-backend", help=argparse.SUPPRESS)
         parser.add_argument("--remote-return-after", type=float, default=86400, help=argparse.SUPPRESS)
+        parser.add_argument("--remote-stage", help=argparse.SUPPRESS)
         parser.add_argument("--hdb-manual", action="store_true", help="Prepare an HDBits torrent locally without upload or client registration; may accompany -tk uploads")
         parser.add_argument("--hdb-offer", action="store_true", help="Generate HDBits offer text with HDB screenshots and an encrypted PrivateBin link; never submit or create torrents")
         parser.add_argument(

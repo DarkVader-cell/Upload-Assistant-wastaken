@@ -7816,7 +7816,7 @@ def execute_command():
                         targets = data.get("remote_trackers")
                         if not isinstance(targets, list) or not targets or any(not isinstance(t, str) or not t.replace("_", "").isalnum() for t in targets):
                             raise ValueError("Select explicit trackers for remote upload")
-                        remote_options(args)
+                        remote_options(args, allow_stage=True)
                         command.extend(["-tk", ",".join(targets), "--remote-backend", backend_name, "--remote-return-after", str(delay)])
                     except (ValueError, KeyError, TypeError, OSError) as error:
                         yield _sse({"type": "error", "data": f"Remote execution refused: {error}"})

@@ -16,6 +16,8 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
+from src.remote_transfer_control import process_start
+
 
 def load_engine():
     spec = importlib.util.spec_from_file_location("ua_shuttle", Path(__file__).resolve().parents[1] / "tools/hbd-shuttle.py")
@@ -50,6 +52,27 @@ class Jobs:
         self.save()
         return id_
 
+    def reuse_stage(self, stage_id, source, delay):
+        if not math.isfinite(delay) or delay < 0:
+            raise ValueError("Invalid return interval")
+        stage = self.controller.ledger["stages"].get(stage_id)
+        if not stage or stage.get("state") != "ready" or Path(stage["source"]).resolve() != Path(source).resolve():
+            raise ValueError("No ready staged copy matches this exact source")
+        if not stage.get("writer_start") or process_start(stage.get("writer_pid")) == stage["writer_start"]:
+            raise ValueError("Staging writer identity is unavailable or still active")
+        if any(self.engine.fingerprint(f["source"]) != f["fingerprint"] for f in stage["files"]):
+            raise ValueError("Original changed since staging; existing copy cannot be reused automatically")
+        paths = [str(Path(stage["remote_input"]).parent / f["relative"]) for f in stage["files"]]
+        origins = self.controller.peer.rpc("inspect", paths=paths)
+        if len(origins) != len(stage["files"]) or any(o.get("origin") != [stage_id, f["relative"]] or o.get("size") != f["size"] for o, f in zip(origins, stage["files"], strict=True)):
+            raise ValueError("Existing VPS copy has no matching staged provenance")
+        # Keep the prior needs_review job intact. Explicit reuse creates a new
+        # attempt and still runs every ordinary UA duplicate/policy check.
+        id_ = uuid.uuid4().hex
+        self.jobs[id_] = {"stage": stage_id, "state": "staged", "delay": delay, "torrents": {}, "reused": True}
+        self.save()
+        return id_
+
     def run(self, id_, trackers, runner=subprocess.run, *, unattended=False, arguments=(), webui=False):
         job = self.jobs[id_]
         if job["state"] != "staged":
@@ -62,7 +85,7 @@ class Jobs:
             raise ValueError("Stage is no longer verified ready")
         inventory = SimpleNamespace(call=c.peer.qb)
         before = {r["hash"] for r in self.engine.qb_pages(inventory)}
-        job.update(state="uploading", trackers=trackers)
+        job.update(state="uploading", trackers=trackers, arguments=list(arguments))
         self.save()  # A crash must never automatically replay an upload POST.
         try:
             remote = c.cfg["remote"]
@@ -128,6 +151,7 @@ def webui_entry(argv):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--remote-backend", required=True)
     parser.add_argument("--remote-return-after", type=float, default=86400)
+    parser.add_argument("--remote-stage")
     parser.add_argument("-tk", "--trackers", required=True)
     args, remaining = parser.parse_known_args(argv[1:])
     config = backends().get(args.remote_backend)
@@ -147,8 +171,8 @@ def webui_entry(argv):
     try:
         controller = engine.Controller(cfg, peer)
         jobs = Jobs(controller, engine)
-        id_ = jobs.stage(source, args.remote_return_after)
-        print("Staging verified. Starting interactive remote UA in this terminal.", flush=True)
+        id_ = jobs.reuse_stage(args.remote_stage, source, args.remote_return_after) if args.remote_stage else jobs.stage(source, args.remote_return_after)
+        print("Staging ready. Starting interactive remote UA in this terminal.", flush=True)
         jobs.run(id_, trackers, arguments=options, webui=True)
     finally:
         peer.sftp.close()

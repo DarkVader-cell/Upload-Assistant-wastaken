@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -21,7 +22,7 @@ class RequestValidationError(ValueError):
     """Safe, operator-facing validation error (never include config contents)."""
 
 
-def remote_options(arguments):
+def remote_options(arguments, *, allow_stage=False):
     """Forward supported metadata only; never local paths or arbitrary positionals."""
     options = shlex.split(arguments)
     values = {"--edition", "-edition", "--imdb", "-imdb", "--tmdb", "-tmdb", "--tvdb", "-tvdb", "--tag", "-tag", "--year", "-year", "--category", "-category", "--type", "-type", "--source", "-source", "--resolution", "-resolution", "--screens", "-s"}
@@ -29,17 +30,22 @@ def remote_options(arguments):
     forwarded = []
     index = 0
     while index < len(options):
-        token = options[index]
-        if token in {"-tk", "--trackers"}:
+        option = options[index]
+        if option == "--remote-stage" and allow_stage:
+            if index + 1 >= len(options) or not re.fullmatch("[a-f0-9]{32}", options[index + 1]):
+                raise RequestValidationError("Invalid staged-copy identifier")
+            index += 2
+            continue
+        if option in {"-tk", "--trackers"}:
             if index + 1 >= len(options):
                 raise RequestValidationError("Missing tracker selection")
             index += 2
             continue
-        if token not in values | flags:
+        if option not in values | flags:
             raise RequestValidationError("An upload option is not supported remotely; remove local-only options before retrying")
-        forwarded.append(token)
+        forwarded.append(option)
         index += 1
-        if token in values:
+        if option in values:
             if index >= len(options) or options[index].startswith(("-", "/", "~")):
                 raise RequestValidationError("An upload option has a missing or local-only value")
             forwarded.append(options[index])
@@ -56,6 +62,18 @@ def backends():
     if not isinstance(values, dict):
         raise ValueError("Backend registry must be an object")
     return {name: Path(config).expanduser() for name, config in values.items() if isinstance(name, str) and isinstance(config, str)}
+
+
+def stage_projection(state, stage, jobs):
+    view = transfer_status(state, stage)
+    related = next((job for job in reversed(list(jobs.values())) if job.get("stage") == stage["id"]), {})
+    targets = related.get("trackers", [])
+    return {"id": stage["id"], "name": Path(stage.get("source", "")).name, "source": stage.get("source", ""),
+            "protocol": stage.get("protocol", "sftp"), "bytes_total": stage.get("bytes_total", 0), "bytes_sent": stage.get("bytes_sent", 0),
+            "bytes_per_second": stage.get("bytes_per_second", 0), **view,
+            "can_reuse": bool(stage.get("writer_start")) and stage.get("state") == "ready" and not view["writer_live"] and related.get("state") == "needs_review" and bool(targets),
+            "trackers": targets, "return_after": related.get("delay", 86400),
+            "resume_args": shlex.join([*related.get("arguments", []), "--remote-stage", stage["id"], "-tk", ",".join(targets)])}
 
 
 def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
@@ -84,7 +102,7 @@ def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
                 ledger = state / "ledger.json"
                 data = json.loads(ledger.read_text()) if ledger.exists() else {}
                 operations = [json.loads(record.read_text()) for record in sorted((state / "operations").glob("*.json"))[-100:]]
-                result[name] = {"jobs": data.get("upload_jobs", {}), "operations": operations, "background_ready": bool(cfg.get("ssh_key")), "transfers": [{"id": s.get("id"), "name": Path(s.get("source", "")).name, "state": s.get("state"), "protocol": s.get("protocol", "sftp"), "bytes_total": s.get("bytes_total", 0), "bytes_sent": s.get("bytes_sent", 0), "bytes_per_second": s.get("bytes_per_second", 0), **transfer_status(state, s)} for s in list(data.get("stages", {}).values())[-100:]]}
+                result[name] = {"jobs": data.get("upload_jobs", {}), "operations": operations, "background_ready": bool(cfg.get("ssh_key")), "transfers": [stage_projection(state, s, data.get("upload_jobs", {})) for s in list(data.get("stages", {}).values())[-100:]]}
             return jsonify(backends=result)
         except (OSError, ValueError, KeyError):
             return jsonify(error="Remote backend configuration unavailable"), 503

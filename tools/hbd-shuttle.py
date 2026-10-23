@@ -198,7 +198,7 @@ def torrent_files(raw, expected_hash=None, *, details=False):
         raise Refuse("Unsupported or invalid torrent metadata") from None
 
 
-def verify_pieces(raw, paths, expected_sha256=None):
+def verify_pieces(raw, paths, expected_sha256=None, *, sha256_out=None):
     files, length, pieces = torrent_files(raw, details=True)
     require(len(paths) == len(files), "Incomplete verification file list")
     part = hashlib.sha1(usedforsecurity=False)
@@ -225,8 +225,10 @@ def verify_pieces(raw, paths, expected_sha256=None):
                         used = 0
                         part = hashlib.sha1(usedforsecurity=False)
         require(read == size and fingerprint(path) == before, "Dedi file changed while verifying")
-        if expected_sha256 is not None:
+        if expected_sha256 is not None and expected_sha256[file_index] is not None:
             require(h.hexdigest() == expected_sha256[file_index], "Dedi original differs from staged original")
+        if sha256_out is not None:
+            sha256_out.append(h.hexdigest())
     if used:
         require(part.digest() == pieces[index * 20 : (index + 1) * 20], "Final Dedi torrent piece mismatch; VPS retained")
         index += 1
@@ -354,7 +356,9 @@ def rpc(cfg, request):
         directory = confined(root, root / "stages" / record["id"])
         for f in record["files"]:
             path = confined(root, directory / "payload" / safe_relative(f["relative"]))
-            require(path.stat().st_size == f["size"] and sha_file(path) == f["sha256"], "SFTP copy checksum mismatch; staged data not approved")
+            require(path.is_file() and not path.is_symlink() and path.stat().st_size == f["size"], "Transferred file size/type mismatch")
+            if record.get("verify_stage_sha256", True):
+                require(sha_file(path) == f["sha256"], "Copy checksum mismatch; staged data not approved")
         atomic_json(directory / "record.json", record)
         return True
     if action == "inspect":
@@ -431,7 +435,8 @@ def rpc(cfg, request):
         # No automatic service stopping and no cleanup during UA sessions.
         for p in Path("/proc").glob("[0-9]*/cmdline"):
             with contextlib.suppress(OSError):
-                require(b"upload.py" not in p.read_bytes(), "UA is running: cleanup deferred, source copies retained")
+                command = p.read_bytes()
+                require(b"upload.py" not in command or b"--webui" in command, "UA upload is running: cleanup deferred, source copies retained")
         qb = QB(cfg)
         rows = qb_pages(qb)
         refs = [Path(t["content_path"]) for t in rows if t.get("content_path")]
@@ -460,7 +465,9 @@ def rpc(cfg, request):
                 path = confined(root, directory / "payload" / safe_relative(f["relative"]))
                 if path.exists():
                     require(path.stat().st_nlink == 1 and not referenced(path), "Staged payload still has tracker hardlinks/references; cleanup deferred")
-                    require(sha_file(path) == f["sha256"], "Staged payload changed since staging; keep it")
+                    expected = f.get("sha256") or request.get("stage_checksums", {}).get(id_, {}).get(f["relative"])
+                    require(isinstance(expected, str) and bool(re.fullmatch(r"[a-f0-9]{64}", expected)), "No stage or exact-return checksum proof; keep staged payload")
+                    require(sha_file(path) == expected, "Staged payload changed since staging/return proof; keep it")
                     paths.append(path)
             for p in paths:
                 p.unlink()
@@ -586,6 +593,7 @@ class Controller:
         id_ = uuid.uuid4().hex
         target = self.peer.rpc("prepare", id=id_, files=files)
         record = {"id": id_, "source": str(source), "remote_input": target + "/" + Path(source).name, "files": files, "state": "copying", "bytes_total": total, "bytes_sent": 0, "bytes_per_second": 0}
+        record["verify_stage_sha256"] = self.cfg.get("verify_stage_sha256", True) is not False
         record.update(writer_pid=os.getpid(), writer_pgid=os.getpgrp(), writer_start=Path(f"/proc/{os.getpid()}/stat").read_text().rsplit(")", 1)[1].split()[19])
         transferred = 0
         transfer_started = time.monotonic()
@@ -608,16 +616,20 @@ class Controller:
                     progress_saved = now
             native_transfer(self.cfg, Path(source).parent, target, files, progress)
             progress(total)
-            record["state"] = "verifying"
+            verify = record["verify_stage_sha256"]
+            record["state"] = "verifying" if verify else "confirming"
             self.save()
+            print("Transfer complete. Verifying dedicated SHA-256..." if verify else "Transfer complete. Confirming remote file sizes; no extra SHA-256 pass.", flush=True)
             for f in files:
                 require(fingerprint(f["source"]) == f["fingerprint"], "Source changed during native transfer")
-                f["sha256"] = sha_file(f["source"])
+                f["sha256"] = sha_file(f["source"]) if verify else None
                 require(fingerprint(f["source"]) == f["fingerprint"], "Source changed during verification")
+            if verify:
+                print("Dedicated checksum ready. Verifying VPS SHA-256...", flush=True)
             self.peer.rpc("commit", record=record)
             record["state"] = "ready"
             self.save()
-            print("\nVerified raw files ready on SSD. No original was deleted. Stage:", id_)
+            print("\nRaw files ready on SSD. No original was deleted. Stage:", id_)
             return
         for f in files:
             require(fingerprint(f["source"]) == f["fingerprint"], "Source changed before SFTP")
@@ -645,8 +657,9 @@ class Controller:
             require(fingerprint(f["source"]) == f["fingerprint"], "Source changed during SFTP; copy not approved")
             f["sha256"] = digest.hexdigest()
             self.save()
-        record["state"] = "verifying"
+        record["state"] = "verifying" if record["verify_stage_sha256"] else "confirming"
         self.save()
+        print("Verifying VPS SHA-256..." if record["verify_stage_sha256"] else "Confirming remote file sizes; no extra SHA-256 pass.", flush=True)
         self.peer.rpc("commit", record=record)
         record["state"] = "ready"
         self.save()
@@ -709,7 +722,7 @@ class Controller:
             require(local.is_file() and not local.is_symlink(), "Dedi original missing; no deletion or guessed replacement")
             dest = confined(savepath, savepath / safe_relative(name))
             require(not dest.exists() or local.samefile(dest), "Destination collision; never overwrite existing files")
-            plan.append((local, dest, f["sha256"]))
+            plan.append((local, dest, f.get("sha256")))
         print("Return:", source["name"], "\nCategory:", category or "(none)", "\nTags:", source.get("tags", ""), "\nDedi save path:", savepath)
         require(confirmed or input("Type RETURN to reannounce, link, import/recheck and transfer ONLY this torrent: ") == "RETURN", "Cancelled")
         initially_paused = paused(source)
@@ -725,7 +738,13 @@ class Controller:
             self.save()
             print("VPS reannounce requested (not a claim of tracker acknowledgement).")
             print("Verifying exact torrent pieces against Dedi originals (no giant qB recheck queue)...")
-            verify_pieces(raw, [p[0] for p in plan], [p[2] for p in plan])
+            piece_hashes = []
+            verify_pieces(raw, [p[0] for p in plan], [p[2] for p in plan], sha256_out=piece_hashes)
+            for origin, digest in zip(origins, piece_hashes, strict=True):
+                stage_id, relative = origin["origin"]
+                for item in self.ledger["stages"][stage_id]["files"]:
+                    if item["relative"] == relative and not item.get("sha256"):
+                        item["sha256"] = digest
             record["piece_proof_time"] = time.time()
             self.save()
             for local, dest, _sha in plan:
@@ -850,7 +869,8 @@ class Controller:
         require(links, "No verified returns to clean")
         print("Only returned VPS tracker links and unreferenced, unchanged staged copies are eligible. Dedi originals are NEVER removed.")
         require(input("Type CLEAN VERIFIED VPS COPIES: ") == "CLEAN VERIFIED VPS COPIES", "Cancelled")
-        result = self.peer.rpc("clean", links=links, stages=sorted(stages))
+        proofs = {id_: {f["relative"]: f["sha256"] for f in self.ledger["stages"].get(id_, {}).get("files", []) if f.get("sha256")} for id_ in stages}
+        result = self.peer.rpc("clean", links=links, stages=sorted(stages), stage_checksums=proofs)
         cleaned_at = time.time()
         for record in self.ledger["returns"].values():
             if record["state"] == "returned":

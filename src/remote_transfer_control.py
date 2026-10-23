@@ -33,7 +33,7 @@ def transfer_status(state, record):
         phase = 'interrupted'
     rate = max(0, float(record.get('bytes_per_second', 0)))
     remaining = max(0, record.get('bytes_total', 0) - record.get('bytes_sent', 0))
-    return {'state': phase, 'can_control': live and record.get('state') == 'copying' and value.get('action') != 'cancel',
+    return {'state': phase, 'writer_live': live, 'can_control': live and record.get('state') == 'copying' and value.get('action') != 'cancel',
             'eta_seconds': math.ceil(remaining / rate) if phase == 'copying' and rate > 0 else None,
             'can_discard': bool(record.get('writer_start')) and not live and record.get('state') in {'copying', 'interrupted'}}
 

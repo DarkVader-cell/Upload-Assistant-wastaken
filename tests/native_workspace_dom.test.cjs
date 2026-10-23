@@ -93,3 +93,21 @@ test('remote workspace shows ETA and submits pause/resume/cancel/discard control
   assert.equal(actions[0].url,'/api/remote-upload/control');
   await act(async()=>root.unmount());
 });
+
+
+test('ready failed stage can return to upload form without a new transfer request',async()=>{
+  const id='b'.repeat(32),reused=[];
+  const transfer={id,name:'Existing copy',state:'ready',source:'/dummy/source.mkv',bytes_total:4,bytes_sent:4,can_reuse:true,trackers:['PTP'],return_after:3600,resume_args:'--remote-stage '+id};
+  window.confirm=()=>true;
+  const apiFetch=async(_url,options)=>{
+    assert.notEqual(options?.method,'POST','Preparing reuse must not start a transfer');
+    return {ok:true,json:async()=>({backends:{dummy:{background_ready:true,transfers:[transfer],jobs:{},operations:[]}}})};
+  };
+  const root=createRoot(document.getElementById('root'));
+  await act(async()=>root.render(React.createElement(window.UANativeWorkspace,{workspace:'remote',apiFetch,onRetry:()=>{},onResume:(backend,stage)=>reused.push({backend,stage})})));
+  await settle();
+  await act(async()=>button('Use staged copy').click());
+  assert.equal(reused.length,1);
+  assert.equal(reused[0].backend,'dummy');assert.equal(reused[0].stage.id,id);
+  await act(async()=>root.unmount());
+});

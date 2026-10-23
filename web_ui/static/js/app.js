@@ -9071,9 +9071,29 @@ function AudionutsUAGUI() {
     isAwaitingTerminalInput && executionPreview?.input_type === "yes_no",
   );
 
+  const prepareLibraryRetry = (plans) => {
+    setSelectedTrackers(new Set(plans.flatMap(plan => plan.trackers)));
+    setSelectedPaths(plans.map(plan => ({path: plan.path, args: `-tk ${plan.trackers.join(",")}`})));
+    setManualPathsText(null);
+    setIsTerminalView(false);
+    setPathInputError("");
+    setWorkspace("upload");
+  };
+  const reuseRemoteStage = (backend, stage) => {
+    setUploadDestination(backend);
+    setRemoteSeedHours(Number(stage.return_after ?? 86400) / 3600);
+    setSelectedTrackers(new Set(stage.trackers));
+    setSelectedPaths([{path: stage.source, args: stage.resume_args}]);
+    setManualPathsText(null);
+    setCustomArgs("");
+    setIsTerminalView(false);
+    setPathInputError("");
+    setWorkspace("upload");
+  };
+
   // Mobile Layout
   if (isMobile && workspace !== "upload" && window.UANativeWorkspace) {
-    return <div className={`ua-upload-page flex h-screen flex-col ${isDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`} data-mode={isDarkMode ? "dark" : "light"}><nav className="flex gap-3 border-b p-3">{["upload","library","remote"].map(name=><button key={name} onClick={()=>setWorkspace(name)}>{name}</button>)}</nav><window.UANativeWorkspace workspace={workspace} apiFetch={apiFetch} onRetry={(plans)=>{setSelectedTrackers(new Set(plans.flatMap(plan=>plan.trackers)));setSelectedPaths(plans.map(plan=>({path:plan.path,args:`-tk ${plan.trackers.join(",")}`})));setManualPathsText(null);setWorkspace("upload");}} /></div>;
+    return <div className={`ua-upload-page flex h-screen flex-col ${isDarkMode ? "bg-gray-900 text-gray-100" : "bg-gray-50 text-gray-900"}`} data-mode={isDarkMode ? "dark" : "light"}><nav className="flex gap-3 border-b p-3">{["upload","library","remote"].map(name=><button key={name} onClick={()=>setWorkspace(name)}>{name}</button>)}</nav><window.UANativeWorkspace workspace={workspace} apiFetch={apiFetch} onRetry={prepareLibraryRetry} onResume={reuseRemoteStage} /></div>;
   }
   if (isMobile) {
     const navButton = (panel, icon, label) => (
@@ -9883,7 +9903,7 @@ function AudionutsUAGUI() {
         onLogout={handleLogout}
       />
 
-      {workspace !== "upload" && window.UANativeWorkspace && <window.UANativeWorkspace workspace={workspace} apiFetch={apiFetch} onRetry={(plans) => {setSelectedTrackers(new Set(plans.flatMap(plan=>plan.trackers)));setSelectedPaths(plans.map(plan=>({path:plan.path,args:`-tk ${plan.trackers.join(",")}`})));setManualPathsText(null);setWorkspace("upload");}} />}
+      {workspace !== "upload" && window.UANativeWorkspace && <window.UANativeWorkspace workspace={workspace} apiFetch={apiFetch} onRetry={prepareLibraryRetry} onResume={reuseRemoteStage} />}
       <div className={`ua-upload-desktop-shell min-w-0 flex-1 flex-col overflow-hidden ${workspace === "upload" ? "flex" : "hidden"}`}>
         <div className="flex flex-wrap items-center gap-3 border-b px-4 py-2 text-sm">
           <label>Upload destination <select className="rounded border bg-transparent p-1" value={uploadDestination} onChange={e=>setUploadDestination(e.target.value)}><option value="">This UA host</option>{remoteBackends.map(name=><option key={name} value={name}>{name}</option>)}</select></label>

@@ -16,9 +16,14 @@ No host-key, encryption or integrity checks are disabled for speed. Native SSH
 avoids Python SFTP packet/encryption overhead, but throughput still depends on
 source disk, CPU allocation and the VPS/network cap. No maximum speed is promised.
 
-After native copying, UA checks original fingerprints and SHA-256 against the
-remote copy. Hash verification is a separate phase and may take time on HDDs.
-Transfer progress/ETA covers copying, not hashing, tracker interaction or return.
+After native copying, UA checks original fingerprints. `verify_stage_sha256`
+(default true) optionally adds full SHA-256 reads on both hosts. Set it to false
+to skip those extra post-copy reads: authenticated SSH completion, file sizes
+and unchanged original fingerprints remain checked. Transfer progress/ETA covers
+copying, not an optional hash phase, tracker interaction or return. The independent
+exact torrent-piece proof before seed-mode return is NEVER disabled. Its existing
+read also supplies checksum proof for later explicit VPS cleanup; cleanup is
+refused without staging or exact-return proof.
 
 ## Interactive Upload-form workflow
 
@@ -36,6 +41,22 @@ the dedicated host's local screenshot/MediaInfo preview endpoints do not yet
 mirror all VPS-side temporary files. Keep the terminal open for remote reviews.
 Old jobs submitted through the detached remote API remain unattended; running
 jobs cannot be retroactively converted without interruption.
+
+## Launch environment and recovery without another copy
+
+SSH does not inherit a systemd service's environment. Configure
+`remote_ua_command` with the same data directory as the existing VPS UA service,
+for example `["/usr/bin/env", "UA_DATA_DIR=/path/to/active/ua", "/path/to/python",
+"/path/to/upload.py"]`. Do not move/delete a live client's configuration to fix
+an omitted SSH environment variable.
+
+A ready stage whose UA launch failed can offer **Use staged copy — no transfer**
+in the Remote workspace. It prepares the normal upload form with the existing
+stage ID and prior tracker targets. Starting it creates an explicit new attempt
+without recopying or rehashing the payload; source fingerprints and remote
+inode provenance must still match. The prior needs_review record is retained,
+and normal UA duplicate/policy checks apply. Review any prior tracker outcomes
+before retrying; this is never an automatic replay.
 
 ## Pause / resume / cancel / partial removal
 
