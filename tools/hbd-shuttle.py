@@ -438,46 +438,99 @@ def rpc(cfg, request):
                 command = p.read_bytes()
                 require(b"upload.py" not in command or b"--webui" in command, "UA upload is running: cleanup deferred, source copies retained")
         qb = QB(cfg)
-        rows = qb_pages(qb)
-        refs = [Path(t["content_path"]) for t in rows if t.get("content_path")]
-
+        def references():
+            rows = qb_pages(qb)
+            require(all(t.get("content_path") for t in rows), "Incomplete VPS torrent references; cleanup deferred")
+            return [Path(t["content_path"]).resolve() for t in rows]
+        refs = references()
         def referenced(path):
             return any(path == r or path.is_relative_to(r) or r.is_relative_to(path) for r in refs)
 
-        removed = 0
+        # Preflight the ENTIRE selected batch before unlinking even one file.
+        plans, checked, raw_paths, payloads = {}, set(), set(), []
+        counts, digests = {}, {}
+        def plan(path):
+            before = fingerprint(path)
+            key = tuple(before[:2])
+            count = path.stat().st_nlink
+            require(key not in counts or counts[key] == count, "Payload links changed during cleanup preflight")
+            counts[key] = count
+            plans[path] = before
         for item in request["links"]:
             path = confined(root, item["path"])
-            if not path.exists():
-                continue
-            s = path.stat(follow_symlinks=False)
-            require([s.st_dev, s.st_ino] == item["inode"], "A returned link was replaced; keep it")
-            require(not referenced(path), "A live VPS torrent still refers to this path")
-            path.unlink()
-            removed += 1
+            checked.add(path)
+            require(not referenced(path), "A live VPS torrent still refers to a returned link")
+            if path.exists():
+                before = fingerprint(path)
+                require(before[:2] == item["inode"], "A returned link was replaced; keep it")
+                origin = item.get("origin", [])
+                require(len(origin) == 2 and origin[0] in request["stages"], "Returned link has no selected-stage provenance")
+                expected = request.get("stage_checksums", {}).get(origin[0], {}).get(origin[1])
+                require(isinstance(expected, str) and bool(re.fullmatch(r"[a-f0-9]{64}", expected)), "No exact-return checksum proof for returned link")
+                key = tuple(before)
+                if key not in digests:
+                    digests[key] = sha_file(path)
+                require(fingerprint(path) == before and digests[key] == expected, "Returned payload changed; cleanup deferred")
+                plan(path)
         for id_ in request["stages"]:
+            require(bool(re.fullmatch(r"[a-f0-9]{32}", id_)), "Invalid cleanup stage ID")
             directory = confined(root, root / "stages" / id_)
-            ledger = directory / "record.json"
-            if not ledger.is_file():
-                continue
+            ledger = confined(root, directory / "record.json")
+            require(ledger.is_file(), "Stage manifest unavailable; keep its data")
             record = json.loads(ledger.read_text())
-            paths = []
+            require(record.get("id", id_) == id_, "Stage manifest identity mismatch")
+            payload = confined(root, directory / "payload")
+            require(not payload.exists() or payload.is_dir(), "Staged payload root changed type; cleanup deferred")
+            payloads.append(payload)
+            expected_paths = set()
             for f in record["files"]:
-                path = confined(root, directory / "payload" / safe_relative(f["relative"]))
-                if path.exists():
-                    require(path.stat().st_nlink == 1 and not referenced(path), "Staged payload still has tracker hardlinks/references; cleanup deferred")
-                    expected = f.get("sha256") or request.get("stage_checksums", {}).get(id_, {}).get(f["relative"])
-                    require(isinstance(expected, str) and bool(re.fullmatch(r"[a-f0-9]{64}", expected)), "No stage or exact-return checksum proof; keep staged payload")
-                    require(sha_file(path) == expected, "Staged payload changed since staging/return proof; keep it")
-                    paths.append(path)
-            for p in paths:
-                p.unlink()
-                removed += 1
-            # Do not recursively remove unknown files or delete the audit record.
-            for p in sorted((directory / "payload").rglob("*"), key=lambda x: len(x.parts), reverse=True):
-                if p.is_dir():
+                path = confined(root, payload / safe_relative(f["relative"]))
+                expected_paths.add(path)
+                checked.add(path)
+                require(not referenced(path), "Staged payload still has torrent references")
+                if not path.exists():
+                    continue
+                before = fingerprint(path)
+                expected = f.get("sha256") or request.get("stage_checksums", {}).get(id_, {}).get(f["relative"])
+                require(isinstance(expected, str) and bool(re.fullmatch(r"[a-f0-9]{64}", expected)), "No stage or exact-return checksum proof; keep staged payload")
+                key = tuple(before)
+                if key not in digests:
+                    digests[key] = sha_file(path)
+                require(fingerprint(path) == before and digests[key] == expected, "Staged payload changed since staging/return proof; keep it")
+                raw_paths.add(path)
+                plan(path)
+            for path in payload.rglob("*"):
+                confined(root, path)
+                require(path.is_dir() or path in expected_paths, "Unknown staged objects found; cleanup deferred")
+        planned_counts = {}
+        for before in plans.values():
+            key = tuple(before[:2])
+            planned_counts[key] = planned_counts.get(key, 0) + 1
+        for path in raw_paths:
+            key = tuple(plans[path][:2])
+            require(counts[key] == planned_counts[key], "Staged payload has unreturned/unknown hardlinks; cleanup deferred")
+        # The hash scan may take time: refresh references before any mutation.
+        refs = references()
+        require(not any(referenced(path) for path in checked), "New VPS torrent references appeared; cleanup deferred")
+        removed, removed_bytes = 0, 0
+        for path, before in plans.items():
+            now = fingerprint(path)
+            key = tuple(before[:2])
+            require(now[:4] == before[:4] and path.stat().st_nlink == counts[key], "Payload changed during cleanup; remaining data retained")
+            if counts[key] == 1:
+                removed_bytes += before[2]
+            path.unlink()
+            counts[key] -= 1
+            removed += 1
+        # Only prune empty directories; retain every audit record.
+        for payload in payloads:
+            for path in sorted(payload.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+                if path.is_dir():
                     with contextlib.suppress(OSError):
-                        p.rmdir()
-        return {"removed_files": removed}
+                        path.rmdir()
+            with contextlib.suppress(OSError):
+                payload.rmdir()
+        return {"removed_files": removed, "removed_bytes": removed_bytes, "free_bytes": shutil.disk_usage(root).free}
     raise Refuse("Unknown worker action")
 
 
@@ -860,39 +913,62 @@ class Controller:
                     )
             raise
 
-    def cleanup(self):
-        qb = QB(self.cfg)
-        links = []
-        stages = set()
+    def cleanup(self, *, confirmed=False, stage_ids=None):
+        stages = set(stage_ids) if stage_ids is not None else {o["origin"][0] for r in self.ledger["returns"].values() if r["state"] == "returned" for o in r["origins"]}
+        require(stages and stages <= self.ledger["stages"].keys(), "Select recorded returned stages, not arbitrary payloads")
+        selected = {}
         for hash_, record in self.ledger["returns"].items():
-            if record["state"] != "returned":
+            related = {o["origin"][0] for o in record.get("origins", [])}
+            if not related & stages:
                 continue
+            require(related <= stages and record["state"] in {"returned", "cleaned"}, "A related handoff is unresolved; cleanup deferred")
+            if record["state"] == "returned":
+                selected[hash_] = record
+        for job in self.ledger.get("upload_jobs", {}).values():
+            if job.get("stage") not in stages:
+                continue
+            require(job.get("state") not in {"staged", "uploading", "seeding", "returning"}, "This stage still has an active job; cleanup deferred")
+            require(all(t.get("state") in {"returned", "cleaned"} and self.ledger["returns"].get(h, {}).get("state") in {"returned", "cleaned"} for h, t in job.get("torrents", {}).items()), "Some tracker torrents lack verified returns; cleanup deferred")
+        if not selected:
+            require(all(self.ledger["stages"][id_]["state"] == "cleaned" for id_ in stages), "No verified returns to clean")
+            return {"removed_files": 0}
+        require(stages == {o["origin"][0] for r in selected.values() for o in r["origins"]}, "A selected stage lacks verified returned registrations")
+        qb = QB(self.cfg)
+        links, fingerprints, destinations = [], {}, {}
+        proof_cache = set()
+        for hash_, record in selected.items():
             info = qb.info(hash_)
             require(complete(info), "A returned Dedi torrent is no longer verified complete; no cleanup")
             raw = qb.call("torrents/export", {"hash": hash_}, binary=True)
-            files = torrent_files(raw, hash_)
+            files, length, pieces = torrent_files(raw, hash_, details=True)
             paths = [confined(Path(info["save_path"]), Path(info["save_path"]) / safe_relative(name)) for name, _ in files]
-            print("Re-verifying Dedi payload before deleting any SSD copies...")
-            verify_pieces(raw, paths)
+            snapshots = [fingerprint(path) for path in paths]
+            key = (tuple(tuple(value) for value in snapshots), tuple(size for _, size in files), length, pieces)
+            if key not in proof_cache:
+                print("Verifying unique Dedi piece proof before VPS cleanup...", flush=True)
+                verify_pieces(raw, paths)
+                proof_cache.add(key)
+            for path, before in zip(paths, snapshots, strict=True):
+                require(path not in fingerprints or fingerprints[path] == before, "Dedi payload changed between tracker proofs")
+                fingerprints[path] = before
+            destinations[hash_] = str(Path(info["save_path"]).resolve())
             links.extend(record["origins"])
-            stages.update(x["origin"][0] for x in record["origins"])
-        require(links, "No verified returns to clean")
-        print("Only returned VPS tracker links and unreferenced, unchanged staged copies are eligible. Dedi originals are NEVER removed.")
-        require(input("Type CLEAN VERIFIED VPS COPIES: ") == "CLEAN VERIFIED VPS COPIES", "Cancelled")
+        require(all(fingerprint(path) == before for path, before in fingerprints.items()), "Dedi payload changed during cleanup preflight")
+        for hash_, path in destinations.items():
+            info = qb.info(hash_)
+            require(complete(info) and str(Path(info["save_path"]).resolve()) == path, "Dedi registration changed; cleanup deferred")
+        print("Only the selected verified VPS copies are eligible. Dedi originals are NEVER removed.", flush=True)
+        require(confirmed or input("Type CLEAN VERIFIED VPS COPIES: ") == "CLEAN VERIFIED VPS COPIES", "Cancelled")
         proofs = {id_: {f["relative"]: f["sha256"] for f in self.ledger["stages"].get(id_, {}).get("files", []) if f.get("sha256")} for id_ in stages}
         result = self.peer.rpc("clean", links=links, stages=sorted(stages), stage_checksums=proofs)
         cleaned_at = time.time()
-        for record in self.ledger["returns"].values():
-            if record["state"] == "returned":
-                record["state"] = "cleaned"
-                record["cleaned_time"] = cleaned_at
+        for record in selected.values():
+            record.update(state="cleaned", cleaned_time=cleaned_at)
         for id_ in stages:
-            stage = self.ledger["stages"].get(id_)
-            if stage and stage["state"] == "ready":
-                stage["state"] = "cleaned"
-                stage["cleaned_time"] = cleaned_at
+            self.ledger["stages"][id_].update(state="cleaned", cleaned_time=cleaned_at)
         self.save()
-        print(result)
+        print(result, flush=True)
+        return result
 
 
 def choose(screen, title, labels, multiple=False):

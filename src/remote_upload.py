@@ -120,7 +120,7 @@ class Jobs:
             raise
 
     def tick(self):
-        """Return due jobs; never retry ambiguous handoffs or delete SSD data."""
+        """Return due jobs; optionally clean only fully verified, closed batches."""
         for job in self.jobs.values():
             if job["state"] != "seeding":
                 continue
@@ -141,6 +141,36 @@ class Jobs:
             elif "needs_review" in states or "returning" in states:
                 job["state"] = "needs_review"
             self.save()
+        self.sync_cleaned_jobs()
+        if getattr(self.controller, "cfg", {}).get("auto_cleanup_verified") is True:
+            for job in self.jobs.values():
+                if job["state"] != "returned" or job.get("cleanup_retry_at", 0) > self.clock():
+                    continue
+                job["cleanup_status"] = "checking"
+                self.save()
+                try:
+                    result = self.controller.cleanup(confirmed=True, stage_ids=[job["stage"]])
+                    job["cleanup_result"] = result
+                    self.sync_cleaned_jobs()
+                except Exception as error:
+                    job["cleanup_status"] = "blocked"
+                    refusal = getattr(self.engine, "RefuseError", None)
+                    job["cleanup_error"] = str(error) if refusal is not None and isinstance(error, refusal) else type(error).__name__
+                    job["cleanup_retry_at"] = self.clock() + 300
+                self.save()
+
+    def sync_cleaned_jobs(self):
+        for job in self.jobs.values():
+            if job["state"] != "returned" or self.controller.ledger["stages"].get(job.get("stage"), {}).get("state") != "cleaned":
+                continue
+            if not all(self.controller.ledger.get("returns", {}).get(h, {}).get("state") == "cleaned" for h in job["torrents"]):
+                continue
+            for item in job["torrents"].values():
+                item["state"] = "cleaned"
+            job.update(state="cleaned", cleanup_status="cleaned", cleaned_at=self.clock())
+            job.pop("cleanup_error", None)
+            job.pop("cleanup_retry_at", None)
+        self.save()
 
 
 def webui_entry(argv):
@@ -196,6 +226,8 @@ def main():
     execute.add_argument("--arguments-json", default="[]")
     discard = commands.add_parser("discard", help="Remove only a stopped stage's verified unreferenced partial files")
     discard.add_argument("stage")
+    cleanup = commands.add_parser("cleanup", help="Explicit verified cleanup of selected returned stages")
+    cleanup.add_argument("--stage", action="append", required=True)
     commands.add_parser("tick", help="Return due registrations; suitable for a timer with SSH key authentication")
     commands.add_parser("status")
     args = parser.parse_args()
@@ -208,7 +240,7 @@ def main():
         return
     if cfg.get("role") != "dedi":
         raise ValueError("Run remote upload jobs on the payload-owning dedicated host")
-    if args.action in {"execute", "tick", "discard"} and not cfg.get("ssh_key"):
+    if args.action in {"execute", "tick", "discard", "cleanup"} and not cfg.get("ssh_key"):
         raise ValueError("Background operations require a configured SSH key")
     peer = engine.Peer(cfg)
     try:
@@ -218,6 +250,9 @@ def main():
             print(jobs.stage(args.source, args.return_after))
         elif args.action == "upload":
             jobs.run(args.job, args.trackers)
+        elif args.action == "cleanup":
+            controller.cleanup(confirmed=True, stage_ids=args.stage)
+            jobs.sync_cleaned_jobs()
         elif args.action == "discard":
             print(controller.discard_partial(args.stage))
         elif args.action == "execute":

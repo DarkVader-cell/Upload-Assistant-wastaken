@@ -47,9 +47,10 @@ of tracker receipt. There is no tracker minimum-interval bypass.
 
 The controller ledger lock prevents simultaneous workers. Failed or interrupted
 uploads/returns are never automatically replayed; inspect `needs_review` and
-`uploading`/`returning` states manually. Retain the ledger for recovery. SSD cleanup
-remains the explicit verified shuttle cleanup operation; the scheduler never
-deletes payloads. Existing registrations on the destination are not overwritten.
+`uploading`/`returning` states manually. Retain the ledger for recovery. SSD cleanup is opt-in: `auto_cleanup_verified: true` enables the scheduler's
+verified, closed-batch cleanup after every related tracker torrent has returned.
+It defaults to false. Blocked cleanup retains data and records the reason, with
+a five-minute retry delay. `needs_review` jobs are not automatically cleaned. Existing registrations on the destination are not overwritten.
 
 ## WebUI
 
@@ -98,7 +99,8 @@ and retries at the next scheduled tick. Duplicate handoffs are never started.
 ## Limits
 
 Remote installation, automatic replay of ambiguous transfers, per-tracker
-announce acknowledgement, automatic SSD deletion, and transplanting qB history
-counters are deliberately not implemented. Dummy tests use fake peers and qB
+announce acknowledgement and transplanting qB history counters are deliberately
+not implemented. Automatic SSD deletion is limited to explicitly enabled,
+verified closed-batch cleanup; it is never an unfiltered VPS sweep. Dummy tests use fake peers and qB
 responses; they never upload real torrents. Source-path entry is supported in
 the WebUI; a remote browser/drag-and-drop picker is not implemented.
