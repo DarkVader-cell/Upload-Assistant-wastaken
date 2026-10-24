@@ -104,7 +104,8 @@ def test_worker_checksum_failure_keeps_copy(tmp_path):
     assert (payload / "raw.mkv").read_bytes() == b"abc"
 
 
-def test_return_reannounce_proof_then_registration_only_delete(tmp_path, monkeypatch):
+@pytest.mark.parametrize('unexpected_recheck', [False, True])
+def test_return_reannounce_proof_then_registration_only_delete(tmp_path, monkeypatch, unexpected_recheck):
     data = b"abcdefghijk"
     raw, hash_ = torrent(data)
     original = tmp_path / "raw.mkv"
@@ -145,16 +146,20 @@ def test_return_reannounce_proof_then_registration_only_delete(tmp_path, monkeyp
             if path == "torrents/add":
                 assert "proof" in events and kw["torrent"] == raw and args["skip_checking"] == "true"
                 events.append("add")
-                self.info_ = {**src, "save_path": args["savepath"], "category": args["category"], "tags": args["tags"], "state": "stoppedUP"}
+                self.info_ = {**src, "save_path": args["savepath"], "category": args["category"], "tags": args["tags"], "state": "checkingUP" if unexpected_recheck else "stoppedUP"}
                 return b"Ok."
             raise AssertionError(path)
 
         def post(self, path, **_kw):
+            assert path != 'torrents/recheck'
             events.append(path)
+            if path == 'torrents/delete':
+                assert _kw['deleteFiles'] == 'false'
+                self.info_ = None
 
         def state(self, _h, _start):
-            events.append("dedi-start")
-            self.info_["state"] = "uploading"
+            events.append("dedi-start" if _start else "dedi-stop")
+            self.info_["state"] = "uploading" if _start else "stoppedUP"
 
     target = FakeTarget()
 
@@ -200,6 +205,16 @@ def test_return_reannounce_proof_then_registration_only_delete(tmp_path, monkeyp
         return real(*a, **kw)
 
     monkeypatch.setattr(s, "verify_pieces", proof)
+    if unexpected_recheck:
+        with pytest.raises(s.RefuseError, match='full recheck'):
+            ctl.return_torrent(hash_)
+        assert target.info_ is None
+        assert 'source-registration-delete' not in events
+        assert 'dedi-start' not in events
+        assert original.read_bytes() == data
+        assert ctl.ledger['returns'][hash_]['state'] == 'needs_review'
+        assert ctl.ledger['returns'][hash_]['destination_recheck_refused'] is True
+        return
     ctl.return_torrent(hash_)
     assert events.index("reannounce") < events.index("proof") < events.index("add") < events.index("source-registration-delete")
     assert original.read_bytes() == data and (target_root / "Uploads" / "renamed.mkv").samefile(original)

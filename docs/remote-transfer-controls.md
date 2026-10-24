@@ -85,3 +85,9 @@ inspect it before retrying; no deletion or automatic retry is authorized by it.
 
 Return scheduling remains persistent. Its due time starts after remote UA
 finishes; a busy controller lock can defer return beyond the nominal interval.
+Every due tracker torrent goes through the same exact-torrent proof and
+`skip_checking=true` seed-mode import. UA never requests a qB full recheck. If qB
+nevertheless reports full checking of the new registration, UA stops/removes
+that exact destination registration with `deleteFiles=false`, retains the VPS
+source and marks the handoff for review. Fast resume-data processing is not a
+full payload recheck and may briefly occur during import.

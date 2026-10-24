@@ -724,7 +724,7 @@ class Controller:
             require(not dest.exists() or local.samefile(dest), "Destination collision; never overwrite existing files")
             plan.append((local, dest, f.get("sha256")))
         print("Return:", source["name"], "\nCategory:", category or "(none)", "\nTags:", source.get("tags", ""), "\nDedi save path:", savepath)
-        require(confirmed or input("Type RETURN to reannounce, link, import/recheck and transfer ONLY this torrent: ") == "RETURN", "Cancelled")
+        require(confirmed or input("Type RETURN to reannounce, link, seed-mode import and transfer ONLY this torrent: ") == "RETURN", "Cancelled")
         initially_paused = paused(source)
         record = {"hash": hash_, "source": source, "save_path": str(savepath), "origins": origins, "state": "planned"}
         self.ledger["returns"][hash_] = record
@@ -775,16 +775,26 @@ class Controller:
             require(target.info(hash_) is not None, "Dedi did not import the exact source infohash")
             # Seed-mode import is allowed only after the independent full-piece
             # proof above, never based on filename, size, or cached progress.
-            record["state"] = "checking"
+            record["state"] = "importing"
             self.save()
             deadline = time.monotonic() + 120
             while time.monotonic() < deadline:
                 info = target.info(hash_)
+                if info and info.get("state") in {"checkingUP", "checkingDL", "checking", "queuedForChecking"}:
+                    record["destination_recheck_refused"] = True
+                    message = "Destination started a full recheck despite seed mode; VPS retained"
+                    if Path(info.get("save_path", "")).resolve() == savepath:
+                        target.state(hash_, False)
+                        target.post("torrents/delete", hashes=hash_, deleteFiles="false")
+                        message += "; new registration removed without deleting files"
+                    else:
+                        message += "; unexpected destination path, manual review required"
+                    raise Refuse(message)
                 if complete(info):
                     break
                 if info and info.get("state") in {"missingFiles", "error"}:
                     raise Refuse("Dedi payload verification failed")
-                print("\rDedi rechecking selected torrent; VPS source retained...", end="", flush=True)
+                print("\rWaiting for seed-mode registration; VPS source retained...", end="", flush=True)
                 time.sleep(3)
             else:
                 raise Refuse("Dedi verification timeout; source retained")
