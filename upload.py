@@ -1492,6 +1492,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
 
     await refresh_prepared_metadata(meta, config=config)
 
+    meta.client_skipped_trackers = []
     if meta.remove_trackers:
         removed: list[str] = []
         remove_trackers_list = [t for t in meta.remove_trackers if t] if isinstance(meta.remove_trackers, list) else [str(meta.remove_trackers)]
@@ -1505,6 +1506,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                     removed.append(tracker)
         meta.trackers = current_trackers
         if removed:
+            meta.client_skipped_trackers = list(dict.fromkeys(removed))
             logger.info(f"[yellow]Removing trackers already in your client: {', '.join(removed)}[/yellow]")
     if not meta.trackers:
         logger.info("[red]No trackers remain after removal.[/red]")

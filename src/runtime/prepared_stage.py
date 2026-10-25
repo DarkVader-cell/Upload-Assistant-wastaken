@@ -16,7 +16,7 @@ from src.runtime.state import default_config
 from src.temp_paths import release_temp_dir
 
 _PRIVATE = ("password", "passkey", "api_key", "api_token", "cookie", "credential", "secret", "session", "token", "authorization", "authkey", "download_url")
-_TRANSIENT = {"tracker_status", "initial_dupes", "we_are_uploading", "trackers", "trackers_remove", "delete_meta", "delete_tmp", "queue", "queue_file", "confirm_not_uploaded", "we_checked_them_all", "skip_trackers", "skip_uploading", "dupe", "force_upload", "modq", "draft", "unattended", "unattended_confirm", "remove_trackers", "client", "no_seed", "skipping", "ptp_groupid", "ptp_torrent_id"}
+_TRANSIENT = {"tracker_status", "initial_dupes", "we_are_uploading", "trackers", "trackers_remove", "delete_meta", "delete_tmp", "queue", "queue_file", "confirm_not_uploaded", "we_checked_them_all", "skip_trackers", "skip_uploading", "dupe", "force_upload", "modq", "draft", "unattended", "unattended_confirm", "remove_trackers", "client", "client_skipped_trackers", "no_seed", "skipping", "ptp_groupid", "ptp_torrent_id"}
 
 
 def _clean(value, *, losses=None):
