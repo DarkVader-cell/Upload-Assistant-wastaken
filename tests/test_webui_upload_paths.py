@@ -17,7 +17,16 @@ import src.webui_paths as policy
 import web_ui.server as server
 from src.meta import Meta
 from src.queuemanage import QueueManager
-from src.webui_paths import QUEUE_ENV, QUEUE_HASH_ENV, ROOTS_ENV, generated_queue_name, is_generated_queue_path, read_generated_queue, validate_content_path, validate_subprocess_queue
+from src.webui_paths import (
+    QUEUE_ENV,
+    QUEUE_HASH_ENV,
+    ROOTS_ENV,
+    generated_queue_name,
+    is_generated_queue_path,
+    read_generated_queue,
+    validate_content_path,
+    validate_subprocess_queue,
+)
 
 
 @pytest.fixture
@@ -595,19 +604,32 @@ async def test_resending_a_selection_resumes_its_queue(workspace, monkeypatch):
     items = [{"path": str(first)}, {"path": str(second)}]
     path = client.post("/api/save_queue", json={"items": items}).json["path"]
     queue_hash = hashlib.sha256(Path(path).read_bytes()).hexdigest()
-    processed_log, _ = _queue_logs(state, path)
+    monkeypatch.setenv(ROOTS_ENV, json.dumps([str(root)]))
+    monkeypatch.setenv(QUEUE_ENV, path)
+    monkeypatch.setenv(QUEUE_HASH_ENV, queue_hash)
+    original = Meta(trackers='AITHER')
+    _, processed = await QueueManager.handle_queue(path, original, [path], str(state))
+    processed_log = Path(processed)
     processed_log.write_text(json.dumps([Path(path).read_text(encoding="utf-8").splitlines()[0]]), encoding="utf-8")
     server._remove_session_queue_file(path)
     resent = client.post("/api/save_queue", json={"items": items}).json["path"]
     assert resent != path
-    monkeypatch.setenv(ROOTS_ENV, json.dumps([str(root)]))
     monkeypatch.setenv(QUEUE_ENV, resent)
-    monkeypatch.setenv(QUEUE_HASH_ENV, queue_hash)
-    meta = Meta()
+    meta = Meta(trackers='AITHER')
     queue, log_file = await QueueManager.handle_queue(resent, meta, [resent], str(state))
     assert [item["path"] for item in queue] == [str(second)]
-    assert meta.queue == generated_queue_name(queue_hash)
+    assert meta.queue == original.queue
     assert Path(log_file) == processed_log
+    # Same files, different targets: this is not the old selection's resume.
+    changed = Meta(trackers='LST')
+    queue, new_log = await QueueManager.handle_queue(resent, changed, [resent], str(state))
+    assert len(queue) == 2 and new_log != log_file
+    # Default-target changes must also open a fresh scope.
+    first_default = Meta()
+    _, first_log = await QueueManager.handle_queue(resent, first_default, [resent], str(state), config={'TRACKERS':{'default_trackers':'AITHER'}})
+    second_default = Meta()
+    _, second_log = await QueueManager.handle_queue(resent, second_default, [resent], str(state), config={'TRACKERS':{'default_trackers':'LST'}})
+    assert first_log != second_log
 
 
 def test_stale_queue_logs_are_pruned_when_a_queue_is_saved(workspace):
@@ -680,3 +702,69 @@ async def test_invalid_interactive_path_reprompts_without_mutating_metadata(work
     assert prep.gather_prep.await_count == 1
     assert meta.path == str(first)
     assert meta.anon is False
+
+
+def _confirmation_loop(workspace, monkeypatch, parse):
+    """process_meta stubbed up to the "Input args that need correction" loop."""
+    import upload
+
+    _, root, state, first, _ = workspace
+    monkeypatch.setenv(ROOTS_ENV, json.dumps([str(root)]))
+    meta = Meta(path=str(first), base_dir=str(state), imghost="fictional", category="MOVIE", item_args=[str(first)])
+    prep = SimpleNamespace(gather_prep=AsyncMock(return_value=meta))
+    monkeypatch.setattr(upload, "Prep", lambda **_kwargs: prep)
+    monkeypatch.setattr(upload, "name_manager", SimpleNamespace(get_name=AsyncMock(return_value=("Fictional", "Fictional", "Fictional", []))), raising=False)
+    monkeypatch.setattr(upload, "TrackerSetup", lambda **_kwargs: SimpleNamespace(filter_unsupported_trackers=lambda _meta: None))
+    monkeypatch.setattr(upload, "UploadHelper", lambda _config: SimpleNamespace(get_confirmation=AsyncMock(return_value=False)))
+    monkeypatch.setattr(upload, "write_meta_file", AsyncMock())
+    monkeypatch.setattr(upload, "gen_desc", AsyncMock(return_value=meta))
+    monkeypatch.setattr(upload, "_publish_webui_preview_target", Mock())
+    monkeypatch.setattr(upload, "Args", lambda _config: SimpleNamespace(parse=parse))
+    monkeypatch.setattr(upload, "config", {"DEFAULT": {"auto_mode": False}})
+    return upload, meta, prep, state
+
+
+@pytest.mark.asyncio
+async def test_skip_at_the_correction_prompt_leaves_the_release_out(workspace, monkeypatch):
+    upload, meta, prep, state = _confirmation_loop(workspace, monkeypatch, parse=Mock())
+    prompt = Mock(return_value="skip")
+    monkeypatch.setattr(upload, "CLI_UI", SimpleNamespace(ask_string=prompt))
+
+    assert await upload.process_meta(meta, str(state)) is False
+    assert meta.skipped_by_user is True
+    assert prompt.call_count == 1
+    assert prep.gather_prep.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_corrections_and_skip_reach_the_callers_metadata(workspace, monkeypatch):
+    def parse(_args, candidate):
+        candidate.anon = True
+        return candidate, None, None
+
+    upload, meta, prep, state = _confirmation_loop(workspace, monkeypatch, parse=parse)
+    prep.gather_prep = AsyncMock(side_effect=lambda meta, **_kwargs: meta)
+    prompt = Mock(side_effect=["--anon", "skip"])
+    monkeypatch.setattr(upload, "CLI_UI", SimpleNamespace(ask_string=prompt))
+
+    assert await upload.process_meta(meta, str(state)) is False
+    assert meta.anon is True
+    assert meta.skipped_by_user is True
+    assert prompt.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_correction_arguments_reprompt_instead_of_exiting(workspace, monkeypatch):
+    def parse(_args, _candidate):
+        raise SystemExit(2)
+
+    upload, meta, _prep, state = _confirmation_loop(workspace, monkeypatch, parse=parse)
+
+    class RepromptedError(Exception):
+        pass
+
+    prompt = Mock(side_effect=["--source Web", RepromptedError()])
+    monkeypatch.setattr(upload, "CLI_UI", SimpleNamespace(ask_string=prompt))
+    with pytest.raises(RepromptedError):
+        await upload.process_meta(meta, str(state))
+    assert prompt.call_count == 2

@@ -27,10 +27,14 @@ walk(ast);
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
 function setup() {
-  const context = vm.createContext({ Set, Map, Date, JSON, window: {} });
+  const context = vm.createContext({ Set, Map, Date, JSON, window: { UA_MAX_UPLOAD_PATHS: 1000 } });
   Object.assign(context, {
     selectedPath: "",
     selectedPaths: [],
+    uploadDestination: "",
+    remoteSeedHours: 1,
+    selectedTrackers: new Set(),
+    selectionAnchorRef: { current: "" },
     manualPathsText: null,
     pathInputError: "",
     isExecuting: false,
@@ -46,6 +50,8 @@ function setup() {
     },
     setProgressItems: () => {},
     setIsOutputExpanded: () => {},
+    setIsTerminalView: () => {},
+    resetRunGui: () => {},
     setShowExecutionPreview: () => {},
     setExecutionPreview: () => {},
     API_BASE: "/api",
@@ -88,6 +94,7 @@ function setup() {
     ]),
   };
   for (const name of [
+    "MAX_UPLOAD_PATHS",
     "getUploadTabStatus",
     "getUploadTabTitle",
     "getTabRuntime",

@@ -106,12 +106,13 @@ def test_unit3d_duplicate_search_follows_same_origin_pages(monkeypatch: pytest.M
             return responses.pop(0)
 
     monkeypatch.setattr("src.trackers.UNIT3D.httpx.AsyncClient", lambda **kwargs: PaginatedClient([], **kwargs))
-    tracker = Aither({"DEFAULT": {"unit3d_dupe_max_pages": 5}, "TRACKERS": {"AITHER": {"api_key": "test-key"}}})
+    tracker = Aither({"DEFAULT": {"unit3d_dupe_max_pages": 2}, "TRACKERS": {"AITHER": {"api_key": "test-key"}}})
     meta = Meta(category="MOVIE", tmdb=123, resolution="1080p", type="WEBDL")
 
     results = asyncio.run(tracker.search_existing(meta))
 
     assert [result["name"] for result in results] == ["one", "two"]  # noqa: S101
+    assert meta.get("AITHER_search_incomplete") is False  # noqa: S101
     assert requests[0][1] is not None  # noqa: S101
     assert requests[1] == ("https://aither.cc/api/torrents?page=2", None)  # noqa: S101
 
@@ -132,6 +133,8 @@ def test_unit3d_duplicate_search_rejects_cross_origin_page(monkeypatch: pytest.M
     asyncio.run(tracker.search_existing(meta))
 
     assert len(requests) == 1  # noqa: S101
+    assert meta.get("AITHER_search_incomplete") is True  # noqa: S101
+    assert "origin" in meta["AITHER_search_incomplete_reason"]  # noqa: S101
 
 
 class DetailFakeClient:

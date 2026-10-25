@@ -71,7 +71,8 @@ def test_webui_catalog_and_named_group():
     assert "--hdb-manual" in {item["label"] for item in cli_argument_catalog()}
     _validate_upload_assistant_args(["--hdb-manual"])
     source = Path("web_ui/static/js/app.js").read_text()
-    assert '{ label: "--hdb-manual" }' in source.split('title: "Upload Selection / Dupe"', 1)[1].split('title:', 1)[0]
+    sections = source.split('const argumentSections = [', 1)[1].split('const COMMON_ARGUMENT_SECTIONS', 1)[0]
+    assert 'Custom workflows' in sections and '"--hdb-manual"' in sections
 
 
 @pytest.mark.parametrize("args", [["--hdb-offer"], ["--usenet"], ["--site-upload", "HDB"], ["--site-check"],

@@ -72,7 +72,12 @@ class LuminarrSlotRules(SlotRules):
                 return Verdict.ALLOW, f"{new.hdr_label} covers everything {old.hdr_label} does, and more."
             if new.kind == REMUX:
                 return Verdict.REVIEW, "A remux replaces another with a better source or more complete content."
-            return Verdict.BLOCK, ""
+            if new.kind in (ENCODE, DVDRIP) and old.kind in (ENCODE, DVDRIP):
+                if not new.size or not old.size:
+                    return Verdict.REVIEW, "Luminarr rule 8.6.1.1 requires a 1.20:1 encode-size variance; one size is missing, so coexistence cannot be established."
+                ratio = max(new.size, old.size) / min(new.size, old.size)
+                return Verdict.BLOCK, f"Luminarr rule 8.6.1.1 needs a larger/smaller size ratio of at least 1.2000; this pair is {ratio:.4f}. No qualifying REPACK/PROPER or broader HDR package was established."
+            return Verdict.BLOCK, f"The {new.resolution} {self.family(new)} slot is occupied; {new.hdr_label} supplies no qualifying HDR upgrade over {old.hdr_label}, and this is not a same-group REPACK/PROPER."
 
         label = f"{upload.resolution} {self.family(upload)} {upload.hdr_label}"
         return self.by_slot(upload, existing, self.key, label, trump=trump, coexists=self.coexists, capacity=1_000)

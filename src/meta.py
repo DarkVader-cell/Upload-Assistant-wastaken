@@ -29,6 +29,8 @@ _TRACKER_ID_ALIASES = {
     "FL": "FILELIST",
     "FF": "FUNFILE",
     "GPW": "GREATPOSTERWALL",
+    "THN": "TORRENTHAVEN",
+    "BROADCASTHENET": "BROADCASTHENET",
     "HDB": "HDBITS",
     "HDS": "HDSPACE",
     "HDT": "HDTORRENTS",
@@ -86,7 +88,6 @@ _TRACKER_ID_ALIASES = {
     "YUS": "YUSCENE",
     "ZNTH": "ZENITH",
     "SUIO": "SUIO",
-    "BROADCASTHENET": "BROADCASTHENET",
     "HDBITS": "HDBITS",
     "HAWKEUNO": "HAWKEUNO",
     "ONLYENCODES": "ONLYENCODES",
@@ -428,6 +429,7 @@ class Meta:
     menu_images: list[Any] = field(default_factory=list)
     mismatched_imdb_id: int = 0
     mkbrr_threads: str | int | None = None
+    confirm_not_uploaded: list[str] | None = None
     mkbrr: bool = False
     modified_release_reason: str | None = None
     mode: str = ""
@@ -609,6 +611,8 @@ class Meta:
     skip_upload_trackers: list[Any] = field(default_factory=list)
     skip_uploading: int | bool = False
     skipit: bool = False
+    # The user chose to skip this release at the confirmation prompt.
+    skipped_by_user: bool = False
     skipping: str | None = None
     sorted_filelist: bool = False
     source_size: int = 0

@@ -137,6 +137,8 @@ def _warm_up(start_session) -> None:
 
 def test_closed_tab_keeps_upload_running_and_reattach_replays_missed_output(start_session) -> None:
     process, response, terminated = start_session("keep-running")
+    assert response.headers["X-Accel-Buffering"] == "no"
+    assert "no-transform" in response.headers["Cache-Control"]
     events = _events(response)
     _read_until(events, lambda event: event["type"] == "replay_done")
     process.stdout.feed("Fictional first line\n")
@@ -154,6 +156,8 @@ def test_closed_tab_keeps_upload_running_and_reattach_replays_missed_output(star
     assert [(item["session_id"], item["label"], item["running"]) for item in sessions] == [("keep-running", "Fictional Journey 2024", True)]
 
     resumed = client.get(f"/api/session_stream?session_id=keep-running&after={first['seq']}", buffered=False)
+    assert resumed.headers["X-Accel-Buffering"] == "no"
+    assert "no-transform" in resumed.headers["Cache-Control"]
     resumed_events = _events(resumed)
     backlog = _read_until(resumed_events, lambda event: event["type"] == "replay_done")
     replayed = "".join(str(event.get("data", "")) for event in backlog)

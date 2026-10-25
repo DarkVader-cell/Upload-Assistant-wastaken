@@ -5,6 +5,9 @@ def test_informational_colon_line_is_not_treated_as_prompt() -> None:
     line = "Found a valid torrent with preferred piece size from client search:"
 
     assert not _looks_like_subprocess_prompt(line)  # noqa: S101
+    assert not _looks_like_subprocess_prompt("Type : Video")  # noqa: S101
+    assert not _looks_like_subprocess_prompt("Input file: movie.mkv")  # noqa: S101
+    assert not _looks_like_subprocess_prompt("Selected stream:")  # noqa: S101
 
 
 def test_explicit_input_prompt_is_detected() -> None:

@@ -18,6 +18,7 @@ from src.release_validation import release_metadata_issues, tracker_release_name
 from src.safe_url import UnsafeURLError, assert_public_http_url
 from upload import queue_item_has_successful_upload
 from web_ui import server as webui_server
+from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
 
 
 def test_detached_metadata_policy_respects_optional_and_no_prompt_flags():
@@ -81,7 +82,7 @@ def test_safe_url_rejects_private_network_targets():
     asyncio.run(check())
 
 
-def test_detached_qui_restore_marks_inflight_jobs_retryable(tmp_path, monkeypatch):
+def test_detached_qui_restore_marks_inflight_jobs_retryable(tmp_path):
     state_path = tmp_path / "qui_jobs.json"
     state_path.write_text(
         '{"job-1": {"id": "job-1", "status": "running", '
@@ -89,49 +90,33 @@ def test_detached_qui_restore_marks_inflight_jobs_retryable(tmp_path, monkeypatc
         '"source_path": "/media/item"}}',
         encoding="utf-8",
     )
-    monkeypatch.setattr(webui_server, "DETACHED_JOB_STATE_PATH", state_path)
-    with webui_server.detached_jobs_lock:
-        webui_server.detached_jobs.clear()
-        webui_server.detached_job_queue.clear()
-
-    webui_server._restore_detached_jobs()
-
-    assert webui_server.detached_jobs["job-1"]["status"] == "interrupted"
-    assert webui_server.detached_jobs["job-1"]["recovery_available"] is True
-    assert webui_server.detached_job_queue == []
+    restored = restore_detached_jobs(state_path)
+    assert restored is not None
+    assert restored.jobs["job-1"]["status"] == "interrupted"
+    assert restored.jobs["job-1"]["recovery_available"] is True
+    assert restored.queue == []
 
 
 def test_detached_operation_arguments_are_validated_and_unattended():
-    validated, display = webui_server._validated_detached_args('--trackers "OE, AITHER"')
+    validated, display = validate_detached_args('--trackers "OE, AITHER"', True, webui_server._validate_upload_assistant_args)
     assert validated[-1] == "-ua"
     assert display.endswith("-ua")
 
 
 def test_detached_job_snapshot_exposes_safe_control_capabilities():
-    with webui_server.detached_jobs_lock:
-        webui_server.detached_jobs.clear()
-        webui_server.detached_job_queue.clear()
-        webui_server.detached_jobs["queued-1"] = {
-            "id": "queued-1",
-            "status": "queued",
-            "source_path": "/media/item",
-            "args": "-ua",
-            "command": ["python", "upload.py", "/media/item", "-ua"],
-        }
-        webui_server.detached_job_queue.append("queued-1")
-
-    snapshot = webui_server._detached_job_snapshot()
+    jobs = {"queued-1": {
+        "id": "queued-1", "status": "queued", "source_path": "/media/item",
+        "args": "-ua", "command": ["python", "upload.py", "/media/item", "-ua"],
+    }}
+    snapshot = snapshot_detached_jobs(jobs, ["queued-1"], limit=10, json_safe=lambda value: value)
     assert snapshot[0]["queue_position"] == 1
     assert snapshot[0]["can_edit"] is True
     assert snapshot[0]["can_cancel"] is True
     assert "command" not in snapshot[0]
-    with webui_server.detached_jobs_lock:
-        webui_server.detached_jobs.clear()
-        webui_server.detached_job_queue.clear()
 
 
 def test_detached_job_snapshot_keeps_release_metadata_wait_cancelable():
-    snapshot = webui_server.snapshot_detached_jobs(
+    snapshot = snapshot_detached_jobs(
         {
             "wait-1": {
                 "id": "wait-1",

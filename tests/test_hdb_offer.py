@@ -294,7 +294,7 @@ async def test_outer_offer_loop_never_processes_trackers_crossseeds_clients_or_h
         meta.path, meta.hdb_offer, meta.screens, meta.mkbrr = str(media), True, 3, cli_mkbrr
         return meta, None, None
     monkeypatch.setattr(upload, "parser", SimpleNamespace(parse=parse), raising=False)
-    async def handle_queue(path, meta, *args):
+    async def handle_queue(_path, meta, *_args, **_kwargs):
         assert meta.mkbrr is False  # disabled before even queue construction
         return [str(media)], None
     monkeypatch.setattr(upload.QueueManager, "handle_queue", handle_queue)

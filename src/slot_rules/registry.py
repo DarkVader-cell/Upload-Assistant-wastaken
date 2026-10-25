@@ -10,7 +10,8 @@ from src.console import logger
 from src.dupe_checking import DupeChecker, DupeInput
 from src.meta import Meta
 from src.region import get_service
-from src.slot_rules.base import SlotRules
+from src.slot_rules.base import SlotRules, describe_releases
+from src.slot_rules.links import linked_entry
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import DISC, ReleaseProfile, group_from_name, profile_from_entry, profile_from_meta
 from src.slot_rules.trackers.aither import AitherSlotRules
@@ -102,7 +103,12 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
     tracker = tracker.upper()
     if tracker in MUSIC_SLOT_RULES:
         stored = meta.get(MUSIC_SLOT_RULES[tracker])
-        return stored if meta.category == "MUSIC" and slot_rules_enabled(config) and isinstance(stored, SlotDecision) else None
+        if meta.category == "MUSIC" and slot_rules_enabled(config) and isinstance(stored, SlotDecision):
+            stored.conflicts = [linked_entry(entry, tracker) for entry in stored.conflicts]
+            stored.comparisons = [linked_entry(entry, tracker) for entry in stored.comparisons]
+            stored.related_releases = [linked_entry(entry, tracker) for entry in stored.related_releases]
+            return stored
+        return None
     rules_cls = SLOT_RULES.get(tracker)
     applies = slot_rules_apply(meta, config) or (slot_rules_enabled(config) and
               (tracker in {"PASSTHEPOPCORN", "HDBITS", "LST", "BLUTOPIA"} or (tracker == "AITHER" and meta.category in SLOT_CATEGORIES)))
@@ -132,7 +138,7 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         season_packs: list[ReleaseProfile] = []
         provider_cache: dict[str, str | None] = {}
         for dupe in dupes:
-            entry = _as_entry(dupe)
+            entry = linked_entry(_as_entry(dupe), tracker)
             name = str(entry.get("name") or "")
             if not name:
                 continue
@@ -163,10 +169,15 @@ async def evaluate_slots(dupes: Sequence[DupeInput], meta: Meta, tracker: str, c
         # duplicate, or an unknown-occupancy review).
         rules._candidate = upload
         decision = rules.evaluate(upload, existing)
-        if meta.get(f'{tracker}_search_failed') and (decision is None or decision.verdict is not Verdict.BLOCK):
-            unavailable=rules.decision(Verdict.REVIEW,'Tracker search failed; existing-release occupancy is unknown',why='No reliable existing-release list was obtained. Retry the search or check the site manually; an empty result after a connection error does not establish a vacant slot.')
+        incomplete = bool(meta.get(f'{tracker}_search_incomplete'))
+        if (meta.get(f'{tracker}_search_failed') or incomplete) and (decision is None or decision.verdict is not Verdict.BLOCK):
+            detail = str(meta.get(f'{tracker}_search_incomplete_reason') or 'No reliable existing-release list was obtained.')
+            unavailable=rules.decision(Verdict.REVIEW,'Tracker search incomplete; existing-release occupancy is unknown' if incomplete else 'Tracker search failed; existing-release occupancy is unknown',why=detail + ' Retry the full search or check the site manually; an incomplete result does not establish a vacant slot.')
+            unavailable.related_releases = describe_releases(existing, 'Partial search result only; not a confirmed replacement/report target.', role='search_context')
             if decision is not None:
                 unavailable.requirements=list(decision.requirements)
+                unavailable.protected_ids = list(decision.protected_ids)
+                unavailable.slot = decision.slot
             unavailable.requirements.insert(0,'Complete a successful tracker search or verify on-site occupancy before uploading.')
             unavailable.requires_evidence=True
             return unavailable

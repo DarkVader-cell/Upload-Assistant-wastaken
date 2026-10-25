@@ -100,8 +100,13 @@ def test_every_default_setting_is_exposed_once_by_webui_metadata() -> None:
         assert exposed_keys.count(key) == 1, f"DEFAULT/{key} is missing or duplicated in the WebUI"
 
 
-def test_removed_keep_meta_is_not_exposed_from_existing_config() -> None:
-    user_section = {"keep_meta": True, "stats_enabled": True, "custom_setting": "preserved"}
+@pytest.mark.parametrize(
+    "removed_key,legacy_value",
+    [("keep_meta", True), ("dvd_mediainfo_path", ""), ("dvd_mediainfo_path", "/legacy/DVD_MediaInfo")],
+)
+def test_removed_settings_are_not_exposed_from_existing_config(removed_key: str, legacy_value: object) -> None:
+    """Hide retired defaults without discarding saved values or custom fields."""
+    user_section = {removed_key: legacy_value, "stats_enabled": True, "custom_setting": "preserved"}
     items = server._build_config_items(
         {"stats_enabled": False},
         user_section,
@@ -113,7 +118,7 @@ def test_removed_keep_meta_is_not_exposed_from_existing_config() -> None:
     assert [item["key"] for item in items] == ["MAIN SETTINGS", "custom_setting"]
     assert items[0]["children"][0]["value"] is True
     assert items[1]["value"] == "preserved"
-    assert user_section["keep_meta"] is True
+    assert user_section[removed_key] == legacy_value
 
 
 @pytest.mark.parametrize("keep_running,timeout", [(True, 60), (False, 0), (True, 150.5)])
@@ -485,8 +490,8 @@ def test_example_config_keeps_only_primary_screenshot_description_defaults() -> 
         if not isinstance(tracker, dict):
             continue
         active_overrides = override_keys.intersection(tracker)
-        if name == "QINGWA":
-            # Upstream supplies QINGWA-specific description defaults.
+        if name in {"QINGWA", "VULTU"}:
+            # Preserve upstream's tracker-specific privacy defaults.
             assert tracker["anon"] is True
             continue
         assert active_overrides <= {"anon"}

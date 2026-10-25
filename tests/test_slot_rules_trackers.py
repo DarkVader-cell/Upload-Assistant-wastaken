@@ -308,7 +308,7 @@ def test_greatposterwall_always_reviews_with_empty_slots() -> None:
     decision = GreatPosterWallSlotRules(meta).evaluate(prof(f"{T}.1080p.BluRay.DD5.1.x264-NOGRPA"), [])
     assert decision is not None
     assert decision.verdict is REVIEW
-    assert "Retention slot" in decision.notes[0]
+    assert any("Retention slot" in note for note in decision.notes)
 
 
 class TestCapybaraCompleteDual:

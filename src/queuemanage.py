@@ -1,6 +1,7 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import asyncio
 import contextlib
+import hashlib
 import json
 import os
 import re
@@ -12,10 +13,11 @@ from typing import Any, cast
 import cli_ui
 import click
 
+from src import webui_events
 from src.console import logger
 from src.meta import Meta
 from src.queue_policy import should_prompt_for_queue_edits
-from src.webui_paths import is_generated_queue_path, read_generated_queue, subprocess_roots
+from src.webui_paths import QUEUE_HASH_ENV, generated_queue_name, is_generated_queue_path, read_generated_queue, subprocess_roots
 
 type QueueItem = dict[str, Any]
 type QueueList = list[str] | list[QueueItem]
@@ -429,6 +431,7 @@ class QueueManager:
         meta: Meta,
         paths: Sequence[str],
         base_dir: str,
+        config: Mapping[str, Any] | None = None,
     ) -> tuple[QueueList, str | None]:
         allowed_extensions = [".mkv", ".mp4", ".ts"]
         queue: list[Any] = []
@@ -451,15 +454,25 @@ class QueueManager:
         if path.endswith(".txt") and not meta.unit3d:
             logger.info(f"[bold yellow]Detected a text file for queue input: {path}[/bold yellow]")
             if Path(path).exists():
-                queue_name = Path(path).stem
+                generated_queue = subprocess_roots() is not None and is_generated_queue_path(path)
+                # Verify the generated file before trusting its content digest.
+                # Browser retries receive a new temporary filename, not a new queue.
+                lines = await asyncio.to_thread(read_generated_queue, path) if generated_queue else await _read_text_lines(path)
+                if generated_queue:
+                    # A changed target/mode is a different request, not a resume
+                    # of the same paths to their previous tracker selection.
+                    controls = {key: value for key, value in meta.to_dict().items()
+                                if key not in {'path','uuid','queue','args_line_queue','item_args','confirm_not_uploaded'}}
+                    defaults = (config or {}).get('TRACKERS', {}).get('default_trackers')
+                    scope = hashlib.sha256(json.dumps([os.environ[QUEUE_HASH_ENV], controls, defaults], sort_keys=True, default=str).encode()).hexdigest()
+                    queue_name = generated_queue_name(scope)
+                else:
+                    queue_name = Path(path).stem
                 meta.queue = queue_name
                 meta.args_line_queue = True
 
                 log_file = await QueueManager.get_log_file(base_dir, queue_name)
                 processed_files = await QueueManager.load_processed_files(log_file)
-
-                generated_queue = subprocess_roots() is not None and is_generated_queue_path(path)
-                lines = await asyncio.to_thread(read_generated_queue, path) if generated_queue else await _read_text_lines(path)
                 queue = []
                 for line in lines:
                     line_stripped = line.strip()
@@ -574,9 +587,9 @@ class QueueManager:
 
                     if should_prompt_for_queue_edits(meta):
                         logger.info("[yellow]Do you want to update the queue log, edit, discard, or keep the existing queue?[/yellow]")
-                        edit_choice_raw = cli_ui.ask_string(
-                            "Enter 'u' to update, 'a' to add specific new files, 'e' to edit, 'd' to discard, or press Enter to keep it as is: "
-                        )
+                        question, buttons = webui_events.letter_prompt([("u", "update"), ("a", "add specific new files"), ("e", "edit"), ("d", "discard")], "keep it as is")
+                        with webui_events.answer_buttons(buttons):
+                            edit_choice_raw = cli_ui.ask_string(question)
                         edit_choice = (edit_choice_raw or "").strip().lower()
 
                         if edit_choice == "u":
@@ -588,7 +601,8 @@ class QueueManager:
                             logger.info("[yellow]Select which new files to add (comma-separated numbers):[/yellow]")
                             for idx, file in enumerate(sorted(new_files), 1):
                                 logger.info(f"  {idx}. {file}")
-                            selected_raw = cli_ui.ask_string("Enter numbers (e.g., 1,3,5): ")
+                            with webui_events.numbered_options([Path(file).name for file in sorted(new_files)]):
+                                selected_raw = cli_ui.ask_string("Enter numbers (e.g., 1,3,5): ")
                             selected = (selected_raw or "").strip()
                             try:
                                 indices = [int(x) for x in selected.split(",") if x.strip().isdigit()]
@@ -600,7 +614,7 @@ class QueueManager:
                             except Exception as e:
                                 logger.info(f"[bold red]Failed to update queue with selected files: {e}. Using the existing queue.")
                                 queue = existing_queue
-                        elif edit_choice == "e":
+                        elif edit_choice == "e" and webui_events.editor_available():
                             edited_content = cast(str | None, click.edit(cast(Any, json.dumps(current_files, indent=4))))
                             if edited_content:
                                 try:
@@ -630,10 +644,12 @@ class QueueManager:
                     logger.info("[green]No changes detected in the queue.[/green]")
                     if should_prompt_for_queue_edits(meta):
                         logger.info("[yellow]Do you want to edit, discard, or keep the existing queue?[/yellow]")
-                        edit_choice_raw = cli_ui.ask_string("Enter 'e' to edit, 'd' to discard, or press Enter to keep it as is: ")
+                        question, buttons = webui_events.letter_prompt([("e", "edit"), ("d", "discard")], "keep it as is")
+                        with webui_events.answer_buttons(buttons):
+                            edit_choice_raw = cli_ui.ask_string(question)
                         edit_choice = (edit_choice_raw or "").strip().lower()
 
-                        if edit_choice == "e":
+                        if edit_choice == "e" and webui_events.editor_available():
                             edited_content = cast(str | None, click.edit(cast(Any, json.dumps(existing_queue, indent=4))))
                             if edited_content:
                                 try:
@@ -665,7 +681,9 @@ class QueueManager:
 
                 logger.info(f"[cyan]A new queue log file will be created:[/cyan] [green]{log_file}[/green]")
                 logger.info(f"[cyan]The new queue will contain {len(queue)} items.[/cyan]")
-                if should_prompt_for_queue_edits(meta):
+                # Retain unattended safety and only offer an available editor.
+                edit_choice = ""
+                if should_prompt_for_queue_edits(meta) and webui_events.editor_available():
                     logger.info("[cyan]Do you want to edit the initial queue before saving?[/cyan]")
                     edit_choice_raw = cli_ui.ask_string("Enter 'e' to edit, or press Enter to save as is: ")
                     edit_choice = (edit_choice_raw or "").strip().lower()

@@ -5,7 +5,6 @@ import contextlib
 import gc
 import itertools
 import math
-import re
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
@@ -19,9 +18,10 @@ import pyimgbox
 from src.console import logger
 from src.image_hosts import is_enabled_image_host
 from src.meta import Meta
+from src.runtime.image_progress import ImageUploadJournal
 from src.screenshot_manifest import files as manifest_files
 from src.stats import record_event_async
-from src.temp_paths import screenshots_dir
+from src.temp_paths import release_temp_dir, screenshots_dir
 from src.tracker_images import deduplicate_images, image_tags
 from src.webui_progress import complete_progress, publish_progress
 
@@ -131,14 +131,17 @@ class UploadScreensManager:
                     complete_progress(
                         progress["id"], progress["label"], current=progress["current"], total=progress["total"], detail=progress["detail"], group="images", unit="images"
                     )
-            if outcome != "skipped":
-                service = str(meta.imghost or self.config.get("DEFAULT", {}).get(f"img_host_{img_host_num}", "image_host"))
+            actual_attempts = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) - attempts_before
+            if outcome != "skipped" and actual_attempts > 0:
+                service = str(return_dict.get("_stats_last_network_image_host") or meta.imghost or self.config.get("DEFAULT", {}).get(f"img_host_{img_host_num}", "image_host"))
                 bytes_sent = int(return_dict.get("_stats_image_upload_bytes", 0) or 0) - bytes_before
+                fresh_successes = int(return_dict.get("_stats_image_upload_successes", 0) or 0) - successes_before
+                network_outcome = "success" if fresh_successes > 0 and outcome == "success" else "error"
                 await record_event_async(
                     "api",
                     service=service,
                     operation="image_upload",
-                    outcome=outcome,
+                    outcome=network_outcome,
                     duration_ms=(time.monotonic() - started) * 1000,
                     bytes_count=max(0, bytes_sent),
                 )
@@ -985,61 +988,7 @@ async def _upload_screens(
         existing_images: list[ImageDict] = []
         existing_count = 0
     else:
-        registered_screens = manifest_files(meta.base_dir, meta.uuid, "main")
-        if registered_screens:
-            # Manifest entries are absolute paths and can live outside the
-            # process working directory on seedboxes.  Keep them absolute:
-            # every image-host adapter accepts a path, and this avoids a
-            # process-global ``cwd`` race between concurrent uploads.
-            image_glob = [str(path) for path in registered_screens]
-        else:
-            suffixes = ("png", "jpg", "jpeg") if meta.category == "BOOK" else ("png",)
-            image_patterns = [pattern for suffix in suffixes for pattern in (f"*.{suffix}", f".[!.]*.{suffix}")]
-            image_glob = []
-            for pattern in image_patterns:
-                glob_results = await asyncio.to_thread(lambda p=pattern: [str(path) for path in screenshot_path.glob(p)])
-                image_glob.extend(glob_results)
-
-            unwanted_patterns = ["FILE*", "PLAYLIST*", "POSTER*"]
-            unwanted_files: set[str] = set()
-            for pattern in unwanted_patterns:
-                glob_results = await asyncio.to_thread(lambda p=pattern: [str(path) for path in screenshot_path.glob(p)])
-                unwanted_files.update(glob_results)
-                if pattern.startswith("FILE") or pattern.startswith("PLAYLIST") or pattern.startswith("POSTER"):
-                    hidden_pattern = "." + pattern
-                    hidden_glob_results = await asyncio.to_thread(lambda hp=hidden_pattern: [str(path) for path in screenshot_path.glob(hp)])
-                    unwanted_files.update(hidden_glob_results)
-
-            image_glob = [file for file in image_glob if file not in unwanted_files]
-            image_glob = list(set(image_glob))
-
-        # Filter out menu screenshots from normal screenshot upload
-        menu_basenames = set()
-        if hasattr(meta, "menu_images") and meta.menu_images:
-            for img in meta.menu_images:
-                if isinstance(img, dict):
-                    local_path = img.get("local_file_path") or img.get("raw_url")
-                    if local_path:
-                        menu_basenames.add(Path(local_path).name)
-
-        def is_menu_screenshot(filename: str) -> bool:
-            """Return whether filename belongs to a DVD menu screenshot."""
-            if filename in menu_basenames:
-                return True
-            return "-VIDEO_TS-" in filename or "-VTS_" in filename
-
-        image_glob = [file for file in image_glob if not is_menu_screenshot(file)]
-
-        # Sort images by numeric suffix
-        def extract_numeric_suffix(filename: str) -> float:
-            """Return the numeric screenshot suffix for stable ordering."""
-            match = re.search(r"-(\d+)\.(?:png|jpe?g)$", filename, re.IGNORECASE)
-            return int(match.group(1)) if match else float("inf")
-
-        image_glob.sort(key=extract_numeric_suffix)
-
-        logger.debug(f"image globs (sorted): {image_glob}")
-
+        image_glob = [str(path) for path in manifest_files(meta.base_dir, meta.uuid, "main")]
         existing_images = [img for img in image_list if img.get("img_url") and img.get("web_url")]
         existing_count = len(existing_images)
 
@@ -1071,7 +1020,6 @@ async def _upload_screens(
         return image_list, len(image_list)
 
     upload_tasks: list[tuple[int, str, str, dict[str, Any], Meta]] = [(index, image, img_host, config, meta) for index, image in enumerate(image_glob[:images_needed])]
-    return_dict["_stats_image_upload_attempts"] = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) + len(upload_tasks)
 
     # Concurrency Control
     default_pool_size = len(upload_tasks)
@@ -1117,6 +1065,9 @@ async def _upload_screens(
 
     report_upload_progress()
 
+    journal = ImageUploadJournal(release_temp_dir(meta.base_dir, meta.uuid)) if meta.uuid else None
+    cached_indexes: set[int] = set()
+
     async def async_upload(
         task: tuple[int, str, str, dict[str, Any], Meta],
         max_retries: int = 3,
@@ -1127,10 +1078,22 @@ async def _upload_screens(
         retry_count = 0
 
         async with semaphore:
+            cache_key = journal.key(str(task_args[0]), img_host) if journal else None
+            cached = await asyncio.to_thread(journal.get, cache_key) if journal else None
+            if cached is not None:
+                cached["local_file_path"] = str(task_args[0])
+                cached_indexes.add(index)
+                if not using_custom_img_list:
+                    return_dict.setdefault("_uploaded_image_files", set()).add(str(Path(str(task_args[0])).resolve()))
+                completed_uploads += 1
+                report_upload_progress("Reused completed image upload")
+                return index, cached
             while retry_count <= max_retries:
                 future: asyncio.Task[dict[str, Any]] | None = None
                 try:
                     await wait_for_image_start_slot()
+                    return_dict["_stats_image_upload_attempts"] = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) + 1
+                    return_dict["_stats_last_network_image_host"] = img_host
                     future = asyncio.create_task(upload_image_task(task_args))
                     running_tasks.add(future)
 
@@ -1139,6 +1102,8 @@ async def _upload_screens(
                         running_tasks.discard(future)
 
                         if result.get("status") == "success":
+                            if journal and cache_key == journal.key(str(task_args[0]), img_host):
+                                await asyncio.to_thread(journal.put, cache_key, result)
                             if not using_custom_img_list:
                                 uploaded_image_files = return_dict.setdefault("_uploaded_image_files", set())
                                 if isinstance(uploaded_image_files, set):
@@ -1211,12 +1176,14 @@ async def _upload_screens(
                     result = task.result()
                     if result is None:
                         host_failed = True
-                        break
-                    results.append(result)
+                    else:
+                        # Do not lose siblings already completed in this same batch.
+                        results.append(result)
                 if host_failed:
                     for task in pending:
                         task.cancel()
-                    await asyncio.gather(*pending, return_exceptions=True)
+                    late_results = await asyncio.gather(*pending, return_exceptions=True)
+                    results.extend(result for result in late_results if isinstance(result, tuple))
                     pending.clear()
                     logger.info(f"[yellow]{img_host} failed during screenshot upload; switching hosts without waiting for remaining images.[/yellow]")
             results.sort(key=lambda x: x[0])
@@ -1224,9 +1191,10 @@ async def _upload_screens(
             logger.error(f"[red]Error during uploads: {e!s}[/red]")
 
         successfully_uploaded = [(index, result) for index, result in results if result["status"] == "success"]
-        return_dict["_stats_image_upload_successes"] = int(return_dict.get("_stats_image_upload_successes", 0) or 0) + len(successfully_uploaded)
+        fresh_successes = [(index, result) for index, result in successfully_uploaded if index not in cached_indexes]
+        return_dict["_stats_image_upload_successes"] = int(return_dict.get("_stats_image_upload_successes", 0) or 0) + len(fresh_successes)
         uploaded_bytes = 0
-        for index, _result in successfully_uploaded:
+        for index, _result in fresh_successes:
             with contextlib.suppress(OSError):
                 uploaded_bytes += Path(upload_tasks[index][1]).stat().st_size
         return_dict["_stats_image_upload_bytes"] = int(return_dict.get("_stats_image_upload_bytes", 0) or 0) + uploaded_bytes

@@ -837,7 +837,7 @@ class HDBits:
             all_image_files = sorted(set(image_glob))
             manifest = Path(meta.base_dir) / "tmp" / meta.uuid / "screenshot_manifest.json"
             if manifest.is_file():
-                all_image_files = [str(path) for path in manifest_files(meta.base_dir, meta.uuid, "main")]
+                all_image_files = [str(path) for path in manifest_files(meta.base_dir, meta.uuid, "main") if path.suffix.casefold() == ".png"]
 
         if not all_image_files and not meta.comparison and not meta.hdb_offer:
             images = [item for item in meta.image_list if isinstance(item, dict)] if isinstance(meta.image_list, list) else []
@@ -846,6 +846,7 @@ class HDBits:
                 directory = Path(meta.base_dir) / "tmp" / meta.uuid / "rehosted_images" / "HDBITS"
                 limit = 3 if meta.category == "TV" and meta.tv_pack == 0 else 6
                 all_image_files = [str(path) for path in await recover_hosted_images(directory, images, limit)]
+
 
         # At this point, all_image_files contains paths to all images we want to upload
         if not all_image_files:

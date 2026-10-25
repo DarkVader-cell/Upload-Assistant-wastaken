@@ -9,6 +9,7 @@ from typing import Any, cast
 import cli_ui
 from rich.markup import escape
 
+from src import webui_events
 from src.artwork import is_valid_cover_image
 from src.cleanup import cleanup_manager
 from src.cogs.redaction import Redaction
@@ -21,6 +22,7 @@ from src.manualpackage import ManualPackageManager
 from src.meta import Meta
 from src.qbitwait import Wait
 from src.rehostimages import check_tracker_image_hosts, has_restricted_image_hosts, select_common_image_host
+from src.runtime.submission_progress import SubmissionJournal, SubmissionNeedsReviewError
 from src.runtime.tracker_requests import retry_readonly
 from src.slot_rules.models import Verdict
 from src.slot_rules.registry import evaluate_slots
@@ -73,6 +75,37 @@ async def check_mod_q_and_draft(
     return modq, draft, tracker_caps
 
 
+async def resume_acknowledged_clients(meta: Meta, client: Any) -> set[str]:
+    """Recover seeding independently of NEW-upload eligibility and report flows."""
+    if meta.site_check or meta.prepare_only or meta.dry_run_plan:
+        return set()
+    journal = await asyncio.to_thread(SubmissionJournal.for_meta, meta)
+    if journal is None:
+        return set()
+    completed = set()
+    targets = meta.trackers.split(',') if isinstance(meta.trackers, str) else (meta.trackers or [])
+    for target in targets:
+        tracker = Meta.canonical_tracker_name(str(target).strip())
+        row = await asyncio.to_thread(journal.lookup, tracker)
+        if not row or row['state'] != 'acknowledged':
+            continue
+        completed.add(tracker)
+        restored = await asyncio.to_thread(journal.restore_torrent, tracker, meta)
+        status = meta.tracker_status.setdefault(tracker, {})
+        status.update(upload=False, upload_success=True, needs_review=not restored,
+                      status_message='Known site ACK; exact torrent restored, no new POST.' if restored else 'Known site ACK, but the retained torrent is unavailable; retrieve it from the site, do not repost.')
+        if restored:
+            try:
+                await client.add_to_client(meta, tracker)
+                status['client_restore_attempted'] = True
+            except Exception as error:
+                status.update(needs_review=True, status_message=f'Known site ACK; client recovery failed: {Redaction.redact_value(str(error))}. No new POST was made.')
+        logger.info(f"{tracker}: {escape(status['status_message'])}")
+        webui_events.tracker_result(tracker, 'failed' if status.get('needs_review') else 'success',
+                                   torrent_id=status.get('torrent_id'), message=status['status_message'])
+    return completed
+
+
 async def process_trackers(
     meta: Meta,
     config: dict[str, Any],
@@ -90,6 +123,49 @@ async def process_trackers(
     tracker_setup = TrackerSetup(config=config)
     tracker_setup_any = cast(Any, tracker_setup)
     enabled_trackers = list(cast(Sequence[str], tracker_setup_any.trackers_enabled(meta)))
+    journal = await asyncio.to_thread(SubmissionJournal.for_meta, meta)
+    confirmations = meta.confirm_not_uploaded or []
+    if isinstance(confirmations, str):
+        confirmations = [confirmations]
+    confirmed_absent = {}
+    for entry in confirmations:
+        for value in str(entry).split(","):
+            name, separator, token = value.strip().partition(":")
+            if separator and token:
+                confirmed_absent[Meta.canonical_tracker_name(name.upper())] = token
+
+    async def submit_once(tracker, callback, tracker_class):
+        if journal is None or getattr(tracker_class, "is_usenet", False):
+            return await callback()
+        status = meta.tracker_status.setdefault(tracker, {})
+        try:
+            claimed = await asyncio.to_thread(journal.begin, tracker, confirmation=confirmed_absent.get(tracker))
+        except SubmissionNeedsReviewError as error:
+            status.update(upload=False, upload_success=False, needs_review=True, status_message=str(error))
+            logger.warning(str(error))
+            return False
+        if not claimed:
+            restored = await asyncio.to_thread(journal.restore_torrent, tracker, meta)
+            status.update(upload_success=restored, needs_review=not restored, status_message="Previous site acknowledgement retained; not resubmitted." if restored else "Site previously acknowledged this upload, but the exact torrent is unavailable; retrieve it from the site, do not repost.")
+            return restored
+        try:
+            result = await callback()
+        except BaseException:
+            await asyncio.to_thread(journal.uncertain, tracker)
+            interrupted = await asyncio.to_thread(journal.lookup, tracker)
+            message = f"{tracker}: submission interrupted; verify on-site before --confirm-not-uploaded {tracker}:{interrupted['nonce']}."
+            meta.tracker_status.setdefault(tracker, {}).update(needs_review=True, status_message=message)
+            raise
+        status = meta.tracker_status.setdefault(tracker, {})
+        if result is True and "data error" not in str(status.get("status_message", "")).lower():
+            await asyncio.to_thread(journal.acknowledge, tracker, meta)
+        else:
+            await asyncio.to_thread(journal.uncertain, tracker)
+            status["needs_review"] = True
+            interrupted = await asyncio.to_thread(journal.lookup, tracker)
+            status["status_message"] = str(status.get("status_message") or "Submission did not return an acknowledgement") + f"; verify on-site before --confirm-not-uploaded {tracker}:{interrupted['nonce']}. One-shot retry permission; slot checks still apply."
+        return result
+
     manual_targets = "MANUAL" in enabled_trackers
     torrent_targets = [
         tracker
@@ -117,6 +193,28 @@ async def process_trackers(
         default=0,
     )
 
+    def publish_tracker_result(tracker: str, tracker_class: Any, status: Mapping[str, Any], is_success: bool) -> None:
+        """Send the result to the Web UI's GUI mode, whatever the terminal print settings are."""
+        if not webui_events.enabled():
+            return
+        duration = meta.get(f"{tracker}_upload_duration")
+        duration_value = float(duration) if isinstance(duration, (int, float)) else None
+        if not is_success:
+            webui_events.tracker_result(tracker, "failed", message=status.get("status_message"), duration=duration_value)
+            return
+        link = status.get("torrent_link")
+        if not link and "torrent_id" in status:
+            link = f"{getattr(tracker_class, 'torrent_url', '')}{status['torrent_id']}"
+        message = str(status.get("status_message", ""))
+        webui_events.tracker_result(
+            tracker,
+            "success",
+            link=link,
+            torrent_id=status.get("torrent_id"),
+            message=message if message and "data error" not in message else None,
+            duration=duration_value,
+        )
+
     def print_tracker_result(
         tracker: str,
         tracker_class: Any,
@@ -124,6 +222,7 @@ async def process_trackers(
         is_success: bool,
     ) -> None:
         """Print tracker upload result immediately after upload completes."""
+        publish_tracker_result(tracker, tracker_class, status, is_success)
         try:
             # Check config settings for what to print
             print_links = meta.print_tracker_links
@@ -161,7 +260,7 @@ async def process_trackers(
             else:
                 status_message = str(status.get("status_message", "")).strip()
                 if status_message:
-                    logger.info(f"[red]{tracker_label} {escape(Redaction.redact_private_info(status_message))}[/red]")
+                    logger.info(f"[red]{tracker_label} {escape(Redaction.redact_private_info(status_message))}[/red]", extra={"ua_gui": False})
                     return
 
             if message is not None:
@@ -195,6 +294,18 @@ async def process_trackers(
             meta.name = meta.name.replace(" DUPE?", "")
 
         tracker = tracker.replace(" ", "").upper().strip()
+        if journal is not None and tracker not in confirmed_absent and tracker != "MANUAL":
+            previous = await asyncio.to_thread(journal.lookup, tracker)
+            if previous and previous["state"] == "acknowledged":
+                status = meta.tracker_status.setdefault(tracker, {})
+                restored = await asyncio.to_thread(journal.restore_torrent, tracker, meta)
+                status.update(upload=False, upload_success=True, needs_review=not restored,
+                              status_message="Resumed acknowledged upload; no tracker POST repeated." if restored else "Previously uploaded, but its retained torrent is unavailable. Retrieve the exact torrent from the site; do not repost.")
+                target_class = tracker_class or PassThePopcorn(config=config)
+                if restored and not getattr(target_class, "is_usenet", False):
+                    await client.add_to_client(meta, tracker)
+                print_tracker_result(tracker, target_class, status, restored)
+                return
         if tracker in {"AITHER", "LST"} and meta.tracker_status.get(tracker, {}).get("upload"):
             # A failed/retried upload must not report using a stale success/ID.
             meta.tracker_status[tracker]["upload_success"] = None
@@ -298,7 +409,7 @@ async def process_trackers(
                         await check_tracker_image_hosts(meta, tracker_class)
                         upload_start_time = time.monotonic()
                         try:
-                            is_uploaded = await tracker_class.upload(meta)
+                            is_uploaded = await submit_once(tracker, lambda: tracker_class.upload(meta), tracker_class)
                         finally:
                             meta[f"{tracker}_upload_duration"] = time.monotonic() - upload_start_time
                     except Exception as e:
@@ -322,7 +433,7 @@ async def process_trackers(
                 else:
                     status["upload_success"] = False
                     print_tracker_result(tracker, tracker_class, status, False)
-                    logger.info(f"[red]{tracker} upload failed or returned data error.[/red]")
+                    logger.info(f"[red]{tracker} upload failed or returned data error.[/red]", extra={"ua_gui": False})
 
         elif tracker in other_api_trackers or tracker in http_trackers:
             tracker_status = meta.tracker_status
@@ -339,7 +450,7 @@ async def process_trackers(
                         await check_tracker_image_hosts(meta, tracker_class)
                         upload_start_time = time.monotonic()
                         try:
-                            is_uploaded = await tracker_class.upload(meta)
+                            is_uploaded = await submit_once(tracker, lambda: tracker_class.upload(meta), tracker_class)
                         finally:
                             meta[f"{tracker}_upload_duration"] = time.monotonic() - upload_start_time
                     except Exception as e:
@@ -363,7 +474,7 @@ async def process_trackers(
                 else:
                     status["upload_success"] = False
                     print_tracker_result(tracker, tracker_class, status, False)
-                    logger.info(f"[red]{tracker} upload failed or returned data error.[/red]")
+                    logger.info(f"[red]{tracker} upload failed or returned data error.[/red]", extra={"ua_gui": False})
 
         elif tracker == "MANUAL":
             if meta.unattended:
@@ -420,7 +531,7 @@ async def process_trackers(
                     try:
                         upload_start_time = time.monotonic()
                         try:
-                            is_uploaded = await ptp.upload(meta, ptp_url, ptp_data)
+                            is_uploaded = await submit_once(tracker, lambda: ptp.upload(meta, ptp_url, ptp_data), ptp)
                         finally:
                             meta[f"{tracker}_upload_duration"] = time.monotonic() - upload_start_time
                     except Exception as e:
@@ -435,7 +546,7 @@ async def process_trackers(
                     else:
                         status["upload_success"] = False
                         print_tracker_result(tracker, ptp, status, False)
-                        logger.info(f"[red]{tracker} upload failed or returned data error.[/red]")
+                        logger.info(f"[red]{tracker} upload failed or returned data error.[/red]", extra={"ua_gui": False})
                 except Exception:
                     logger.info(traceback.format_exc(), extra={"markup": False})
                     return
@@ -461,6 +572,8 @@ async def process_trackers(
         # Log any exceptions that occurred
         for (tracker, _), result in zip(tasks, results, strict=False):
             if isinstance(result, Exception):
+                meta.tracker_status.setdefault(tracker, {}).update(needs_review=True,
+                    status_message=f'Tracker/client step incomplete: {Redaction.redact_value(str(result))}. Resume to recover known ACKs; do not blindly repost.')
                 logger.info(f"[red]{tracker} encountered an error: {escape(str(result))}[/red]")
                 logger.debug("".join(traceback.format_exception(type(result), result, result.__traceback__)), extra={"markup": False})
     else:

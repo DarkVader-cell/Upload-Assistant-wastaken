@@ -37,6 +37,16 @@ SUBTITLE_EXTENSIONS = (".srt", ".sub", ".vtt", ".ssa", ".ass", ".idx")
 DISC_EXCLUDE_GLOBS = ("._*", "*/._*", "*.lwi")
 
 
+def mkbrr_worker_args(value: object) -> list[str]:
+    """Zero/None means mkbrr auto-tuning, not a literal invalid worker count."""
+    if value is None or str(value).strip().casefold() in {"", "0", "auto"}:
+        return []
+    text = str(value).strip()
+    if not text.isdigit() or not 1 <= int(text) <= 256:
+        raise ValueError("mkbrr_threads must be auto, 0, or an integer from 1 to 256")
+    return ["--workers", str(int(text))]
+
+
 def calculate_piece_size(
     total_size: int,
     min_size: int,
@@ -341,8 +351,8 @@ class TorrentCreator:
                         if not piece_size and not tracker_url and not any(tracker in meta.trackers for tracker in ["HDBITS", "PASSTHEPOPCORN"]):
                             cmd.extend(["-m", "27"])
 
-                        if meta.mkbrr_threads != "0":
-                            cmd.extend(["--workers", str(meta.mkbrr_threads)])
+                        workers = mkbrr_worker_args(meta.mkbrr_threads)
+                        cmd.extend(workers)
 
                         if not meta.is_disc and meta.category in ("MOVIE", "TV"):
                             exclude_str = cls.build_mkbrr_exclude_string(str(path), creation_filelist, allow_subs=is_subs)
@@ -351,11 +361,13 @@ class TorrentCreator:
                             cmd.extend(["--exclude", ",".join(exclude)])
 
                         cmd.extend(["-o", str(output_path)])
-                        logger.debug(f"[cyan]mkbrr cmd: {cmd}")
+                        # Never log an announce URL containing a tracker passkey.
+                        logger.debug(f"[cyan]mkbrr hashing: workers={workers[-1] if workers else 'automatic'}, input_bytes={initial_size}")
 
                         # Run mkbrr subprocess in thread to avoid blocking
                         def run_mkbrr() -> int:
-                            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)  # noqa: S603
+                            # mkbrr prints UTF-8 file names; the Windows locale codec (cp1252) cannot read them.
+                            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace", bufsize=1)  # noqa: S603
 
                             if process.stdout is None:
                                 return process.wait()

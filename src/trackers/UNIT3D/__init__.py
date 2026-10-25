@@ -154,6 +154,12 @@ class UNIT3D:
         except (TypeError, ValueError):
             requested_max_pages = 0
         max_pages = max(1, requested_max_pages or configured_max_pages)
+        meta[f"{self.tracker}_search_incomplete"] = False
+        meta[f"{self.tracker}_search_incomplete_reason"] = ""
+        def incomplete(reason):
+            meta[f"{self.tracker}_search_incomplete"] = True
+            previous = str(meta.get(f"{self.tracker}_search_incomplete_reason") or "")
+            meta[f"{self.tracker}_search_incomplete_reason"] = (previous + " " + reason).strip()
         missing_details: list[dict[str, Any]] = []
         disc_type_ids: list[set[str]] = []
         title_releases: list[dict[str, Any]] = []
@@ -173,6 +179,7 @@ class UNIT3D:
                     canonical_url = request_url if request_params is None else f"{request_url}?{request_params!r}"
                     if canonical_url in seen_urls:
                         logger.warning(f"{self.tracker}: Unit3D duplicate search pagination loop detected; stopping.")
+                        incomplete("Tracker pagination repeated an already visited page.")
                         break
                     seen_urls.add(canonical_url)
                     logger.debug(f"{self.tracker}: Searching URL: {request_url} with params: {request_params} (pending={check_pending})")
@@ -182,6 +189,7 @@ class UNIT3D:
 
                     if response.status_code != 200:
                         logger.info(f"{self.tracker}: [bold red]Failed to search torrents. HTTP Status: {response.status_code}")
+                        incomplete(f"Tracker search returned unexpected HTTP {response.status_code}.")
                         break
 
                     data = response.json()
@@ -252,19 +260,24 @@ class UNIT3D:
                             missing_details.append(result)
 
                     next_url = data.get("links", {}).get("next") if isinstance(data.get("links"), dict) else None
-                    if check_pending or not isinstance(next_url, str) or not next_url.strip():
+                    has_next_page = isinstance(next_url, str) and bool(next_url.strip())
+                    if check_pending and has_next_page:
+                        incomplete("Additional pending-queue pages were not inspected.")
+                    if check_pending or not has_next_page:
                         break
                     candidate = urlsplit(urljoin(request_url, next_url))
                     # Never follow a pagination link to another origin: API
                     # credentials must remain scoped to the tracker endpoint.
                     if (candidate.scheme, candidate.hostname, candidate.port) != (initial_origin.scheme, initial_origin.hostname, initial_origin.port):
                         logger.warning(f"{self.tracker}: Ignoring Unit3D pagination link outside the tracker origin.")
+                        incomplete("Tracker supplied an out-of-origin pagination link; it was not followed.")
                         break
                     request_url = candidate.geturl()
                     request_params = None
                     has_next_page = True
                 if has_next_page and page_count == page_limit and not check_pending:
                     logger.warning(f"{self.tracker}: Unit3D duplicate search reached the {page_limit}-page safety limit.")
+                    incomplete(f"Search stopped at the configured {page_limit}-page safety limit while additional pages remained.")
 
             if missing_details and self._wants_torrent_details(meta):
                 # Some trackers ignore the resolution filter; spend the capped requests on the upload's resolution first.
@@ -507,18 +520,30 @@ class UNIT3D:
     async def get_sd(self, meta: Meta) -> dict[str, str]:
         return {"sd": f"{meta.sd}"}
 
-    async def get_keywords(self, meta: Meta) -> dict[str, str]:
+    def get_keyword_terms(self, meta: Meta) -> list[str]:
+        """Return non-empty, case-insensitively unique keyword terms.
+
+        Music releases have no TMDB keywords, so their album genres are sent first.
+        """
+        source = [*meta.genres, *meta.keywords] if meta.category == "MUSIC" else meta.keywords
+        terms: list[str] = []
+        seen: set[str] = set()
+        for kw in source:
+            kw_str = str(kw).strip()
+            if kw_str and kw_str.casefold() not in seen:
+                seen.add(kw_str.casefold())
+                terms.append(kw_str)
+        return terms
+
+    async def get_keywords(self, meta: Meta, max_terms: int | None = None) -> dict[str, str]:
         """
         Enforces a 255-character limit on the keywords payload without cutting off individual words.
         This complies with the UNIT3D database schema (VARCHAR(255)) and API validation rules
-        ('keywords' => 'nullable|string|max:255').
+        ('keywords' => 'nullable|string|max:255'). Trackers with a term cap pass max_terms.
         """
         keywords_list: list[str] = []
         current_len = 0
-        for kw in meta.keywords:
-            kw_str = kw.strip()
-            if not kw_str:
-                continue
+        for kw_str in self.get_keyword_terms(meta)[:max_terms]:
             needed = len(kw_str) + (2 if keywords_list else 0)
             if current_len + needed > 255:
                 if not keywords_list and len(kw_str) > 255:

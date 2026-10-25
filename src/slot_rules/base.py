@@ -6,6 +6,8 @@ from collections.abc import Callable, Sequence
 from datetime import date
 from typing import Any, ClassVar
 
+from src.cogs.redaction import Redaction
+from src.slot_rules.links import public_detail_url
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import DISC, DV, HDR10, HDR10P, HLG, PQ10, WEBDL, WEBRIP, ReleaseProfile
 
@@ -132,6 +134,22 @@ def profile_traits(profile: ReleaseProfile) -> str:
     )
     if provider:
         result += f" · provider={provider}"
+    if profile.group:
+        result += f" · group={profile.group}"
+    if profile.size:
+        result += f" · size={profile.size} bytes"
+    if profile.video_bitrate_kbps:
+        result += f" · video={profile.video_bitrate_kbps:g} kb/s"
+    if profile.audio_codec:
+        result += f" · audio={profile.audio_codec}"
+    if profile.audio_languages:
+        result += " · audio languages=" + "/".join(sorted(profile.audio_languages))
+    if profile.repack:
+        result += f" · REPACK/PROPER generation={profile.repack}"
+    if profile.hi10p:
+        result += " · Hi10P (10-bit AVC)"
+    if profile.internal:
+        result += " · internal=yes"
     if profile.hybrid:
         result += " · hybrid"
     return result
@@ -155,16 +173,18 @@ def describe_releases(profiles: Sequence[ReleaseProfile], reason: str, *, role: 
     """Safe, display-only references; not a replacement/report candidate list."""
     result = []
     for p in profiles:
-        link = p.entry.get("link")
+        link = public_detail_url(p.entry.get("link"))
+        link_note = p.entry.get("link_note") or ("No public detail URL or usable torrent identifier was supplied; check this release on the tracker." if not link else "")
         result.append(
             {
                 "name": getattr(p, "name", p.entry.get("name", "unknown release")),
                 "id": p.entry.get("id"),
                 "size": p.entry.get("size", getattr(p, "size", None)),
-                "link": link if isinstance(link, str) and link.startswith(("https://", "http://")) else None,
+                "link": link,
                 "traits": profile_traits(p) if isinstance(p, ReleaseProfile) else _generic_traits(p),
                 "role": role,
-                "reason": reason + (" Details unavailable: " + str(p.entry["detail_error"]) if p.entry.get("detail_error") else ""),
+                **({"link_note": link_note} if link_note else {}),
+                "reason": reason + (" Details unavailable: " + str(Redaction.redact_private_info(str(p.entry["detail_error"]))) if p.entry.get("detail_error") else ""),
             }
         )
     return result
@@ -220,20 +240,28 @@ class SlotRules:
         """Return a recommendation, or ``None`` to leave the decision to the basic dupe check."""
         if upload.kind == DISC:
             return None
+        self._candidate = upload
         exact = [profile for profile in existing if profile.exact]
         if exact:
-            return self.decision(Verdict.BLOCK, "This exact release is already on the site.", exact)
+            return self.decision(Verdict.BLOCK, "This exact release is already on the site.", exact,
+                                 why=f"The tracker returned an exact named-release match for {upload.name}. Changing upload flags does not create a separate slot.")
         newer = [profile for profile in existing if is_repack_of(profile, upload)]
         if newer:
-            return self.decision(Verdict.BLOCK, "A newer REPACK/PROPER of this release is already on the site.", newer)
+            pairs = [(profile, f"Same group ({upload.group}) and matching edition/format; site generation {profile.repack} is newer than incoming generation {upload.repack}.") for profile in newer]
+            return pair_reasons(self.decision(Verdict.BLOCK, "A newer REPACK/PROPER of this release is already on the site.", newer, why=pairs[0][1]), pairs)
         possibly_newer = [profile for profile in existing if may_be_repack_of(profile, upload)]
         if possibly_newer:
-            return self.decision(
+            pairs = []
+            labels = ("resolution", "release type", "video codec", "dynamic range", "streaming provider")
+            for profile in possibly_newer:
+                missing = [label for label, incoming, old in zip(labels, _repack_traits(upload), _repack_traits(profile), strict=True) if incoming is None or old is None]
+                pairs.append((profile, f"Same group ({upload.group}) and a higher REPACK/PROPER generation, but missing {', '.join(missing)} prevents confirming the same release format."))
+            return pair_reasons(self.decision(
                 Verdict.REVIEW,
                 "A newer REPACK/PROPER from the same group may already be on the site.",
                 possibly_newer,
-                why="Its name is missing the resolution, type, codec or HDR, so it could not be confirmed as the same release.",
-            )
+                why=pairs[0][1],
+            ), pairs)
         try:
             return self.decide(upload, [profile for profile in existing if profile.kind != DISC])
         except UnknownTraitError as e:
@@ -268,42 +296,64 @@ class SlotRules:
         """
         upload_key = key(upload)
         if upload_key is None:
-            return self.decision(Verdict.ALLOW, "This kind of release has no slot limit on this tracker.", notes=notes)
+            return self.decision(Verdict.ALLOW, "This kind of release has no slot limit on this tracker.", notes=notes,
+                                 why=f"{self.TRACKER}'s slot mapping does not limit {upload.resolution or 'unknown resolution'} {upload.kind or 'unknown type'}. This is not an exemption from its other content or quality rules.")
 
         occupants: list[ReleaseProfile] = []
         unknown: list[ReleaseProfile] = []
+        missing: list[tuple[ReleaseProfile, str]] = []
         for profile in existing:
+            # When the key explicitly starts with the exact resolution, an
+            # independently known different resolution cannot occupy it.
+            if upload_key and upload_key[0] == upload.resolution and profile.resolution and profile.resolution != upload.resolution:
+                continue
             try:
                 if key(profile) == upload_key:
                     occupants.append(profile)
-            except UnknownTraitError:
+            except UnknownTraitError as error:
                 unknown.append(profile)
+                missing.append((profile, str(error)))
+
+        def uncertain_allow(provisional: SlotDecision) -> SlotDecision:
+            if not unknown:
+                return provisional
+            why = " ".join(dict.fromkeys(reason for _, reason in missing))
+            result = self.decision(Verdict.REVIEW, f"The {label} slot cannot be confirmed: {len(unknown)} existing release(s) lack required comparison details.", unknown,
+                                   provisional.notes, slot=label, why=why)
+            result.requires_evidence = True
+            result.requirements = ["Classify the linked incomplete releases before treating this slot as vacant or reporting a trump."]
+            result.related_releases = describe_releases(occupants, "Known comparison only; replacement eligibility is provisional until the incomplete releases are classified.")
+            return pair_reasons(result, missing)
 
         if not occupants:
             if unknown:
-                return self.decision(
-                    Verdict.REVIEW,
-                    f"The {label} slot looks free, but some releases on the site could not be identified.",
-                    unknown,
-                    notes,
-                    slot=label,
-                    why="Their names or MediaInfo are missing details this check needs; compare them yourself.",
-                )
+                return uncertain_allow(self.decision(Verdict.ALLOW, f"No confirmed occupant of {label}.", notes=notes, slot=label))
             return self.decision(Verdict.ALLOW, f"No release on the {label} slot is listed on the site yet.", notes=notes, slot=label)
 
         competing = [profile for profile in occupants if not (coexists and coexists(upload, profile))]
         if not competing:
             if len(occupants) >= capacity:
-                return self.decision(Verdict.BLOCK, f"All {capacity} places in this slot are already taken.", occupants, notes, slot=label)
-            return self.decision(
+                return self.decision(Verdict.BLOCK, f"All {capacity} places in this slot are already taken.", occupants, notes, slot=label,
+                                     why=f"{self.TRACKER} permits at most {capacity} coexisting releases in {label}; {len(occupants)} are already listed. The coexistence exception does not open another place beyond that limit.")
+            return uncertain_allow(self.decision(
                 Verdict.ALLOW,
                 f"There is still room in the {label} slot, and your release is different enough from the one there.",
                 notes=notes,
                 slot=label,
-            )
+            ))
 
         test = trump or self.default_trump
-        results = [(profile, *test(upload, profile)) for profile in competing]
+        results = []
+        for profile in competing:
+            verdict, reason = test(upload, profile)
+            if not reason:
+                reason = (f"{self.TRACKER}: both releases occupy {label}; no permitted replacement or coexistence exception was established. "
+                          f"Incoming: {profile_traits(upload)}. Existing: {profile_traits(profile)}.")
+            if upload.size and profile.size and upload.size > 0 and profile.size > 0:
+                ratio = max(upload.size, profile.size) / min(upload.size, profile.size)
+                difference = 100 * abs(upload.size - profile.size) / max(upload.size, profile.size)
+                reason += f" Measured sizes: incoming {upload.size} bytes; existing {profile.size} bytes; {difference:.2f}% of the larger file, larger/smaller={ratio:.4f}."
+            results.append((profile, verdict, reason))
         blocking = [(profile, reason) for profile, verdict, reason in results if verdict is Verdict.BLOCK]
         if blocking:
             why = next((reason for _, reason in blocking if reason), "")
@@ -333,19 +383,25 @@ class SlotRules:
             why=reasons,
         )
         decision.trump_recommended = True
-        return pair_reasons(decision, [(profile, reason) for profile, _verdict, reason in results])
+        return uncertain_allow(pair_reasons(decision, [(profile, reason) for profile, _verdict, reason in results]))
 
     @staticmethod
     def default_trump(upload: ReleaseProfile, existing: ReleaseProfile) -> tuple[Verdict, str]:
         if is_repack_of(upload, existing):
             return Verdict.ALLOW, REPACK_REASON
-        return Verdict.BLOCK, ""
+        if may_be_repack_of(upload, existing):
+            return Verdict.REVIEW, "The newer same-group REPACK/PROPER may qualify, but incomplete format/provider metadata prevents confirming that it replaces this exact release."
+        return Verdict.BLOCK, (f"Replacement requires a newer same-group, same-edition, same-format REPACK/PROPER. "
+                               f"Incoming generation={upload.repack}, site generation={existing.repack}; "
+                               f"incoming group={upload.group or 'unknown'}, site group={existing.group or 'unknown'}. The full replacement conditions are not established.")
 
     @staticmethod
     def hdr_trump(upload: ReleaseProfile, existing: ReleaseProfile) -> tuple[Verdict, str]:
         """Repack, or a strictly broader HDR package (for example DV/HDR over HDR), trumps."""
         if is_repack_of(upload, existing):
             return Verdict.ALLOW, REPACK_REASON
-        if upload.hdr is not None and existing.hdr is not None and hdr_rank(upload) > hdr_rank(existing) and expanded_hdr(existing) <= expanded_hdr(upload):
+        if upload.hdr is None or existing.hdr is None:
+            return Verdict.REVIEW, "Cannot compare the HDR replacement: one release has no confirmed dynamic-range metadata. Check MediaInfo before deciding."
+        if hdr_rank(upload) > hdr_rank(existing) and expanded_hdr(existing) <= expanded_hdr(upload):
             return Verdict.ALLOW, f"{upload.hdr_label} takes priority over {existing.hdr_label} in this slot."
-        return Verdict.BLOCK, ""
+        return Verdict.BLOCK, f"Incoming {upload.hdr_label} does not provide a strictly higher, compatible superset of existing {existing.hdr_label}; it is not a qualifying same-group REPACK/PROPER either."
