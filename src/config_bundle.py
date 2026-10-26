@@ -1,4 +1,5 @@
 """Authenticated, encrypted transport of explicitly selected configuration sections."""
+
 import ast
 import base64
 import json
@@ -15,14 +16,32 @@ MAX_BUNDLE_BYTES = 2 * 1024 * 1024
 SECTIONS = frozenset({"DEFAULT", "TRACKERS", "TORRENT_CLIENTS", "USENET"})
 # Machine-specific values are never transported. Cookie FILES are not included.
 LOCAL_KEYS = frozenset({"local_path", "remote_path", "torrent_storage_dir", "watch_folder", "link_dir", "link_dir_name", "cookie_file", "cookies_file"})
-DEFAULT_KEYS = frozenset({"tmdb_api", "tvdb_api", "tvdb_token", "google_books_api_key", "twitch_client_id", "twitch_client_secret", "mam_api_key", "ggn_api_key", "btn_api", "prowlarr_url", "prowlarr_api_key", "music_discogs_token", "default_trackers"})
+DEFAULT_KEYS = frozenset(
+    {
+        "tmdb_api",
+        "tvdb_api",
+        "tvdb_token",
+        "google_books_api_key",
+        "twitch_client_id",
+        "twitch_client_secret",
+        "mam_api_key",
+        "ggn_api_key",
+        "btn_api",
+        "prowlarr_url",
+        "prowlarr_api_key",
+        "music_discogs_token",
+        "default_trackers",
+    }
+)
 
 
 def read_config(path: Path) -> dict[str, Any]:
     """Parse literals only; exporting/importing must never execute a config file."""
     tree = ast.parse(path.read_text(encoding="utf-8"))
     for node in tree.body:
-        if (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "config" for t in node.targets)) or (isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "config"):
+        if (isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "config" for t in node.targets)) or (
+            isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and node.target.id == "config"
+        ):
             value = ast.literal_eval(node.value)
             if isinstance(value, dict):
                 return value
@@ -35,7 +54,9 @@ def portable_settings(config: dict[str, Any], sections: list[str]) -> dict[str, 
 
     def clean(value: Any) -> Any:
         if isinstance(value, dict):
-            return {key: clean(item) for key, item in value.items() if isinstance(key, str) and key not in LOCAL_KEYS and not key.endswith("_path") and not key.endswith("_dir")}
+            return {
+                key: clean(item) for key, item in value.items() if isinstance(key, str) and key not in LOCAL_KEYS and not key.endswith("_path") and not key.endswith("_dir")
+            }
         if isinstance(value, list):
             return [clean(item) for item in value]
         return value
@@ -46,7 +67,12 @@ def portable_settings(config: dict[str, Any], sections: list[str]) -> dict[str, 
         if not isinstance(value, dict):
             raise ValueError("Selected sections must be dictionaries")
         if section == "DEFAULT":
-            value = {key: item for key, item in value.items() if key in DEFAULT_KEYS or key.startswith("img_host_") or key.endswith("_api") or key.endswith("_api_key")}
+            value = {
+                key: item
+                for key, item in value.items()
+                if not key.startswith(("webui_", "session_", "ssh_"))
+                and (key in DEFAULT_KEYS or key.startswith("img_host_") or key.endswith("_api") or key.endswith("_api_key"))
+            }
         result[section] = clean(value)
     return result
 

@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "mode": "docker",
+  "install_dir": "~/upload-assistant",
+  "browse_root": "/srv/media",
+  "webui_port": 5000,
+  "image": "ghcr.io/darkvader-cell/upload-assistant-wastaken:latest",
+  "import_bundle": "~/.config/ua-instance-setup/shared-settings.ua-bundle",
+  "bundle_passphrase_file": "~/.config/ua-instance-setup/bundle-passphrase",
+  "bundle_overwrite": false,
+  "install_dependencies": false,
+  "start": true
+}

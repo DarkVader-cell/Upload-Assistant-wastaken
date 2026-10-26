@@ -116,6 +116,13 @@ exclude = [
   "tmp",
 ]
 
+# Bootstrap runs before the application Python 3.14 environment exists.
+[tool.ruff.per-file-target-version]
+"scripts/one-click-install.py" = "py311"
+"scripts/config-bundle.py" = "py311"
+"src/installer_profile.py" = "py311"
+"src/config_bundle.py" = "py311"
+
 [tool.ruff.lint]
 select = [
   # Core correctness

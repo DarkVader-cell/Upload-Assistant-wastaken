@@ -50,10 +50,20 @@ and generated media/cache files. In particular:
 
 Do not commit or publicly upload `docker-data/`. It contains secrets.
 
-## Syncing to another host
+## Syncing configuration to another client
 
-Stop the service before taking a consistent copy, then sync the complete
-folder to the same relative location in the other checkout:
+For a new independent client, use [one-click installation](one-click-install.md)
+and [selected encrypted config bundles](config-bundles.md). This preserves the
+destination's paths and client mappings, and does not clone sessions, SSH private
+keys, or submission/return state. Never use a full runtime copy as routine
+configuration/key synchronization.
+
+### Offline replacement-host migration only
+
+The following full-state copy is for replacing an instance on a host with the
+same intended identity and path layout, not adding another active client.
+Stop all uploads and the service before taking a consistent copy, then sync the
+complete folder to the same relative location in the other checkout:
 
 ```bash
 cd /home/artemis/Upload-Assistant-wastaken

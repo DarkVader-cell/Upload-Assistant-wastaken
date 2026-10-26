@@ -2,6 +2,8 @@
 
 `scripts/install-instance.sh` bootstraps a new Linux Upload Assistant instance with a persistent Web UI, a mounted media root, and optionally Prowlarr credential fallback. It is designed for a new homelab host, VPS, or seedbox without copying an existing instance's configuration or secrets.
 
+For saved profiles and a desktop shortcut, see [one-click configured installation](one-click-install.md). It reuses this installer with encrypted config/key bundles, Docker digest/revision pinning, live-instance refusal, and health verification.
+
 Use `--install-dependencies` to provision Debian/Ubuntu packages with root/sudo, and `--import-bundle` to reuse selected encrypted settings from another instance. See [configuration bundles](config-bundles.md) for export, security, and limitations.
 
 The default Docker mode needs Docker Engine, Docker Compose v2, Git, and Python 3.11 or newer for configuration bootstrapping. It runs the published fork image, so the application’s Python 3.14 environment is supplied by the container. Docker access must already be configured. Dependency installation is opt-in and currently supports Debian/Ubuntu only. Docker access must be explicitly configured; no root-equivalent group membership is granted silently.

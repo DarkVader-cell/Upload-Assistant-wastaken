@@ -12,6 +12,7 @@ MODE="docker"
 INSTALL_DEPS=0
 BUNDLE=""
 BUNDLE_PASSPHRASE_FILE=""
+BUNDLE_OVERWRITE=0
 INSTALL_DIR="${HOME}/upload-assistant"
 BROWSE_ROOT=""
 WEBUI_PORT="5000"
@@ -38,6 +39,7 @@ Options:
   --install-dependencies         Install Debian/Ubuntu prerequisites using root/sudo.
   --import-bundle PATH           Import encrypted selected settings before starting.
   --bundle-passphrase-file PATH  Private passphrase file; otherwise prompt securely.
+  --bundle-overwrite             Replace existing selected PORTABLE bundle settings.
   --mode docker|standalone       Installation mode (default: docker).
   --install-dir PATH             Instance directory (default: ~/upload-assistant).
   --webui-port PORT              Host Web UI port in Docker mode (default: 5000).
@@ -65,6 +67,7 @@ while [ "$#" -gt 0 ]; do
         --install-dependencies) INSTALL_DEPS=1; shift ;;
         --import-bundle) BUNDLE="${2:?--import-bundle requires a path}"; shift 2 ;;
         --bundle-passphrase-file) BUNDLE_PASSPHRASE_FILE="${2:?--bundle-passphrase-file requires a path}"; shift 2 ;;
+        --bundle-overwrite) BUNDLE_OVERWRITE=1; shift ;;
         --mode) MODE="${2:?--mode requires a value}"; shift 2 ;;
         --install-dir) INSTALL_DIR="${2:?--install-dir requires a path}"; shift 2 ;;
         --browse-root) BROWSE_ROOT="${2:?--browse-root requires a path}"; shift 2 ;;
@@ -118,6 +121,7 @@ if [ "$INSTALL_DEPS" -eq 1 ]; then
     if [ "$MODE" = docker ]; then "${privilege[@]}" systemctl enable --now docker; fi
 fi
 if [ -n "$BUNDLE_PASSPHRASE_FILE" ] && [ -z "$BUNDLE" ]; then fail "--bundle-passphrase-file requires --import-bundle"; fi
+if [ "$BUNDLE_OVERWRITE" -eq 1 ] && [ -z "$BUNDLE" ]; then fail "--bundle-overwrite requires --import-bundle"; fi
 
 INSTALL_DIR="$(mkdir -p "$INSTALL_DIR" && cd "$INSTALL_DIR" && pwd)"
 BROWSE_ROOT="$(cd "$BROWSE_ROOT" && pwd)"
@@ -221,6 +225,7 @@ import_bundle() {
     local bundle_script="$SCRIPT_DIR/config-bundle.py"
     [ -f "$bundle_script" ] || fail "Run this installer from a checkout containing scripts/config-bundle.py"
     local args=(import --config "$config_path" --bundle "$BUNDLE")
+    if [ "$BUNDLE_OVERWRITE" -eq 1 ]; then args+=(--overwrite); fi
     if [ -n "$BUNDLE_PASSPHRASE_FILE" ]; then args+=(--passphrase-file "$BUNDLE_PASSPHRASE_FILE"); fi
     "$python_bin" "$bundle_script" "${args[@]}"
 }
