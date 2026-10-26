@@ -6,11 +6,18 @@ import json
 import os
 import sqlite3
 import tempfile
+import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
 from torf import TorfError, Torrent
+
+# Share the lock across journal instances in the same CLI process. It is held
+# only around SQLite work, NEVER across a tracker request or client injection.
+_DATABASE_LOCKS: dict[Path, threading.RLock] = {}
+_DATABASE_LOCKS_GUARD = threading.Lock()
+_BUSY_TIMEOUT_SECONDS = 30
 
 
 class SubmissionNeedsReviewError(RuntimeError):
@@ -43,19 +50,32 @@ class SubmissionJournal:
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         directory.chmod(0o700)
         self.path = directory / 'submissions.sqlite'
+        with _DATABASE_LOCKS_GUARD:
+            self._database_lock = _DATABASE_LOCKS.setdefault(self.path.resolve(), threading.RLock())
         with self.connect() as db:
+            # Do not renegotiate journal mode on every connection. Existing
+            # rollback-mode receipts migrate in place, without dropping rows.
+            mode = db.execute('PRAGMA journal_mode').fetchone()[0]
+            if mode != 'wal':
+                mode = db.execute('PRAGMA journal_mode=WAL').fetchone()[0]
+            if mode != 'wal':
+                raise sqlite3.OperationalError('Submission storage requires local SQLite WAL support')
             db.execute('CREATE TABLE IF NOT EXISTS submissions (tracker TEXT PRIMARY KEY, state TEXT, owner TEXT, torrent TEXT, digest TEXT, status TEXT, nonce TEXT)')
         self.path.chmod(0o600)
 
     @contextmanager
     def connect(self):
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        try:
-            with db:
-                yield db
-        finally:
-            db.close()
+        with self._database_lock:
+            db = sqlite3.connect(self.path, timeout=_BUSY_TIMEOUT_SECONDS)
+            db.row_factory = sqlite3.Row
+            try:
+                db.execute(f'PRAGMA busy_timeout={_BUSY_TIMEOUT_SECONDS * 1000}')
+                # WAL must not weaken ACK durability across a host/power failure.
+                db.execute('PRAGMA synchronous=FULL')
+                with db:
+                    yield db
+            finally:
+                db.close()
 
     @classmethod
     def for_meta(cls, meta):

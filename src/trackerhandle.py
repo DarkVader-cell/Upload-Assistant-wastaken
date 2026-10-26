@@ -1,5 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import asyncio
+import sqlite3
 import sys
 import time
 import traceback
@@ -140,6 +141,11 @@ async def process_trackers(
         status = meta.tracker_status.setdefault(tracker, {})
         try:
             claimed = await asyncio.to_thread(journal.begin, tracker, confirmation=confirmed_absent.get(tracker))
+        except sqlite3.Error as error:
+            message = f'{tracker}: local submission journal is busy/unavailable ({Redaction.redact_value(str(error))}). No NEW tracker request was started by this attempt. Preserve the database and existing receipts.'
+            status.update(upload=False, upload_success=False, needs_review=True, status_message=message)
+            logger.warning(message)
+            return False
         except SubmissionNeedsReviewError as error:
             status.update(upload=False, upload_success=False, needs_review=True, status_message=str(error))
             logger.warning(str(error))
@@ -158,7 +164,12 @@ async def process_trackers(
             raise
         status = meta.tracker_status.setdefault(tracker, {})
         if result is True and "data error" not in str(status.get("status_message", "")).lower():
-            await asyncio.to_thread(journal.acknowledge, tracker, meta)
+            try:
+                await asyncio.to_thread(journal.acknowledge, tracker, meta)
+            except sqlite3.Error as error:
+                message = f'{tracker}: tracker returned success, but its local acknowledgement could not be saved ({Redaction.redact_value(str(error))}). Do NOT repost; verify the existing upload on-site and recover its exact torrent.'
+                status.update(upload_success=True, needs_review=True, status_message=message)
+                raise SubmissionNeedsReviewError(message) from error
         else:
             await asyncio.to_thread(journal.uncertain, tracker)
             status["needs_review"] = True
