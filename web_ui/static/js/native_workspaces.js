@@ -99,6 +99,7 @@ window.UANativeWorkspace = function UANativeWorkspace({workspace, apiFetch, onRe
   }
   return <section className="flex min-w-0 flex-1 flex-col overflow-auto p-6" aria-label={workspace === "library" ? "Upload Library" : "Remote uploads"}>
     <header className="mb-5 flex items-center justify-between border-b pb-4"><div><h1 className="text-xl font-bold">{workspace === "library" ? "Upload Library" : "Remote uploads"}</h1><p className="mt-1 text-sm opacity-70">{workspace === "library" ? "Choose filters to update results automatically. Prepare retries in the normal upload form." : "Remote staging, NVMe hashing, uploads, seeding and verified return."}</p></div><button className={control} onClick={() => refresh()}>Refresh</button></header>
+    <nav aria-label="Preparation tools" className="mb-4 flex flex-wrap gap-4 text-sm underline"><a href="/discovery">Discover candidates</a><a href="/automation-rules">Explainable rules</a><a href="/migration-planner">Seedbox planner (read-only)</a></nav>
     {message && <p role="alert" className="mb-4 rounded border p-3 text-sm">{message}</p>}
     {workspace === "library" ? <>
       <div className="flex min-h-0 flex-col gap-4 lg:flex-row">

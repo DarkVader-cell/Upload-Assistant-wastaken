@@ -375,6 +375,41 @@ class BrowseIndex:
             self._watch_thread = None
         self._watch_roots = ()
 
+    def record_observations(self, roots: list[str], items: list[dict[str, Any]]) -> None:
+        """Remember already-browsed entries, without starting a scan or watcher."""
+        normalized = self._normalized_roots(roots)
+        self._initialize()
+        now = time.time()
+        rows = []
+        for item in items[:5000]:
+            path = Path(str(item.get("path", ""))).resolve()
+            root = next((r for r in normalized if path != Path(r) and path.is_relative_to(Path(r))), None)
+            if root is not None and item.get("type") in {"file", "folder"}:
+                rows.append((str(path), root, path.name, str(item["type"]), now))
+        with self._connect() as connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS browse_observations (path TEXT PRIMARY KEY, root TEXT NOT NULL, name TEXT NOT NULL, entry_type TEXT NOT NULL, observed_at REAL NOT NULL)")
+            connection.executemany("INSERT OR REPLACE INTO browse_observations VALUES (?, ?, ?, ?, ?)", rows)
+            connection.execute("DELETE FROM browse_observations WHERE path IN (SELECT path FROM browse_observations ORDER BY observed_at DESC, path LIMIT -1 OFFSET 5000)")
+
+    def recorded_candidates(self, roots: list[str], limit: int = 5000) -> list[dict[str, Any]]:
+        """Bounded read of existing index/observations; never scans the filesystem."""
+        if not self.database_path.exists():
+            return []
+        normalized = self._normalized_roots(roots)
+        if not normalized:
+            return []
+        self._initialize()
+        placeholders = ','.join('?' for _ in normalized)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT e.path, e.entry_type, r.scanned_at AS observed_at FROM browse_entries e LEFT JOIN browse_roots r ON e.root=r.root WHERE e.root IN ({placeholders}) ORDER BY e.path LIMIT ?",
+                [*normalized, min(5000, max(1, limit))],
+            ).fetchall()
+            exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='browse_observations'").fetchone()
+            observed = connection.execute(f"SELECT path, entry_type, observed_at FROM browse_observations WHERE root IN ({placeholders}) ORDER BY observed_at DESC, path LIMIT ?", [*normalized, min(5000, max(1, limit))]).fetchall() if exists else []
+        by_path = {str(r['path']): {'source_path': str(r['path']), 'entry_type': r['entry_type'], 'updated_at': r['observed_at'], 'origin': 'browse-index'} for r in [*rows, *reversed(observed)]}
+        return sorted(by_path.values(), key=lambda r: (-float(r['updated_at'] or 0), r['source_path']))[:limit]
+
     def search(self, roots: list[str], query: str, file_filter: str, max_results: int) -> tuple[list[dict[str, Any]], bool]:
         """Return indexed candidates and whether an index refresh is running."""
         normalized_roots = self._normalized_roots(roots)

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="csrf-token" content="{{ csrf_token }}"><title>Library discovery — UA</title><script defer src="{{ url_for('static', filename='js/discovery.js') }}"></script></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="csrf-token" content="{{ csrf_token }}"><link rel="stylesheet" href="{{ url_for('static', filename='css/workflow_tools.css') }}"><title>Library discovery — UA</title><script defer src="{{ url_for('static', filename='js/discovery.js') }}"></script></head>
 <body><nav><a href="/?workspace=library">Upload library</a> · <a href="/automation-rules">Rules</a> · <a href="/migration-planner">Seedbox planner</a></nav>
 <main><h1>Library discovery</h1><p>Recorded evidence only: no local success is NOT proof of tracker absence, seed status, capabilities or slot availability. Preparation estimates are heuristics, not measured time.</p>
 <button id="refresh">Refresh recorded evidence</button><p id="status" role="status"></p>

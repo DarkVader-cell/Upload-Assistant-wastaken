@@ -53,6 +53,7 @@ from src.update_checker import get_changelog_history, get_update_status
 from src.runtime.history import ReleaseHistoryStore
 from web_ui.upload_library import create_blueprint as create_upload_library_blueprint
 from web_ui.remote_upload import create_blueprint as create_remote_upload_blueprint
+from web_ui.services.workflow_tools import register_workflow_tools
 
 APP_VERSION = __version__
 
@@ -6993,6 +6994,7 @@ def execution_screenshots():
                     "full_image_url": urls[1],
                     "can_replace": can_capture and item.source != "addition",
                     "can_delete": item.source in {"local", "addition"},
+                    "can_refill": can_capture,
                 }
                 for item in items
                 for urls in (image_urls(item),)
@@ -7175,7 +7177,7 @@ def add_execution_screenshot():
 @limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def mutate_execution_screenshot(screenshot_id: str, action: str):
     """Delete or replace a reviewed frame with CSRF and same-origin protection."""
-    if action not in {"delete", "replace", "undo"}:
+    if action not in {"delete", "replace", "refill", "undo"}:
         return jsonify({"success": False, "error": "Unsupported screenshot action"}), 404
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
@@ -7186,16 +7188,18 @@ def mutate_execution_screenshot(screenshot_id: str, action: str):
         return jsonify({"success": False, "error": "Screenshots are not available yet"}), 404
     temp_dir, meta_data = resolved
     meta_data = _screenshot_review_meta(temp_dir, meta_data)
-    if action == "replace" and not _screenshot_capture_supported(meta_data):
+    if action in {"replace", "refill"} and not _screenshot_capture_supported(meta_data):
         return jsonify({"success": False, "error": "Screenshot capture is not supported for this release"}), 400
 
     try:
-        from src.screenshot_review import delete_screenshot, replace_screenshot, undo_remote_replacement
+        from src.screenshot_review import delete_screenshot, refill_screenshot_slot, replace_screenshot, undo_remote_replacement
 
         if action == "delete":
             delete_screenshot(temp_dir, meta_data, screenshot_id)
         elif action == "undo":
             undo_remote_replacement(temp_dir, screenshot_id)
+        elif action == "refill":
+            asyncio.run(refill_screenshot_slot(temp_dir, meta_data, screenshot_id))
         else:
             asyncio.run(replace_screenshot(temp_dir, meta_data, screenshot_id))
     except (FileNotFoundError, ValueError) as error:
@@ -8380,6 +8384,8 @@ def _library_config():
 app.register_blueprint(create_upload_library_blueprint(store=lambda: ReleaseHistoryStore(STATE_DIR, _library_config()), trackers=lambda: set(_library_config().get("TRACKERS", {})) - {"DEFAULT"}, validate_path=_validate_execution_path, metadata_root=STATE_DIR / "tmp", authenticated=lambda: _is_authenticated() or _webui_auth_ok(), csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
 
 app.register_blueprint(create_remote_upload_blueprint(authenticated=lambda: _is_authenticated() or _webui_auth_ok(), csrf_valid=_verify_csrf_header, same_origin=_verify_same_origin, csrf_token=_ensure_csrf_token))
+
+register_workflow_tools(app, state_dir=STATE_DIR, config=lambda: _library_config(), roots=lambda: _get_browse_roots(), presets=lambda: _load_argument_presets(), resolve_review=lambda sid: _resolve_execution_screenshot_review(sid), review_meta=lambda *args: _screenshot_review_meta(*args), validate_path=lambda p: _validate_execution_path(p), issued_queue=lambda p: _is_generated_queue(p), authenticated=lambda: _is_authenticated() or _webui_auth_ok(), csrf_valid=lambda: _verify_csrf_header(), same_origin=lambda: _verify_same_origin(), csrf_token=lambda: _ensure_csrf_token())
 
 # Keep these helpers referenced so static analysis does not flag them as unused.
 _ = _cfg_delete

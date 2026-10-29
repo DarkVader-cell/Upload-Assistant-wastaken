@@ -16,4 +16,10 @@ Fork-only behavior should live in new service or extension modules. Upstream-own
 
 Direct `httpx.AsyncClient` and `asyncio.create_subprocess_exec` use are migration debt. The upstream multi-tab merge established the recorded compatibility baseline. New fork code uses the shared runtime helpers, and the architecture guard prevents these counts or the Web UI monolith from growing beyond that baseline.
 
+Preparation tools are registered through `web_ui/services/workflow_tools.py`; separate
+discovery, image analysis, declarative rules and read-only migration modules have no
+client/execution authority. The browse adapter remembers already-observed entries rather
+than starting scans. See [Preparation tools](preparation-tools.md) for their evidence
+contracts and deliberate non-execution boundaries.
+
 See [Reliability, Performance, and Recovery](reliability.md) for the concise operational lifecycle and validation guide, and [Workflow, Performance, and Tracker Improvements](workflow-improvements.md) for the detailed user-facing contracts built on these boundaries.
