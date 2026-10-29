@@ -1,0 +1,25 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const tick = () => new Promise(resolve => setTimeout(resolve, 10));
+test('local comparison never embeds remote URLs; refill touches only explicitly rejected slot', async () => {
+  const dom = new JSDOM(fs.readFileSync('web_ui/templates/screenshot_intelligence.html','utf8'), {runScripts:'outside-only', url:'http://localhost/screenshot-intelligence?session_id=dummy'});
+  const w = dom.window, calls = [];
+  w.confirm = () => true;
+  const rows = ['accepted','rejected','unreviewed'].map((decision,index) => ({id:'id'+index,index,group:'main',decision,status:index===2?'unknown':'scored',version:'v'+index,reasons:[],alternatives:[],source:index===2?'remote':'local'}));
+  w.fetch = async (url, options) => {calls.push({url,options}); return {ok:true,json:async()=> options?.method ? {success:true} : {images:rows,notice:'heuristic'}};};
+  w.eval(fs.readFileSync('web_ui/static/js/screenshot_intelligence.js','utf8')); await tick();
+  const articles = [...w.document.querySelectorAll('article')];
+  assert.equal(articles.length,3);
+  assert.equal(articles[0].querySelector('button:last-child').disabled,true);
+  assert.equal(articles[2].querySelector('img'),null);
+  await articles[1].querySelector('button:last-child').onclick();
+  const mutations = calls.filter(c => c.options?.method);
+  assert.equal(mutations.length,1);
+  assert.equal(mutations[0].url,'/api/execution_screenshots/id1/refill');
+  assert.deepEqual(JSON.parse(mutations[0].options.body),{session_id:'dummy'});
+  assert.ok(mutations[0].options.headers['X-CSRF-Token']);
+  assert.equal(calls.some(c=>c.url.includes('http:')),false);
+  dom.window.close();
+});
