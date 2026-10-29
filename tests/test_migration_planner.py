@@ -77,6 +77,14 @@ def test_direct_beyondhd_keeps_own_hash_and_links_checks_retained_tag_not_requir
     assert not plan(snapshot(row),now=NOW)['candidates'][0]['evidence_complete']
 
 
+def test_empty_snapshot_still_explains_global_blockers():
+    data=snapshot();data['observed_at']=None;data['destination']['capacity_bytes']=None
+    result=plan(data,now=NOW)
+    assert not result['candidates']
+    assert 'Snapshot is stale or undated' in result['blockers']
+    assert any('unknown' in b for b in result['blockers'])
+
+
 def test_capacity_reservations_stale_and_unknown():
     data=snapshot(candidate(size_bytes=4000))
     result=plan(data,now=NOW)

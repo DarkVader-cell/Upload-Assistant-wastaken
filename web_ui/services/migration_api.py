@@ -1,12 +1,14 @@
 """Bounded operator snapshot imports. Deliberately no execution endpoints."""
 import time
+from collections.abc import Callable
+from typing import Any
 
 from flask import Blueprint, jsonify, render_template, request
 
 from src.migration_planner import MAX_BYTES, plan
 
 
-def example_snapshot(now):
+def example_snapshot(now: float) -> dict[str, Any]:
     """Incomplete by design: importing the template cannot imply readiness."""
     return {'version': 1, 'source': 'operator-example-not-live', 'observed_at': now,
             'destination': {'id': 'Grape', 'role': 'grape', 'capacity_bytes': 1000000000000, 'used_bytes': 500000000000,
@@ -15,7 +17,8 @@ def example_snapshot(now):
                             'related_handoffs': None, 'tree': {'kind': 'file', 'complete': False, 'observed_at': None, 'entries': []}}]}
 
 
-def create_blueprint(*, authenticated, csrf_valid, same_origin, csrf_token):
+def create_blueprint(*, authenticated: Callable[[], bool], csrf_valid: Callable[[], bool],
+                     same_origin: Callable[[], bool], csrf_token: Callable[[], str]) -> Blueprint:
     bp = Blueprint('migration_planner', __name__)
 
     @bp.before_request

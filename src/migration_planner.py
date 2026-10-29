@@ -4,25 +4,26 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from typing import Any, cast
 
 MAX_BYTES = 2 * 1024 * 1024
 MAX_CANDIDATES = 500
 FRESH_SECONDS = 3600
 
 
-def _object(value, allowed, required=()):
+def _object(value: Any, allowed: tuple[str, ...], required: tuple[str, ...] = ()) -> dict[str, Any]:
     if not isinstance(value, dict) or set(value) - set(allowed) or set(required) - set(value):
         raise ValueError('Unknown or missing snapshot fields')
-    return value
+    return cast(dict[str, Any], value)
 
 
-def _label(value, limit=120):
+def _label(value: object, limit: int = 120) -> str:
     if not isinstance(value, str) or not value.strip() or len(value) > limit or any(ord(c) < 32 for c in value):
         raise ValueError('Invalid label')
     return value.strip()
 
 
-def _integer(value, nullable=False):
+def _integer(value: Any, nullable: bool = False) -> int | None:
     if value is None and nullable:
         return None
     if type(value) is not int or not 0 <= value <= 2**63 - 1:
@@ -30,7 +31,7 @@ def _integer(value, nullable=False):
     return value
 
 
-def _time(value, now):
+def _time(value: Any, now: float) -> float | None:
     if value is None:
         return None
     if type(value) not in (int, float) or not math.isfinite(value) or not 0 < value <= now + 60:
@@ -38,7 +39,7 @@ def _time(value, now):
     return value
 
 
-def _hash(value, lengths=(40, 64), nullable=False):
+def _hash(value: Any, lengths: tuple[int, ...] = (40, 64), nullable: bool = False) -> str | None:
     if value is None and nullable:
         return None
     if not isinstance(value, str) or len(value) not in lengths or any(c not in '0123456789abcdefABCDEF' for c in value):
@@ -46,22 +47,22 @@ def _hash(value, lengths=(40, 64), nullable=False):
     return value.lower()
 
 
-def _flag(value):
+def _flag(value: Any) -> bool | None:
     if value is not None and type(value) is not bool:
         raise ValueError('Evidence flags must be boolean or null')
     return value
 
 
-def validate_snapshot(snapshot, *, now):
+def validate_snapshot(snapshot: Any, *, now: float) -> dict[str, Any]:
     if len(json.dumps(snapshot, ensure_ascii=True)) > MAX_BYTES:
         raise ValueError('Snapshot too large')
-    _object(snapshot, ('version', 'source', 'observed_at', 'destination', 'candidates'), ('version', 'source', 'destination', 'candidates'))
+    snapshot = _object(snapshot, ('version', 'source', 'observed_at', 'destination', 'candidates'), ('version', 'source', 'destination', 'candidates'))
     if type(snapshot['version']) is not int or snapshot['version'] != 1:
         raise ValueError('Unsupported snapshot version')
     dest = _object(snapshot['destination'], ('id', 'role', 'capacity_bytes', 'used_bytes', 'pending_bytes', 'headroom_bytes', 'observed_at', 'estimated_bytes_per_second'), ('id', 'role'))
     if dest['role'] != 'grape':
         raise ValueError('This exact-torrent migration planner requires the Grape destination role')
-    destination = {'id': _label(dest['id']), 'role': 'grape', 'observed_at': _time(dest.get('observed_at'), now)}
+    destination: dict[str, Any] = {'id': _label(dest['id']), 'role': 'grape', 'observed_at': _time(dest.get('observed_at'), now)}
     for field in ('capacity_bytes', 'used_bytes', 'pending_bytes', 'headroom_bytes', 'estimated_bytes_per_second'):
         destination[field] = _integer(dest.get(field), nullable=True)
     if destination['estimated_bytes_per_second'] == 0:
@@ -70,11 +71,11 @@ def validate_snapshot(snapshot, *, now):
         raise ValueError('Used bytes exceed capacity')
     if not isinstance(snapshot['candidates'], list) or len(snapshot['candidates']) > MAX_CANDIDATES:
         raise ValueError('Maximum 500 candidates')
-    candidates = []
-    for raw in snapshot['candidates']:
+    candidates: list[dict[str, Any]] = []
+    for raw in cast(list[dict[str, Any]], snapshot['candidates']):
         _object(raw, ('label', 'infohash', 'size_bytes', 'payload_sha256', 'origin_kind', 'state', 'source_identity_matches', 'age_gate_passed', 'lifecycle_gate_passed',
                       'tracker_hardlinks_remaining', 'tree', 'own_destination', 'related_handoffs', 'related_handoffs_complete', 'reuse'), ('label', 'infohash', 'size_bytes'))
-        row = {'label': _label(raw['label']), 'infohash': _hash(raw['infohash']), 'size_bytes': _integer(raw['size_bytes']),
+        row: dict[str, Any] = {'label': _label(raw['label']), 'infohash': _hash(raw['infohash']), 'size_bytes': _integer(raw['size_bytes']),
                'payload_sha256': _hash(raw.get('payload_sha256'), (64,), nullable=True)}
         for field, allowed in [('origin_kind', ('ua-original', 'direct-beyondhd', 'historical')), ('state', ('matched', 'recovery-required', 'unknown'))]:
             value = raw.get(field, 'unknown')
@@ -90,8 +91,8 @@ def validate_snapshot(snapshot, *, now):
         entries = tree.get('entries', [])
         if not isinstance(entries, list) or len(entries) > 5000:
             raise ValueError('Maximum 5000 tree entries')
-        clean_entries = []
-        for entry in entries:
+        clean_entries: list[dict[str, Any]] = []
+        for entry in cast(list[dict[str, Any]], entries):
             _object(entry, ('kind', 'nlink'), ('kind',))
             if entry['kind'] not in ('regular', 'symlink', 'other'):
                 raise ValueError('Unknown tree object')
@@ -100,9 +101,9 @@ def validate_snapshot(snapshot, *, now):
         handoffs = raw.get('related_handoffs')
         if handoffs is not None and (not isinstance(handoffs, list) or len(handoffs) > 100):
             raise ValueError('Maximum 100 related handoffs')
-        row['related_handoffs'] = None if handoffs is None else [_verification(v, now) for v in handoffs]
+        row['related_handoffs'] = None if handoffs is None else [_verification(v, now) for v in cast(list[dict[str, Any]], handoffs)]
         row['own_destination'] = _verification(raw['own_destination'], now) if raw.get('own_destination') is not None else None
-        reuse = raw.get('reuse')
+        reuse: dict[str, Any] | None = raw.get('reuse')
         if reuse is not None:
             _object(reuse, ('destination_id', 'payload_sha256', 'size_bytes', 'verified', 'verified_at'), ('destination_id', 'size_bytes'))
             reuse = {'destination_id': _label(reuse['destination_id']), 'payload_sha256': _hash(reuse.get('payload_sha256'), (64,), nullable=True),
@@ -112,22 +113,22 @@ def validate_snapshot(snapshot, *, now):
     return {'version': 1, 'source': _label(snapshot['source']), 'observed_at': _time(snapshot.get('observed_at'), now), 'destination': destination, 'candidates': candidates}
 
 
-def _verification(value, now):
+def _verification(value: dict[str, Any], now: float) -> dict[str, Any]:
     _object(value, ('destination_id', 'infohash', 'complete', 'seed_ready', 'verified_at'), ('destination_id', 'infohash'))
     return {'destination_id': _label(value['destination_id']), 'infohash': _hash(value['infohash']), 'complete': _flag(value.get('complete')),
             'seed_ready': _flag(value.get('seed_ready')), 'verified_at': _time(value.get('verified_at'), now)}
 
 
-def plan(snapshot, *, now):
+def plan(snapshot: Any, *, now: float) -> dict[str, Any]:
     data = validate_snapshot(snapshot, now=now)
     dest = data['destination']
-    def fresh(timestamp):
+    def fresh(timestamp: float | None) -> bool:
         return timestamp is not None and -60 <= now - timestamp <= FRESH_SECONDS
 
-    def verified(evidence, infohash=None):
+    def verified(evidence: dict[str, Any] | None, infohash: str | None = None) -> bool:
         return bool(evidence and evidence['destination_id'] == dest['id'] and (infohash is None or evidence['infohash'] == infohash)
                     and evidence['complete'] is True and evidence['seed_ready'] is True and fresh(evidence['verified_at']))
-    global_blockers = []
+    global_blockers: list[str] = []
     if not fresh(data['observed_at']):
         global_blockers.append('Snapshot is stale or undated')
     if not fresh(dest['observed_at']):
@@ -135,7 +136,8 @@ def plan(snapshot, *, now):
     fields = ('capacity_bytes', 'used_bytes', 'pending_bytes', 'headroom_bytes')
     if any(dest[f] is None for f in fields):
         global_blockers.append('Capacity, usage, pending bytes or required headroom is unknown')
-    grouped, duplicate_count = {}, 0
+    grouped: dict[str, dict[str, Any]] = {}
+    duplicate_count = 0
     for row in data['candidates']:
         identity = row['infohash']
         if identity in grouped:
@@ -146,7 +148,8 @@ def plan(snapshot, *, now):
                 grouped[identity]['record']['payload_sha256'] = None
         else:
             grouped[identity] = {'record': row, 'conflicting': False}
-    rows, payloads = [], {}
+    rows: list[dict[str, Any]] = []
+    payloads: dict[tuple[object, ...], dict[str, Any]] = {}
     for item in grouped.values():
         row = item['record']
         blockers = list(global_blockers)
@@ -200,4 +203,4 @@ def plan(snapshot, *, now):
             'duplicate_candidates_ignored': duplicate_count, 'unique_payloads': len(payloads), 'additional_transfer_bytes': transfer_bytes,
             'verified_snapshot_reuse_bytes': reuse_bytes, 'available_after_reservations_bytes': available, 'shortage_bytes': shortage,
             'estimated_transfer_seconds': None if rate is None else transfer_bytes / rate, 'estimate_kind': 'operator-rate-heuristic-not-measurement',
-            'execution_authorized': False, 'notice': 'Imported operator evidence, not live verification or execution authorization. No transfer, qB mutation or deletion is implemented. Unknown/stale/incomplete evidence blocks readiness.'}
+            'blockers': global_blockers, 'execution_authorized': False, 'notice': 'Imported operator evidence, not live verification or execution authorization. No transfer, qB mutation or deletion is implemented. Unknown/stale/incomplete evidence blocks readiness.'}
