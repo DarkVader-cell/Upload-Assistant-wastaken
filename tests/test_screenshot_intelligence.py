@@ -1,4 +1,7 @@
 import asyncio
+import os
+import subprocess
+import sys
 import time
 
 import numpy as np
@@ -17,6 +20,13 @@ def images(tmp_path):
     flat = tmp_path / 'flat.png'; Image.new('RGB', (320, 180), 'gray').save(flat)
     detail = tmp_path / 'detail.png'; Image.fromarray(np.random.default_rng(1).integers(0, 256, (108, 192, 3), dtype=np.uint8)).save(detail)
     return [ReviewedScreenshot(str(i), p, i) for i, p in enumerate([black, flat, detail, detail])]
+
+
+def test_new_services_import_without_user_configuration(tmp_path):
+    result = subprocess.run([sys.executable, '-c', 'import src.screenshot_intelligence; import web_ui.services.workflow_tools'],
+        env={**os.environ, 'UA_DATA_DIR':str(tmp_path)}, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert not (tmp_path/'data'/'config.py').exists()
 
 
 def test_black_detail_duplicates_remote_group_and_cache(tmp_path):

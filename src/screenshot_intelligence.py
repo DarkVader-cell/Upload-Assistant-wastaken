@@ -10,12 +10,13 @@ import warnings
 from collections import OrderedDict
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import TYPE_CHECKING, Any, TypedDict
 
 import numpy as np
 from PIL import Image, ImageOps
 
-from src.screenshot_review import ReviewedScreenshot
+if TYPE_CHECKING:
+    from src.screenshot_review import ReviewedScreenshot
 
 
 class Score(TypedDict):

@@ -1,17 +1,21 @@
 """Session-scoped intelligence and version-bound review decisions; no capture API."""
+from __future__ import annotations
+
 import json
 import os
 import tempfile
 import threading
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from flask import Blueprint, Response, jsonify, render_template, request
 from PIL import Image
 
 from src.screenshot_intelligence import MAX_IMAGES, ImageAnalyzer
-from src.screenshot_review import ReviewedScreenshot, image_version, list_review_items
+
+if TYPE_CHECKING:
+    from src.screenshot_review import ReviewedScreenshot
 
 
 def create_blueprint(*, resolve_review: Callable[[str], tuple[Path, Mapping[str, object]] | None],
@@ -29,6 +33,8 @@ def create_blueprint(*, resolve_review: Callable[[str], tuple[Path, Mapping[str,
         return None
 
     def resolve():
+        from src.screenshot_review import list_review_items
+
         session = request.args.get('session_id', '')
         result = resolve_review(session) if session and len(session) <= 200 else None
         if result is None:
@@ -47,6 +53,8 @@ def create_blueprint(*, resolve_review: Callable[[str], tuple[Path, Mapping[str,
             return {}
 
     def report(root: Path, items: list[ReviewedScreenshot]) -> dict[str, Any]:
+        from src.screenshot_review import image_version
+
         result = analyzer.review(items, root, version=lambda i: image_version(root, i.id, 0))
         saved = decisions(root)
         for row in result['images']:
@@ -72,6 +80,8 @@ def create_blueprint(*, resolve_review: Callable[[str], tuple[Path, Mapping[str,
 
     @bp.get('/api/screenshot-intelligence/<identity>/thumbnail')
     def thumbnail(identity):
+        from src.screenshot_review import image_version
+
         try:
             root, items = resolve()
             item = next((i for i in items[:MAX_IMAGES] if i.id == identity and i.path is not None), None)
