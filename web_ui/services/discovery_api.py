@@ -1,16 +1,21 @@
 """Opt-in discovery snapshot API; no crawling, client mutations or execution."""
 import threading
 import time
+from collections.abc import Callable, Iterable, Mapping
+from pathlib import Path
+from typing import Any
 
 from flask import Blueprint, jsonify, render_template, request
 
 from src.discovery import FIELDS, candidates, preview, select
 
 
-def create_blueprint(*, records, roots, trackers, validate_path, authenticated, csrf_valid, same_origin, csrf_token):
+def create_blueprint(*, records: Callable[[], Iterable[Mapping[str, Any]]], roots: Callable[[], list[str | Path]], trackers: Callable[[], Iterable[str]],
+                     validate_path: Callable[[str], str], authenticated: Callable[[], bool], csrf_valid: Callable[[], bool],
+                     same_origin: Callable[[], bool], csrf_token: Callable[[], str]) -> Blueprint:
     bp = Blueprint('discovery', __name__)
     lock = threading.Lock()
-    snapshot = {'rows': [], 'truncated': False, 'updated_at': None}
+    snapshot: dict[str, Any] = {'rows': [], 'truncated': False, 'updated_at': None}
 
     @bp.before_request
     def protect():
@@ -24,7 +29,7 @@ def create_blueprint(*, records, roots, trackers, validate_path, authenticated, 
     def page():
         return render_template('discovery.html', csrf_token=csrf_token())
 
-    def targets(values, required=False):
+    def targets(values: list[str], required: bool = False) -> list[str]:
         if not isinstance(values, list) or len(values) > 200 or any(not isinstance(v, str) for v in values) or set(values) - set(trackers()) or (required and not values):
             raise ValueError('Select configured trackers')
         return values
@@ -53,12 +58,12 @@ def create_blueprint(*, records, roots, trackers, validate_path, authenticated, 
     @bp.post('/api/discovery/preview')
     def plan():
         try:
-            data = request.get_json(silent=True)
+            data: dict[str, Any] = request.get_json(silent=True)
             if not isinstance(data, dict):
                 raise ValueError('Invalid selection')
-            selected = targets(data.get('trackers'), required=True)
+            selected = targets(data.get('trackers', []), required=True)
             with lock:
-                result = preview(snapshot['rows'], data.get('ids'), selected, validate_path)
+                result = preview(snapshot['rows'], data.get('ids', []), selected, validate_path)
             return jsonify(result)
         except (TypeError, ValueError):
             return jsonify(error='Invalid discovery selection'), 400

@@ -4,15 +4,16 @@ from __future__ import annotations
 import hashlib
 import math
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
+from typing import Any
 
 MAX_RECORDS = 5000
 FIELDS = ('category', 'resolution', 'codec', 'language', 'edition')
 STALE_SECONDS = 7 * 86400
 
 
-def approved_path(value, roots):
+def approved_path(value: object, roots: Iterable[Path]) -> Path:
     if not isinstance(value, str) or not value or '\x00' in value or not Path(value).is_absolute():
         raise ValueError('Invalid absolute source path')
     path = Path(value).resolve()
@@ -21,10 +22,10 @@ def approved_path(value, roots):
     return path
 
 
-def candidates(records: Iterable[Mapping], roots, *, now: float):
+def candidates(records: Iterable[Mapping[str, Any]], roots: Iterable[str | Path], *, now: float) -> tuple[list[dict[str, Any]], bool]:
     """Normalize at most 5000 projections, without scanning directories or clients."""
     roots = tuple(Path(root).resolve() for root in roots)
-    grouped = {}
+    grouped: dict[str, dict[str, Any]] = {}
     truncated = False
     for number, record in enumerate(records):
         if number >= MAX_RECORDS:
@@ -39,7 +40,7 @@ def candidates(records: Iterable[Mapping], roots, *, now: float):
                                      'release_name': path.name, 'evidence': [], 'values': {f: set() for f in FIELDS},
                                      'successful_trackers': set(), 'failed_trackers': set(), 'trackers': set()})
         timestamp = record.get('updated_at')
-        timestamp = timestamp if type(timestamp) in (int, float) and math.isfinite(timestamp) and 0 < timestamp <= now else None
+        timestamp = timestamp if isinstance(timestamp, (int, float)) and not isinstance(timestamp, bool) and math.isfinite(timestamp) and 0 < timestamp <= now else None
         row['evidence'].append({'source': 'history' if record.get('origin') == 'history' else 'browse-index',
                                 'observed_at': timestamp, 'stale': timestamp is None or now - timestamp > STALE_SECONDS})
         for field in FIELDS:
@@ -47,10 +48,10 @@ def candidates(records: Iterable[Mapping], roots, *, now: float):
             if isinstance(value, str) and value.strip():
                 row['values'][field].add(value.strip()[:200])
         for field in ('successful_trackers', 'failed_trackers', 'trackers'):
-            values = record.get(field, [])
+            values: list[Any] = record.get(field, [])
             if isinstance(values, list):
                 row[field].update(v for v in values if isinstance(v, str) and len(v) <= 80)
-    result = []
+    result: list[dict[str, Any]] = []
     for row in grouped.values():
         blockers = ['Tracker absence, capabilities, slot availability and seed status are unknown']
         for field, values in row.pop('values').items():
@@ -78,14 +79,15 @@ def candidates(records: Iterable[Mapping], roots, *, now: float):
     return result, truncated
 
 
-def select(rows, *, trackers=(), mode='missing', query='', filters=None, offset=0, limit=100):
+def select(rows: Iterable[dict[str, Any]], *, trackers: Iterable[str] = (), mode: str = 'missing', query: str = '',
+           filters: dict[str, str] | None = None, offset: int = 0, limit: int = 100) -> dict[str, Any]:
     if mode not in ('missing', 'failed', 'unattempted') or type(offset) is not int or offset < 0 or type(limit) is not int or not 1 <= limit <= 200:
         raise ValueError('Invalid discovery filters')
     filters = filters or {}
     if set(filters) - set(FIELDS) or len(query) > 200:
         raise ValueError('Invalid metadata filters')
     selected = set(trackers)
-    result = []
+    result: list[dict[str, Any]] = []
     for row in rows:
         target = {'missing': selected - set(row['successful_trackers']), 'failed': selected & set(row['failed_trackers']),
                   'unattempted': selected - set(row['trackers'])}[mode]
@@ -100,11 +102,12 @@ def select(rows, *, trackers=(), mode='missing', query='', filters=None, offset=
     return {'rows': result[offset:offset + limit], 'total': len(result), 'offset': offset, 'limit': limit}
 
 
-def preview(rows, ids, targets, validate_path):
+def preview(rows: Iterable[dict[str, Any]], ids: list[str], targets: Iterable[str], validate_path: Callable[[str], str]) -> dict[str, Any]:
     if not isinstance(ids, list) or not 1 <= len(ids) <= 50 or any(not isinstance(i, str) for i in ids):
         raise ValueError('Select 1-50 candidates')
     by_id = {r['id']: r for r in rows}
-    plans, skipped = [], []
+    plans: list[dict[str, Any]] = []
+    skipped: list[dict[str, str]] = []
     for identity in dict.fromkeys(ids):
         row = by_id.get(identity)
         if row is None:
