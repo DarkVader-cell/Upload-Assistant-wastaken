@@ -13,6 +13,10 @@ Provider requests with the same safe cache key are coalesced while in progress. 
 
 The Operations UI persists detached jobs, marks in-flight work as `interrupted` after a restart, and never silently replays it. Progress events and regular output are handled separately so incomplete progress records do not become prompts. Superseded file-browser searches are cancelled in the browser; the server retains a bounded SQLite index and stops its filesystem watcher during shutdown or reload. Browse and release-history operations explicitly close their SQLite connections. Live directory updates use indexed, literal path ranges, so unrelated library rows are not loaded and names containing SQL wildcard characters remain safe.
 
+New execution streams treat already-buffered initial events as live, even if a fast
+process finishes before the browser subscribes. Reattachments still distinguish
+historical replay from new events, so historical prompts do not trigger fresh alerts.
+
 If a process cannot be terminated, its session remains visible and the API returns an error rather than falsely reporting success. Retry or cancel it from Operations after addressing the underlying process or client problem.
 
 ## Torrent-client failures

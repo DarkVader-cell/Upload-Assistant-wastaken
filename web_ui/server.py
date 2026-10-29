@@ -7567,8 +7567,8 @@ def _sse(event: Mapping[str, object]) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
 
-def _stream_session_events(session_id: str, process_state: dict[str, object], after: int) -> Iterator[str]:
-    """Replay logged events after ``after`` and follow the session until it finishes."""
+def _stream_session_events(session_id: str, process_state: dict[str, object], after: int, *, replay: bool = True) -> Iterator[str]:
+    """Replay reattachments; a new subscription treats even fast queued output as live."""
     condition = _session_condition(process_state)
     with condition:
         process_state["clients"] = cast(int, process_state["clients"]) + 1
@@ -7579,10 +7579,13 @@ def _stream_session_events(session_id: str, process_state: dict[str, object], af
         if trimmed:
             yield _sse({"type": "truncated"})
         last_seq = after
+        if not replay:
+            yield _sse({"type": "replay_done"})
         for seq, payload in backlog:
             yield f"data: {payload}\n\n"
             last_seq = seq
-        yield _sse({"type": "replay_done"})
+        if replay:
+            yield _sse({"type": "replay_done"})
 
         while True:
             with condition:
@@ -8116,7 +8119,7 @@ def execute_command():
                 # From here the pump thread owns the process and its cleanup; this
                 # response only follows the session log and may disconnect freely.
                 handed_off = True
-                yield from _stream_session_events(session_id, process_state, 0)
+                yield from _stream_session_events(session_id, process_state, 0, replay=False)
 
             except Exception as e:
                 console.print(f"Execution error for session {session_id}: {e}", markup=False)

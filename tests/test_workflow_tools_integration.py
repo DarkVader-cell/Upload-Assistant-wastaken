@@ -9,6 +9,19 @@ from web_ui import server
 from web_ui.browse_index import BrowseIndex
 
 
+def test_new_subscription_preserves_live_completion_when_pump_already_finished():
+    state=server._make_process_state('synthetic.mkv','')
+    server._init_session_events(state,label='Synthetic',keep_running=True,prompt_timeout=0)
+    server._publish_session_event(state,{'type':'prompt_sound'})
+    server._publish_session_event(state,{'type':'exit','code':0})
+    server._finish_session(state,0)
+    live=[json.loads(chunk.removeprefix('data: ')) for chunk in server._stream_session_events('dummy',state,0,replay=False)]
+    assert [e['type'] for e in live]==['replay_done','prompt_sound','exit','finished']
+    resumed=[json.loads(chunk.removeprefix('data: ')) for chunk in server._stream_session_events('dummy',state,0)]
+    assert [e['type'] for e in resumed]==['prompt_sound','exit','replay_done','finished']
+    assert live[-2]['code']==0 and state['clients']==0
+
+
 def test_observation_adapter_reads_index_without_scanning(tmp_path, monkeypatch):
     root=tmp_path/'media';root.mkdir();source=root/'movie.mkv';source.touch()
     index=BrowseIndex(tmp_path/'browse.sqlite3')
