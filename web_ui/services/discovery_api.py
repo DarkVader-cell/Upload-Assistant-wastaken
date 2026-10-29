@@ -58,7 +58,7 @@ def create_blueprint(*, records: Callable[[], Iterable[Mapping[str, Any]]], root
     @bp.post('/api/discovery/preview')
     def plan():
         try:
-            data: dict[str, Any] = request.get_json(silent=True)
+            data: dict[str, Any] | None = request.get_json(silent=True)
             if not isinstance(data, dict):
                 raise ValueError('Invalid selection')
             selected = targets(data.get('trackers', []), required=True)
