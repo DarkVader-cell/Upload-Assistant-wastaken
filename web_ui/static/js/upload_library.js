@@ -56,7 +56,7 @@
           const response=await fetch("/api/execute",{method:"POST",headers,body:JSON.stringify({path:plan.path,args:"-tk "+plan.trackers.join(",")+" --unattended",session_id:"library-"+crypto.randomUUID(),label:plan.label,schedule:true})});
           if(!response.ok)throw new Error("Execution request rejected; inspect UA sessions before retrying");
           // Consume streams in background without accumulating sensitive logs in the DOM.
-          if(response.body){const reader=response.body.getReader();(async()=>{try{while(!(await reader.read()).done){} }catch(_error){message("A session stream disconnected; inspect UA sessions before retrying");}})();}
+          if(response.body){const reader=response.body.getReader();(async()=>{try{while(!(await reader.read()).done){/* Drain without retaining session output. */} }catch(_error){message("A session stream disconnected; inspect UA sessions before retrying");}})();}
           submitted++;
           selected.delete(plan.id); // Do not resubmit accepted requests after a later batch fails.
           render();
