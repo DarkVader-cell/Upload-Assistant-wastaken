@@ -156,7 +156,8 @@ jobs:
             command -v upload-assistant-healthcheck >/dev/null
             test "$(find /Upload-Assistant/bin/mkbrr -type f -name mkbrr -perm /111 | wc -l)" -eq 1
             test "$(find /Upload-Assistant/bin/bdinfo -type f -name bdinfo -perm /111 | wc -l)" -eq 1
-            test -x /Upload-Assistant/bin/MI/linux/mediainfo
+            test -x "$(command -v mediainfo)"
+            mediainfo --Version
             test ! -e /Upload-Assistant/data/config.py
             ! command -v cargo >/dev/null
             ! command -v rustc >/dev/null

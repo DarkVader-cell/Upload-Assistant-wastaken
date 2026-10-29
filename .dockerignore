@@ -38,6 +38,11 @@ docs
 benchmarks
 
 # Runtime artifacts that should not leak into the build context
+build
+dist
+.setuptools-build
+data/cache
+data/nfos
 tmp
 docker-data
 .pi

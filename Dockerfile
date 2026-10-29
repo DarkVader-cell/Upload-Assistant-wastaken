@@ -59,7 +59,7 @@ WORKDIR /Upload-Assistant
 COPY . .
 
 # Download the pinned official MediaInfo CLI used by the application.
-RUN python3 -c "import asyncio; from bin.get_mediainfo import MediaInfoBinaryManager; asyncio.run(MediaInfoBinaryManager.ensure_mediainfo_binary('/Upload-Assistant'))"
+RUN python3 -c "import asyncio; from pathlib import Path; from bin.get_mediainfo import MediaInfoBinaryManager; binary = asyncio.run(MediaInfoBinaryManager.ensure_mediainfo_binary('/Upload-Assistant')); Path('/usr/local/bin/mediainfo').symlink_to(binary)"
 
 # Preserve the built-in data/ directory outside the mount-point so that
 # volume mounts over /Upload-Assistant/data/ don't hide critical files
