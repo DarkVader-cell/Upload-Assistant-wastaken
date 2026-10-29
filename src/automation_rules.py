@@ -7,6 +7,7 @@ import os
 import tempfile
 import threading
 from pathlib import Path
+from typing import Any, cast
 
 FIELDS = ('category', 'resolution', 'codec', 'language', 'edition', 'media_type')
 OPERATORS = ('equals', 'in', 'contains')
@@ -15,27 +16,27 @@ ACTIONS = ('suggest_trackers', 'preset', 'client_profile', 'requirements')
 MAX_BYTES = 256 * 1024
 
 
-def _keys(value, required):
+def _keys(value: dict[str, Any], required: tuple[str, ...]) -> None:
     if not isinstance(value, dict) or set(value) != set(required):
         raise ValueError('Unknown or missing schema fields')
 
 
-def _text(value, maximum=200):
+def _text(value: object, maximum: int = 200) -> str:
     if not isinstance(value, str) or not value.strip() or len(value) > maximum or any(ord(c) < 32 for c in value):
         raise ValueError('Invalid text value')
     return value.strip()
 
 
-def validate_actions(actions, references):
+def validate_actions(actions: dict[str, Any], references: dict[str, list[str]]) -> dict[str, Any]:
     if not isinstance(actions, dict) or not actions or set(actions) - set(ACTIONS):
         raise ValueError('Unknown or empty action')
-    result = {}
+    result: dict[str, Any] = {}
     for key, value in actions.items():
         allowed = set(REQUIREMENTS if key == 'requirements' else references.get(key, ()))
         if key in ('suggest_trackers', 'requirements'):
             if not isinstance(value, list) or not 1 <= len(value) <= 100:
                 raise ValueError('Invalid action list')
-            values = [_text(v, 80) for v in value]
+            values = [_text(v, 80) for v in cast(list[Any], value)]
             if set(values) - allowed or len(values) != len(set(values)):
                 raise ValueError('Unknown or repeated action reference')
             result[key] = sorted(values)
@@ -47,7 +48,7 @@ def validate_actions(actions, references):
     return result
 
 
-def validate_schema(schema, references):
+def validate_schema(schema: dict[str, Any], references: dict[str, list[str]]) -> dict[str, Any]:
     """Strict limits, literal operators only, and validated existing profile names."""
     if len(json.dumps(schema, ensure_ascii=True)) > MAX_BYTES:
         raise ValueError('Schema too large')
@@ -56,8 +57,10 @@ def validate_schema(schema, references):
         raise ValueError('Unsupported rule version')
     if not isinstance(schema['rules'], list) or len(schema['rules']) > 32:
         raise ValueError('Maximum 32 rules')
-    rules, names = [], set()
-    for rule in schema['rules']:
+    rules: list[dict[str, Any]] = []
+    names: set[str] = set()
+    input_rules = cast(list[dict[str, Any]], schema['rules'])
+    for rule in input_rules:
         _keys(rule, ('name', 'priority', 'enabled', 'match', 'conditions', 'actions'))
         name = _text(rule['name'], 80)
         if name.casefold() in names:
@@ -67,8 +70,9 @@ def validate_schema(schema, references):
             raise ValueError('Invalid rule flags or priority')
         if not isinstance(rule['conditions'], list) or not 1 <= len(rule['conditions']) <= 32:
             raise ValueError('Select 1-32 conditions')
-        conditions = []
-        for condition in rule['conditions']:
+        conditions: list[dict[str, Any]] = []
+        input_conditions = cast(list[dict[str, Any]], rule['conditions'])
+        for condition in input_conditions:
             _keys(condition, ('field', 'operator', 'value'))
             field, operator, value = condition['field'], condition['operator'], condition['value']
             if field not in FIELDS or operator not in OPERATORS:
@@ -76,16 +80,16 @@ def validate_schema(schema, references):
             if operator == 'in':
                 if not isinstance(value, list) or not 1 <= len(value) <= 32:
                     raise ValueError('Invalid condition list')
-                value = [_text(v) for v in value]
+                value = [_text(v) for v in cast(list[Any], value)]
             else:
                 value = _text(value)
             conditions.append({'field': field, 'operator': operator, 'value': value})
         rules.append({'name': name, 'priority': rule['priority'], 'enabled': rule['enabled'], 'match': rule['match'],
                       'conditions': conditions, 'actions': validate_actions(rule['actions'], references)})
-    overrides = schema['overrides']
+    overrides: dict[str, dict[str, Any]] = schema['overrides']
     if not isinstance(overrides, dict) or len(overrides) > 500:
         raise ValueError('Maximum 500 overrides')
-    clean_overrides = {}
+    clean_overrides: dict[str, dict[str, Any]] = {}
     for identity, actions in overrides.items():
         if not isinstance(identity, str) or len(identity) != 64 or any(c not in '0123456789abcdef' for c in identity):
             raise ValueError('Overrides require a candidate identity')
@@ -93,18 +97,19 @@ def validate_schema(schema, references):
     return {'version': 1, 'rules': rules, 'overrides': clean_overrides}
 
 
-def evaluate(schema, candidate):
+def evaluate(schema: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
     """Deterministic priority winners; lists union, scalar conflicts are explained."""
-    proposals = {'requirements': ['screenshot-review', 'torrent-verification']}
-    provenance = {'requirements': ['mandatory-safety-floor']}
-    explanations, conflicts = [], []
+    proposals: dict[str, Any] = {'requirements': ['screenshot-review', 'torrent-verification']}
+    provenance: dict[str, list[str]] = {'requirements': ['mandatory-safety-floor']}
+    explanations: list[dict[str, Any]] = []
+    conflicts: list[dict[str, Any]] = []
     for rule in sorted(schema['rules'], key=lambda r: (-r['priority'], r['name'].casefold())):
-        conditions = []
+        conditions: list[dict[str, Any]] = []
         for condition in rule['conditions']:
             actual = candidate.get(condition['field'])
             known = isinstance(actual, str) and bool(actual.strip())
             expected = condition['value']
-            value = actual.strip().casefold() if known else ''
+            value = actual.strip().casefold() if isinstance(actual, str) else ''
             matched = known and (value in [v.casefold() for v in expected] if condition['operator'] == 'in' else
                                  expected.casefold() in value if condition['operator'] == 'contains' else value == expected.casefold())
             conditions.append({**condition, 'actual': actual if known else None, 'known': known, 'matched': bool(matched),
@@ -138,13 +143,13 @@ def evaluate(schema, candidate):
 class RuleStore:
     """Atomic state persistence with optimistic revisions; never writes config.py."""
 
-    def __init__(self, path):
+    def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self.lock = threading.Lock()
 
-    def _load(self, references):
+    def _load(self, references: dict[str, list[str]]) -> tuple[dict[str, Any], str]:
         if not self.path.exists():
-            schema = {'version': 1, 'rules': [], 'overrides': {}}
+            schema: dict[str, Any] = {'version': 1, 'rules': [], 'overrides': {}}
         else:
             if self.path.is_symlink() or self.path.stat().st_size > MAX_BYTES:
                 raise ValueError('Invalid rule state')
@@ -152,11 +157,11 @@ class RuleStore:
         revision = hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
         return schema, revision
 
-    def load(self, references):
+    def load(self, references: dict[str, list[str]]) -> tuple[dict[str, Any], str]:
         with self.lock:
             return self._load(references)
 
-    def save(self, schema, revision, references):
+    def save(self, schema: dict[str, Any], revision: str, references: dict[str, list[str]]) -> tuple[dict[str, Any], str]:
         clean = validate_schema(schema, references)
         with self.lock:
             _, current = self._load(references)

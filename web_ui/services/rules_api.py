@@ -1,10 +1,14 @@
 """Authenticated visual rule editing and preview against recorded candidates only."""
+from collections.abc import Callable
+from typing import Any
+
 from flask import Blueprint, jsonify, render_template, request
 
-from src.automation_rules import ACTIONS, FIELDS, MAX_BYTES, OPERATORS, REQUIREMENTS, evaluate, validate_schema
+from src.automation_rules import ACTIONS, FIELDS, MAX_BYTES, OPERATORS, REQUIREMENTS, RuleStore, evaluate, validate_schema
 
 
-def create_blueprint(*, store, references, candidates, authenticated, csrf_valid, same_origin, csrf_token):
+def create_blueprint(*, store: RuleStore, references: Callable[[], dict[str, list[str]]], candidates: Callable[[], list[dict[str, Any]]],
+                     authenticated: Callable[[], bool], csrf_valid: Callable[[], bool], same_origin: Callable[[], bool], csrf_token: Callable[[], str]) -> Blueprint:
     bp = Blueprint('automation_rules', __name__)
 
     @bp.before_request
@@ -32,7 +36,7 @@ def create_blueprint(*, store, references, candidates, authenticated, csrf_valid
     @bp.post('/api/automation-rules')
     def save():
         try:
-            data = request.get_json(silent=True)
+            data: dict[str, Any] | None = request.get_json(silent=True)
             if not isinstance(data, dict) or set(data) != {'schema', 'revision'}:
                 raise ValueError('Invalid save request')
             schema, revision = store.save(data['schema'], data['revision'], references())
@@ -51,7 +55,7 @@ def create_blueprint(*, store, references, candidates, authenticated, csrf_valid
     @bp.post('/api/automation-rules/preview')
     def preview():
         try:
-            data = request.get_json(silent=True)
+            data: dict[str, Any] | None = request.get_json(silent=True)
             if not isinstance(data, dict) or set(data) - {'id', 'schema'}:
                 raise ValueError('Invalid preview')
             candidate = next((r for r in candidates() if r['id'] == data.get('id')), None)
