@@ -32,7 +32,7 @@
       const article = document.createElement('article'), label = document.createElement('label'), input = document.createElement('input'), evidence = document.createElement('pre');
       input.type = 'checkbox'; input.checked = selected.has(row.id); input.onchange = () => {input.checked ? selected.add(row.id) : selected.delete(row.id); invalidate();};
       label.append(input, document.createTextNode(row.release_name));
-      evidence.textContent = JSON.stringify({metadata: Object.fromEntries(['category','resolution','codec','language','edition'].map(f => [f, row[f]])), evidence: row.evidence, blockers: row.blockers, work: row.estimated_work, ranking: row.ranking_reasons, targets: row.proposed_trackers}, null, 2);
+      evidence.textContent = JSON.stringify({metadata: Object.fromEntries(['category','resolution','codec','language','edition','media_type'].map(f => [f, row[f]])), evidence: row.evidence, blockers: row.blockers, work: row.estimated_work, ranking: row.ranking_reasons, targets: row.proposed_trackers}, null, 2);
       const details = document.createElement('details'); const summary = document.createElement('summary'); summary.textContent = row.preparation_ready ? 'Ready to prepare (verification still required)' : 'Review evidence / blockers'; details.append(summary, evidence); article.append(label, details); $('rows').append(article);
     });
     $('previous').disabled = offset === 0; $('next').disabled = offset + 100 >= data.total;

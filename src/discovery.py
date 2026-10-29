@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 MAX_RECORDS = 5000
-FIELDS = ('category', 'resolution', 'codec', 'language', 'edition')
+FIELDS = ('category', 'resolution', 'codec', 'language', 'edition', 'media_type')
 STALE_SECONDS = 7 * 86400
 
 

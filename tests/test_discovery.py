@@ -5,6 +5,7 @@ import pytest
 from flask import Flask
 
 from src.discovery import MAX_RECORDS, candidates, preview, select
+from src.runtime.history import ReleaseHistoryStore
 from web_ui.services.discovery_api import create_blueprint
 
 
@@ -27,6 +28,15 @@ def test_normalization_ranking_unknown_filters_and_duplicates(tmp_path):
     assert select(rows, trackers=['A'], mode='unattempted')['total'] == 2
     assert select(rows, limit=1, offset=1)['rows'][0]['source_path'] == str(b)
     assert select(rows, limit=1)['rows'][0]['id'] == select(list(reversed(rows)), limit=1)['rows'][0]['id']
+
+
+def test_real_history_media_type_is_retained_not_silently_unknown(tmp_path):
+    source = tmp_path / 'movie.mkv'; source.touch()
+    store = ReleaseHistoryStore(tmp_path)
+    store.record_release({'path':str(source),'type':'ENCODE','category':'MOVIE'}, record_id='synthetic')
+    rows, _ = candidates([{**r,'origin':'history'} for r in store.search()], [tmp_path], now=time.time())
+    assert rows[0]['media_type'] == 'ENCODE'
+    assert select(rows, filters={'media_type':'encode'})['total'] == 1
 
 
 def test_paths_ambiguous_stale_and_bounds(tmp_path):
