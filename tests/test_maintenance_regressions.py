@@ -112,11 +112,13 @@ def test_browse_delete_treats_paths_literally_and_case_sensitively(tmp_path):
     root = tmp_path / "media"
     target = root / "Release_[1]%"
     neighbors = [root / "ReleaseX[1]other", root / "release_[1]%", root / "Release_[1]%extra"]
-    for folder in [target, *neighbors]:
-        folder.mkdir(parents=True)
-        (folder / "movie.mkv").touch()
-    index._refresh([str(root)])
+    # Exercise SQLite's literal-path contract without requiring a filesystem
+    # that can create two names differing only in case (Windows cannot).
+    index._initialize()
     with index._connect() as connection:
+        for folder in [target, *neighbors]:
+            index._upsert_entry(connection, str(root), folder, "folder")
+            index._upsert_entry(connection, str(root), folder / "movie.mkv", "file")
         index._delete_path(connection, target)
         remaining = {row[0] for row in connection.execute("SELECT path FROM browse_entries")}
     assert str(target) not in remaining
