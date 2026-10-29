@@ -10,7 +10,7 @@ from flask import Blueprint, jsonify, render_template, request
 from src.discovery import FIELDS, candidates, preview, select
 
 
-def create_blueprint(*, records: Callable[[], Iterable[Mapping[str, Any]]], roots: Callable[[], list[str | Path]], trackers: Callable[[], Iterable[str]],
+def create_blueprint(*, records: Callable[[], Iterable[Mapping[str, Any]]], roots: Callable[[], Iterable[str | Path]], trackers: Callable[[], Iterable[str]],
                      validate_path: Callable[[str], str], authenticated: Callable[[], bool], csrf_valid: Callable[[], bool],
                      same_origin: Callable[[], bool], csrf_token: Callable[[], str]) -> Blueprint:
     bp = Blueprint('discovery', __name__)

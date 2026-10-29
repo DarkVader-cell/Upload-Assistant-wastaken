@@ -380,7 +380,7 @@ class BrowseIndex:
         normalized = self._normalized_roots(roots)
         self._initialize()
         now = time.time()
-        rows = []
+        rows: list[tuple[str, str, str, str, float]] = []
         for item in items[:5000]:
             path = Path(str(item.get("path", ""))).resolve()
             root = next((r for r in normalized if path != Path(r) and path.is_relative_to(Path(r))), None)
@@ -407,7 +407,7 @@ class BrowseIndex:
             ).fetchall()
             exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='browse_observations'").fetchone()
             observed = connection.execute(f"SELECT path, entry_type, observed_at FROM browse_observations WHERE root IN ({placeholders}) ORDER BY observed_at DESC, path LIMIT ?", [*normalized, min(5000, max(1, limit))]).fetchall() if exists else []
-        by_path = {str(r['path']): {'source_path': str(r['path']), 'entry_type': r['entry_type'], 'updated_at': r['observed_at'], 'origin': 'browse-index'} for r in [*rows, *reversed(observed)]}
+        by_path: dict[str, dict[str, Any]] = {str(r['path']): {'source_path': str(r['path']), 'entry_type': r['entry_type'], 'updated_at': r['observed_at'], 'origin': 'browse-index'} for r in [*rows, *reversed(observed)]}
         return sorted(by_path.values(), key=lambda r: (-float(r['updated_at'] or 0), r['source_path']))[:limit]
 
     def search(self, roots: list[str], query: str, file_filter: str, max_results: int) -> tuple[list[dict[str, Any]], bool]:

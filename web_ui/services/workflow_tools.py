@@ -3,10 +3,12 @@ import contextlib
 import shlex
 import sqlite3
 import time
+from collections.abc import Callable, Iterator, Mapping
 from itertools import islice
 from pathlib import Path
+from typing import Any
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Flask, Response, jsonify, request
 
 from src.automation_rules import RuleStore
 from src.discovery import candidates
@@ -20,15 +22,19 @@ from web_ui.services.screenshot_intelligence_api import create_blueprint as scre
 MEDIA_EXTENSIONS = {'.mkv', '.mp4', '.avi', '.m2ts', '.ts', '.iso', '.flac', '.mp3', '.m4a', '.epub', '.pdf', '.mobi', '.azw3'}
 
 
-def register_workflow_tools(app, *, state_dir, config, roots, presets, resolve_review, review_meta, validate_path, issued_queue, authenticated, csrf_valid, same_origin, csrf_token):
+def register_workflow_tools(app: Flask, *, state_dir: Path, config: Callable[[], dict[str, Any]], roots: Callable[[], list[str]],
+                            presets: Callable[[], list[dict[str, str]]], resolve_review: Callable[[str], tuple[Path, Mapping[str, object]] | None],
+                            review_meta: Callable[[Path, Mapping[str, object]], Mapping[str, object]], validate_path: Callable[[str], str],
+                            issued_queue: Callable[[str], bool], authenticated: Callable[[], bool], csrf_valid: Callable[[], bool],
+                            same_origin: Callable[[], bool], csrf_token: Callable[[], str]) -> None:
     """Only invoked by Web UI registration; all external access stays user-driven."""
-    security = {'authenticated': authenticated, 'csrf_valid': csrf_valid, 'same_origin': same_origin, 'csrf_token': csrf_token}
+    security: dict[str, Any] = {'authenticated': authenticated, 'csrf_valid': csrf_valid, 'same_origin': same_origin, 'csrf_token': csrf_token}
     index = BrowseIndex(Path(state_dir) / 'data' / 'cache' / 'browse.sqlite3')
 
-    def trackers():
+    def trackers() -> list[str]:
         return sorted(set(config().get('TRACKERS', {})) - {'DEFAULT'})
 
-    def records():
+    def records() -> Iterator[dict[str, Any]]:
         store = ReleaseHistoryStore(state_dir, config())
         for offset in range(0, 2500, 500):
             rows = store.search(limit=500, offset=offset)
@@ -43,12 +49,12 @@ def register_workflow_tools(app, *, state_dir, config, roots, presets, resolve_r
     def candidate_rows():
         return candidates(records(), roots(), now=time.time())[0]
 
-    def references():
+    def references() -> dict[str, list[str]]:
         return {'suggest_trackers': trackers(), 'preset': sorted({p['name'] for p in presets()}),
                 'client_profile': sorted(set(config().get('TORRENT_CLIENTS', {})) - {'default', 'DEFAULT'})}
 
     app.register_blueprint(discovery_blueprint(records=records, roots=roots, trackers=trackers, validate_path=validate_path, **security))
-    def resolve_screenshots(session):
+    def resolve_screenshots(session: str) -> tuple[Path, Mapping[str, object]] | None:
         resolved = resolve_review(session)
         return (resolved[0], review_meta(*resolved)) if resolved else None
 
@@ -57,9 +63,9 @@ def register_workflow_tools(app, *, state_dir, config, roots, presets, resolve_r
     app.register_blueprint(migration_blueprint(**security))
 
     @app.after_request
-    def observe_browse(response):
+    def observe_browse(response: Response) -> Response:
         if request.path in ('/api/browse', '/api/browse_search') and response.status_code == 200 and authenticated():
-            data = response.get_json(silent=True)
+            data: dict[str, Any] | None = response.get_json(silent=True)
             if isinstance(data, dict) and isinstance(data.get('items'), list):
                 # A disposable index must never break the existing browser.
                 with contextlib.suppress(OSError, ValueError, sqlite3.Error):
@@ -78,7 +84,7 @@ def register_workflow_tools(app, *, state_dir, config, roots, presets, resolve_r
         try:
             # Issuance callback verifies the content hash and confines generated files.
             lines = Path(path).read_text().splitlines()
-            items = []
+            items: list[dict[str, str]] = []
             for line in islice(lines, 50):
                 parts = shlex.split(line)
                 if not parts:
