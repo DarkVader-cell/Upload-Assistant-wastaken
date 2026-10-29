@@ -11,7 +11,7 @@ Provider requests with the same safe cache key are coalesced while in progress. 
 
 ## Web UI recovery
 
-The Operations UI persists detached jobs, marks in-flight work as `interrupted` after a restart, and never silently replays it. Progress events and regular output are handled separately so incomplete progress records do not become prompts. Superseded file-browser searches are cancelled in the browser; the server retains a bounded SQLite index and stops its filesystem watcher during shutdown or reload.
+The Operations UI persists detached jobs, marks in-flight work as `interrupted` after a restart, and never silently replays it. Progress events and regular output are handled separately so incomplete progress records do not become prompts. Superseded file-browser searches are cancelled in the browser; the server retains a bounded SQLite index and stops its filesystem watcher during shutdown or reload. Browse and release-history operations explicitly close their SQLite connections. Live directory updates use indexed, literal path ranges, so unrelated library rows are not loaded and names containing SQL wildcard characters remain safe.
 
 If a process cannot be terminated, its session remains visible and the API returns an error rather than falsely reporting success. Retry or cancel it from Operations after addressing the underlying process or client problem.
 
@@ -29,12 +29,14 @@ Run the following from a Python 3.14 environment after source changes:
 
 ```bash
 uv lock --check
-uv run python -m compileall src web_ui upload.py config-generator.py
+uv run python -m compileall src web_ui upload.py
 uv run ruff check .
 uv run python scripts/architecture_guard.py
 uv run python benchmarks/benchmark_runtime.py --smoke
 uv run python -m pytest -q
 git diff --check
 ```
+
+The runtime benchmark includes incremental directory synchronization in a large indexed library. Use `python benchmarks/benchmark_runtime.py --output results.json` for a full local sample and `--baseline results.json` for a same-machine comparison; microbenchmark timings are not end-to-end upload throughput.
 
 For Docker-affecting changes, also run the repository's Docker validation or the corresponding GitHub workflow. The architecture guard prevents new direct async-client/subprocess coupling and Web UI monolith growth; the benchmark smoke test catches regressions in client pooling, runtime setup, cache lookup, pipeline execution, and browser indexing.

@@ -16,6 +16,7 @@ import stat
 import struct
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -67,12 +68,18 @@ class BrowseIndex:
         self._watch_roots: tuple[str, ...] = ()
         self._watch_stop = threading.Event()
 
-    def _connect(self) -> sqlite3.Connection:
+    @contextlib.contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
         self.database_path.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(self.database_path, timeout=30)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA busy_timeout = 30000")
-        return connection
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA busy_timeout = 30000")
+            with connection:
+                yield connection
+        finally:
+            # sqlite3.Connection's own context manager only commits/rolls back.
+            connection.close()
 
     def _initialize(self) -> None:
         if self._initialized:
@@ -169,9 +176,16 @@ class BrowseIndex:
             (root, str(path), name, name.casefold(), entry_type),
         )
 
+    @staticmethod
+    def _subtree_bounds(path: Path) -> tuple[str, str]:
+        # A binary range is literal, case-sensitive and uses the path index.
+        # The prefix always ends in a separator, whose successor bounds it.
+        prefix = str(path).rstrip(os.sep) + os.sep
+        return prefix, prefix[:-1] + chr(ord(os.sep) + 1)
+
     def _delete_path(self, connection: sqlite3.Connection, path: Path) -> None:
-        prefix = str(path).rstrip(os.sep) + os.sep + "%"
-        connection.execute("DELETE FROM browse_entries WHERE path = ? OR path LIKE ?", (str(path), prefix))
+        prefix, upper = self._subtree_bounds(path)
+        connection.execute("DELETE FROM browse_entries WHERE path = ? OR (path >= ? AND path < ?)", (str(path), prefix, upper))
 
     def _sync_directory(self, root: str, directory: Path) -> None:
         """Synchronize one changed directory, not the whole browse root."""
@@ -182,11 +196,14 @@ class BrowseIndex:
             try:
                 entries = list(os.scandir(directory))
                 direct_paths = {str(Path(entry.path)) for entry in entries}
-                existing = connection.execute("SELECT path FROM browse_entries WHERE root = ?", (root,)).fetchall()
+                prefix, upper = self._subtree_bounds(directory)
+                existing = connection.execute(
+                    "SELECT path FROM browse_entries WHERE path >= ? AND path < ? AND root = ?", (prefix, upper, root)
+                ).fetchall()
                 for row in existing:
                     existing_path = Path(str(row["path"]))
                     if existing_path.parent == directory and str(existing_path) not in direct_paths:
-                        connection.execute("DELETE FROM browse_entries WHERE path = ?", (str(existing_path),))
+                        self._delete_path(connection, existing_path)
                 for entry in entries:
                     if entry.name.startswith("."):
                         continue

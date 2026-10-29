@@ -7,6 +7,7 @@ without coupling history retention to temporary execution directories.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
@@ -182,7 +183,7 @@ class ReleaseHistoryStore:
         }
         if not values["id"]:
             return
-        with self._connect() as connection:
+        with contextlib.closing(self._connect()) as connection, connection:
             connection.execute(
                 """
                 INSERT INTO release_history (
@@ -286,7 +287,7 @@ class ReleaseHistoryStore:
             parameters.append(cleaned_status)
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         parameters.extend([max(1, min(int(limit), 500)), max(0, int(offset))])
-        with self._connect() as connection:
+        with contextlib.closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 f"SELECT * FROM release_history{where} ORDER BY updated_at DESC LIMIT ? OFFSET ?",  # noqa: S608 - fixed clauses only
                 parameters,
@@ -306,7 +307,7 @@ class ReleaseHistoryStore:
     def stats(self) -> dict[str, int]:
         if not self.enabled or not self.path.exists():
             return {"entries": 0, "completed": 0, "failed": 0}
-        with self._connect() as connection:
+        with contextlib.closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT COUNT(*) AS entries, SUM(status = 'completed') AS completed, SUM(status = 'failed') AS failed FROM release_history"
             ).fetchone()

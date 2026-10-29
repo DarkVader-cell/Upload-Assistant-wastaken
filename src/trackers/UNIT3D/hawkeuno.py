@@ -1,6 +1,6 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import re
-from typing import Any, ClassVar
+from typing import Any, ClassVar, cast
 
 import aiofiles
 import httpx
@@ -13,6 +13,7 @@ from src.get_desc import DescriptionBuilder
 from src.languages import languages_manager
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
+from src.runtime.http import shared_http_client
 from src.trackers.common import Common
 from src.trackers.naming import add_incomplete_pack_marker
 from src.trackers.UNIT3D import UNIT3D
@@ -291,7 +292,7 @@ class HawkeUno(UNIT3D):
             meta,
             mediainfo=False,
             nfo=False,
-            approved_image_hosts=self.approved_image_hosts,
+            approved_image_hosts=list(self.approved_image_hosts),
             signature=f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=8]{meta.ua_signature}[/size][/url][/right]",
         )
         async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[{self.tracker}]DESCRIPTION.txt", "w", encoding="utf-8") as f:
@@ -333,7 +334,7 @@ class HawkeUno(UNIT3D):
         resolved_id = resolution_id.get(meta_resolution, "10")
         return {"resolution_id": resolved_id}
 
-    async def get_type_id(self, meta: Meta, media_type: str = "", reverse: bool = False, mapping_only: bool = False) -> dict[str, str]:
+    async def get_type_id(self, meta: Meta, type: str = "", reverse: bool = False, mapping_only: bool = False) -> dict[str, str]:
         type_id = {
             "DISC": "1",
             "REMUX": "2",
@@ -347,8 +348,8 @@ class HawkeUno(UNIT3D):
             return type_id
         if reverse:
             return {v: k for k, v in type_id.items()}
-        if media_type:
-            return {"type_id": type_id.get(media_type, "0")}
+        if type:
+            return {"type_id": type_id.get(type, "0")}
         meta_type = meta.type or ""
         resolved_id = type_id.get(meta_type, "0")
         return {"type_id": resolved_id}
@@ -581,7 +582,7 @@ class HawkeUno(UNIT3D):
         try:
             files = await self.get_files(meta)
 
-            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            async with shared_http_client(self.tracker, request_timeout=30.0, follow_redirects=True, factory=httpx.AsyncClient) as client:
                 response = await client.post(url=url, data=data, files=files)
                 response.raise_for_status()
                 response_json = response.json()
@@ -606,7 +607,7 @@ class HawkeUno(UNIT3D):
                 error_json = e.response.json()
                 details = error_json.get("data") or ""
                 if isinstance(details, list):
-                    details = "; ".join(str(detail) for detail in details)
+                    details = "; ".join(str(detail) for detail in cast(list[Any], details))
                 detail_text = f"{error_json.get('message') or ''} {details}".strip()
                 if detail_text:
                     msg = f"HTTP {e.response.status_code} - {detail_text}"

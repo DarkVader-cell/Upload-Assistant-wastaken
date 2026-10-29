@@ -12,6 +12,7 @@ from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.languages import languages_manager
 from src.meta import Meta
+from src.runtime.http import shared_http_client
 from src.trackers.common import Common
 
 Config = dict[str, Any]
@@ -198,7 +199,7 @@ class CZTeam:
         if str(meta.category).upper() == "TV" and str(meta.season or "").upper().startswith("S") and str(meta.season)[1:].isdigit():
             params["season"] = int(str(meta.season)[1:])
 
-        async with httpx.AsyncClient(headers=self._headers(meta), timeout=30.0) as client:
+        async with shared_http_client(self.tracker, headers=self._headers(meta), request_timeout=30.0, factory=httpx.AsyncClient) as client:
             response = await client.get(self.search_url, params=params)
         if response.status_code != 200:
             raise RuntimeError(f"{self.tracker}: duplicate search failed: {self._error_message(response)}")
@@ -234,6 +235,8 @@ class CZTeam:
         return dupes
 
     async def get_name(self, meta: Meta) -> str:
+        if meta.manual_name is not None:
+            return meta.manual_name.strip()
         if meta.scene_name:
             return meta.scene_name
 
@@ -284,7 +287,7 @@ class CZTeam:
             files = {"file": (f"{meta.name}.torrent", await torrent_file.read(), "application/x-bittorrent")}
 
         try:
-            async with httpx.AsyncClient(headers=self._headers(meta), timeout=120.0) as client:
+            async with shared_http_client(self.tracker, headers=self._headers(meta), request_timeout=120.0, factory=httpx.AsyncClient) as client:
                 response = await client.post(self.upload_url, data={**data, "passkey": self.passkey}, files=files)
         except httpx.TimeoutException:
             tracker_status["status_message"] = "data error: Request timed out; check the site before retrying."

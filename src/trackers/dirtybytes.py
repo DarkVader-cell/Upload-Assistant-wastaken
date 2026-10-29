@@ -13,6 +13,7 @@ from src.cogs.redaction import Redaction
 from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.meta import Meta
+from src.runtime.http import shared_http_client
 from src.screenshot_manifest import files as manifest_files
 from src.trackers.common import Common
 
@@ -195,7 +196,7 @@ class DirtyBytes:
 
     async def search_existing(self, meta: Meta) -> list[dict[str, Any]]:
         params = {"name": await self.get_name(meta)}
-        async with httpx.AsyncClient(headers=self._headers(meta), timeout=30.0) as client:
+        async with shared_http_client(self.tracker, headers=self._headers(meta), request_timeout=30.0, factory=httpx.AsyncClient) as client:
             response = await client.get(f"{self.api_base_url}/dupe-search", params=params)
         if response.status_code != 200:
             raise RuntimeError(f"{self.tracker}: duplicate search failed: {self._error_message(response)}")
@@ -279,7 +280,7 @@ class DirtyBytes:
 
         headers = self._headers(meta)
         try:
-            async with httpx.AsyncClient(headers=headers, timeout=180.0) as client:
+            async with shared_http_client(self.tracker, headers=headers, request_timeout=180.0, factory=httpx.AsyncClient) as client:
                 response = await client.post(f"{self.api_base_url}/upload", data=data, files=files)
         except httpx.TimeoutException:
             tracker_status["status_message"] = "data error: Request timed out; check for a duplicate on the site before retrying."

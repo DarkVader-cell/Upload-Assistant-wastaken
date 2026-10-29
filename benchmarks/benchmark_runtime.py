@@ -85,6 +85,23 @@ def benchmark_browse_index(temp_root: Path, file_count: int, repeats: int) -> tu
     return build_elapsed, query_elapsed
 
 
+def benchmark_directory_sync(temp_root: Path, unrelated_rows: int, repeats: int) -> float:
+    """Measure one watched directory changing in a much larger indexed library."""
+    media_root = temp_root / "sync-media"
+    changed = media_root / "changed"
+    changed.mkdir(parents=True)
+    for index in range(10):
+        (changed / f"Local.{index}.mkv").touch()
+    browse = BrowseIndex(temp_root / "sync.sqlite")
+    browse._initialize()
+    with browse._connect() as connection:
+        connection.executemany(
+            "INSERT INTO browse_entries VALUES (?, ?, ?, ?, ?)",
+            [(str(media_root), str(media_root / f"Other.{index}.mkv"), f"Other.{index}.mkv", f"other.{index}.mkv", "file") for index in range(unrelated_rows)],
+        )
+    return median_seconds(lambda: browse._sync_directory(str(media_root), changed), repeats)
+
+
 def compare_baseline(results: dict[str, float], baseline_path: Path, max_regression: float) -> list[str]:
     baseline = json.loads(baseline_path.read_text(encoding="utf-8"))
     failures: list[str] = []
@@ -106,6 +123,7 @@ async def run(smoke: bool) -> dict[str, float]:
         temp_root = Path(directory)
         unpooled, pooled = await benchmark_http_pool(iterations)
         browse_build, browse_query = benchmark_browse_index(temp_root, file_count, repeats)
+        directory_sync = benchmark_directory_sync(temp_root, 100 if smoke else 20000, repeats)
         cache_config = {"DEFAULT": {"metadata_cache_dir": "cache"}}
         cache_lookup = median_seconds(lambda: cache_for(temp_root, cache_config), repeats * 1000)
         pipeline = await benchmark_pipeline(iterations * 10, temp_root)
@@ -114,6 +132,7 @@ async def run(smoke: bool) -> dict[str, float]:
         "http_client_pooled_seconds": pooled,
         "browse_index_build_seconds": browse_build,
         "browse_index_query_seconds": browse_query,
+        "browse_index_directory_sync_seconds": directory_sync,
         "cache_facade_lookup_seconds": cache_lookup,
         "pipeline_noop_seconds": pipeline,
     }

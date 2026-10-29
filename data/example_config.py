@@ -1009,9 +1009,6 @@ config: dict[str, Any] = {
             # ExoticaZ requires a video sheet per video and, for single clips, a full size screenshot.
             # Set DEFAULT "xxx_single_file_screens" to at least 1 when uploading single clips.
             # The configurations below override the DEFAULT configuration
-            "custom_description_header": "",
-            "custom_signature": "",
-            "inject_delay": 0,
         },
         "FILELIST": {
             "cli_alias": "FL",

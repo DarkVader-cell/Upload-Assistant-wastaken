@@ -486,14 +486,20 @@ def test_example_config_keeps_only_primary_screenshot_description_defaults() -> 
         "use_bluray_images",
         "user_description",
     }
+    # Preserve the explicit privacy defaults of both existing and new trackers;
+    # adding any other anonymous-by-default tracker must update this contract.
+    anonymous_trackers = {"DIRTYBYTES", "EXOTICAZ", "QINGWA", "VULTU"}
+    assert {
+        name for name, tracker in example_config["TRACKERS"].items()
+        if isinstance(tracker, dict) and tracker.get("anon") is True
+    } == anonymous_trackers
     for name, tracker in example_config["TRACKERS"].items():
         if not isinstance(tracker, dict):
             continue
         active_overrides = override_keys.intersection(tracker)
         if name in {"QINGWA", "VULTU"}:
-            # Preserve upstream's tracker-specific privacy defaults.
-            assert tracker["anon"] is True
+            # Preserve upstream's existing tracker-specific description overrides.
             continue
         assert active_overrides <= {"anon"}
         if "anon" in active_overrides:
-            assert tracker["anon"] is False
+            assert tracker["anon"] is (name in anonymous_trackers)
