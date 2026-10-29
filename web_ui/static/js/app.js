@@ -150,6 +150,7 @@ const SHOW_AUDIO_TRACKS_KEY = "ua_webui_show_audio_tracks";
 const SHOW_SUBTITLE_TRACKS_KEY = "ua_webui_show_subtitle_tracks";
 const OUTPUT_MODE_KEY = "ua_webui_output_mode";
 const RUN_GUI_RESULTS_COLLAPSED_KEY = "ua_webui_run_gui_results_collapsed";
+const RUN_GUI_COLLAPSED_ITEMS_KEY = "ua_webui_run_gui_collapsed_items";
 const REVIEW_PANELS_IN_MODAL_KEY = "ua_webui_review_panels_in_modal";
 const DEFAULT_LEFT_SIDEBAR_WIDTH = 256;
 const DEFAULT_RIGHT_SIDEBAR_WIDTH = 320;
@@ -475,6 +476,17 @@ const getStoredCollapsedSections = () => {
     );
     return Array.isArray(storedSections)
       ? storedSections.filter((section) => typeof section === "string")
+      : [];
+  } catch (error) {
+    return [];
+  }
+};
+
+const getStoredCollapsedRunGuiItems = () => {
+  try {
+    const stored = JSON.parse(storage.get(RUN_GUI_COLLAPSED_ITEMS_KEY) || "[]");
+    return Array.isArray(stored)
+      ? stored.filter((key) => typeof key === "string")
       : [];
   } catch (error) {
     return [];
@@ -2314,6 +2326,10 @@ function AudionutsUAGUI() {
   const [runGuiResultsCollapsed, setRunGuiResultsCollapsed] = useState(
     () => storage.get(RUN_GUI_RESULTS_COLLAPSED_KEY) === "true",
   );
+  // Queue items folded in Results, as "sessionId:index", so they survive reloads.
+  const [collapsedRunGuiItems, setCollapsedRunGuiItems] = useState(
+    () => new Set(getStoredCollapsedRunGuiItems()),
+  );
   // Mirrors the active tab's runtime.gui; background tabs update only their runtime.
   const [runGui, setRunGui] = useState(initialRunGuiState);
   const [executionScreenshots, setExecutionScreenshots] = useState(
@@ -2486,6 +2502,13 @@ function AudionutsUAGUI() {
   useEffect(() => {
     storage.set(RUN_GUI_RESULTS_COLLAPSED_KEY, String(runGuiResultsCollapsed));
   }, [runGuiResultsCollapsed]);
+
+  useEffect(() => {
+    storage.set(
+      RUN_GUI_COLLAPSED_ITEMS_KEY,
+      JSON.stringify(Array.from(collapsedRunGuiItems)),
+    );
+  }, [collapsedRunGuiItems]);
 
   // A new question opens at the top of the GUI panel, so its Yes/No buttons
   // are always in the same place even if the panel was scrolled down.
@@ -3644,6 +3667,12 @@ function AudionutsUAGUI() {
     if (!runtime) return;
     runtime.gui = RunGui.createRunGuiState();
     if (tabId === activeTabIdRef.current) setRunGui(runtime.gui);
+    const session = runtime.sessionRecord;
+    if (!session) return;
+    setCollapsedRunGuiItems((prev) => {
+      const kept = [...prev].filter((key) => !key.startsWith(`${session}:`));
+      return kept.length === prev.size ? prev : new Set(kept);
+    });
   };
 
   const applyProgressEvent = (event, tabId = activeTabIdRef.current) => {
@@ -7071,7 +7100,17 @@ function AudionutsUAGUI() {
         cache: "no-store",
       });
       const data = await response.json();
-      if (response.ok && Array.isArray(data.sessions)) sessions = data.sessions;
+      if (response.ok && Array.isArray(data.sessions)) {
+        sessions = data.sessions;
+        // Forget folded items of sessions the server no longer keeps.
+        const known = new Set(sessions.map((s) => String(s.session_id)));
+        setCollapsedRunGuiItems((prev) => {
+          const kept = [...prev].filter((key) =>
+            known.has(key.slice(0, key.lastIndexOf(":"))),
+          );
+          return kept.length === prev.size ? prev : new Set(kept);
+        });
+      }
       if (Number.isInteger(data.max_running) && data.max_running > 0) {
         setMaxRunningUploads(data.max_running);
       }
@@ -10559,7 +10598,7 @@ function AudionutsUAGUI() {
                   <dt className="ua-run-gui-muted min-w-0 break-words text-xs font-semibold sm:pt-0.5">
                     {label}
                   </dt>
-                  <dd className="min-w-0 break-words text-sm">
+                  <dd className="min-w-0 whitespace-pre-line break-words text-sm">
                     {value || (
                       <span className="ua-run-gui-attention-text">Missing</span>
                     )}
@@ -10570,7 +10609,9 @@ function AudionutsUAGUI() {
           </div>
         )}
         {context.hint && (
-          <p className="ua-run-gui-muted text-xs">{context.hint}</p>
+          <p className="ua-run-gui-muted whitespace-pre-line text-xs">
+            {context.hint}
+          </p>
         )}
         {renderRunGuiActionButtons(getRunGuiActions(context), answer, disabled)}
       </>
@@ -10604,6 +10645,16 @@ function AudionutsUAGUI() {
     const trackerKey = `${prompt?.item}:${context.tracker}`;
     const slot = context.kind === "dupes" ? view.slots[trackerKey] : null;
     const dupe = context.kind === "dupes" ? view.dupes[trackerKey] : null;
+    // The tracker's attention card is hidden while its prompt is open, so its
+    // notes must show here.
+    const trackerNotices =
+      context.kind === "dupes"
+        ? view.attention.filter(
+            (notice) =>
+              notice.item === prompt.item &&
+              notice.tracker === context.tracker,
+          )
+        : [];
     const missing =
       context.kind === "confirm"
         ? view.attention.filter(
@@ -10627,11 +10678,18 @@ function AudionutsUAGUI() {
       details = renderRunGuiEditArgsContext(context, view, prompt, disabled);
     } else if (context.kind === "dupe_clear") {
       details = renderRunGuiDupeClearContext(context);
-    } else if (slot || dupe) {
+    } else if (slot || dupe || trackerNotices.length) {
       details = (
         <>
           {slot && renderRunGuiSlot(slot)}
           {dupe && renderRunGuiDupe(dupe)}
+          {trackerNotices.length > 0 && (
+            <ul>
+              {trackerNotices.map((notice) =>
+                renderRunGuiNotice({ ...notice, tracker: "" }),
+              )}
+            </ul>
+          )}
         </>
       );
     }
@@ -11166,50 +11224,76 @@ function AudionutsUAGUI() {
   /** One queue item as a card: the release is the heading, trackers below it. */
   const renderRunGuiItemCard = (group, view) => {
     const outcome = runGuiItemOutcome(group, view);
+    const collapseKey = `${getTabRuntime(activeTabId)?.sessionRecord || activeTabId}:${group.index}`;
+    const collapsed = collapsedRunGuiItems.has(collapseKey);
+    const toggleCollapsed = () =>
+      setCollapsedRunGuiItems((prev) => {
+        const next = new Set(prev);
+        if (!next.delete(collapseKey)) next.add(collapseKey);
+        return next;
+      });
+    const header = (
+      <header className="ua-run-gui-item-header flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
+        <span className="ua-run-gui-item-index shrink-0 rounded px-1.5 text-xs font-semibold tabular-nums">
+          {group.index}
+        </span>
+        <h4
+          className="min-w-0 flex-1 truncate text-sm font-semibold"
+          title={group.name || undefined}
+        >
+          {group.name || `Item ${group.index}`}
+        </h4>
+        {group.personalRelease && renderRunGuiPersonalRelease()}
+        {group.runOptions?.debug && (
+          <RunGuiDebugBadge options={group.runOptions} />
+        )}
+        <span className="ua-run-gui-status inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold">
+          <LucideIcon
+            name={outcome.icon}
+            className={`h-3.5 w-3.5 ${outcome.icon === "loader-circle" ? "animate-spin" : ""}`}
+          />
+          {outcome.label}
+        </span>
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-expanded={!collapsed}
+          aria-label={`${collapsed ? "Expand" : "Collapse"} ${group.name || `item ${group.index}`}`}
+          title={collapsed ? "Expand" : "Collapse"}
+          className="ua-run-gui-collapse flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+        >
+          <LucideIcon
+            name={collapsed ? "chevron-down" : "chevron-up"}
+            className="h-4 w-4"
+          />
+        </button>
+      </header>
+    );
     return (
       <section
         key={group.index}
         className="ua-run-gui-item rounded-md border"
         data-tone={outcome.tone}
       >
-        {renderRunGuiWithCover(
-          group,
-          "py-2 pl-3",
-          <>
-            <header className="ua-run-gui-item-header flex min-w-0 flex-wrap items-center gap-2 px-3 py-2">
-              <span className="ua-run-gui-item-index shrink-0 rounded px-1.5 text-xs font-semibold tabular-nums">
-                {group.index}
-              </span>
-              <h4
-                className="min-w-0 flex-1 truncate text-sm font-semibold"
-                title={group.name || undefined}
-              >
-                {group.name || `Item ${group.index}`}
-              </h4>
-              {group.personalRelease && renderRunGuiPersonalRelease()}
-              {group.runOptions?.debug && (
-                <RunGuiDebugBadge options={group.runOptions} />
-              )}
-              <span className="ua-run-gui-status inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-0.5 text-xs font-semibold">
-                <LucideIcon
-                  name={outcome.icon}
-                  className={`h-3.5 w-3.5 ${outcome.icon === "loader-circle" ? "animate-spin" : ""}`}
-                />
-                {outcome.label}
-              </span>
-            </header>
-            <div className="px-3 pb-2">
-              {group.rows.length > 0 && (
-                <ul className="ua-run-gui-divide divide-y">
-                  {group.rows.map((entry) =>
-                    renderRunGuiResultRow(entry, view),
+        {collapsed
+          ? header
+          : renderRunGuiWithCover(
+              group,
+              "py-2 pl-3",
+              <>
+                {header}
+                <div className="px-3 pb-2">
+                  {group.rows.length > 0 && (
+                    <ul className="ua-run-gui-divide divide-y">
+                      {group.rows.map((entry) =>
+                        renderRunGuiResultRow(entry, view),
+                      )}
+                    </ul>
                   )}
-                </ul>
-              )}
-              {renderRunGuiItemNotes(group.notes)}
-            </div>
-          </>,
-        )}
+                  {renderRunGuiItemNotes(group.notes)}
+                </div>
+              </>,
+            )}
       </section>
     );
   };

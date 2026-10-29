@@ -596,6 +596,9 @@ class BEYONDHD:
         return tags
 
     async def get_name(self, meta: Meta) -> str:
+        if meta.manual_name is not None:
+            return meta.manual_name.strip()
+
         name = meta.name or ""
         imdb_info = meta.imdb_info if isinstance(meta.imdb_info, dict) else {}
         imdb_title = str(imdb_info.get("title", "") or "").strip()

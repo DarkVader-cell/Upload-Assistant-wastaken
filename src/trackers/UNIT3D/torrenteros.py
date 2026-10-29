@@ -37,6 +37,9 @@ class Torrenteros(UNIT3D):
         self.common = Common(config)
 
     async def get_name(self, meta: Meta) -> dict[str, str]:
+        if meta.manual_name is not None:
+            return {"name": meta.manual_name.strip()}
+
         name = self.ttr_name or self.build_name(meta)
 
         return {"name": name}
@@ -49,7 +52,10 @@ class Torrenteros(UNIT3D):
             logger.info(f"{self.tracker}: 1 = Castellano")
             logger.info(f"{self.tracker}: 2 = Latino")
             logger.info(f"{self.tracker}: 3 = Castellano Latino")
-            with webui_events.numbered_options(["Castellano", "Latino", "Castellano Latino"]):
+            with webui_events.numbered_options(
+                ["Castellano", "Latino", "Castellano Latino"],
+                hint=f"{self.tracker}: Found Spanish {kind} track. Is it Castellano or Latino?",
+            ):
                 return str(cli_ui.ask_string("Enter choice (1-3): "))
 
         def get_spanish_type(lang_code: str) -> str | None:

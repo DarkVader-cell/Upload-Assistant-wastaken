@@ -113,7 +113,14 @@ class TrackerStatusManager:
             if needs_imdb:
                 while True:
                     try:
-                        with webui_events.answer_buttons([("", "Skip trackers that need it")]):
+                        with webui_events.field_prompt(
+                            "IMDb ID",
+                            {"Release": meta.get("name") or meta.get("title"), "Required by": "PASSTHEPOPCORN", "IMDb ID": ""},
+                            focus="IMDb ID",
+                            hint="Enter an IMDb ID as tt1234567. Leaving it blank skips trackers that require it.",
+                            actions=[("", "Skip trackers that need it")],
+                            placeholder="tt1234567",
+                        ):
                             imdb_id = await prompt_in_thread(
                                 cli_ui.ask_string, "Unable to find IMDB id, please enter e.g.(tt1234567) or press Enter to skip uploading to trackers requiring it:"
                             )
@@ -155,6 +162,7 @@ class TrackerStatusManager:
                 "QINGWA",
                 "RAILGUNPT",
                 "XINGYUNGEPT",
+                "ZMPT",
             ]
         ):
             meta.douban_id = await get_douban_id(meta)
@@ -278,9 +286,15 @@ class TrackerStatusManager:
                                     dupes = []
                                 else:
                                     try:
-                                        if await helper.prompt_yes_no(
-                                            f"Duplicate check failed on {tracker_name}. Do you want to proceed with the upload anyway?", default=False
+                                        with webui_events.prompt_context(
+                                            kind="tracker_checks",
+                                            tracker=tracker_name,
+                                            check_messages=[f"Error searching for duplicates on {tracker_name}: {e}"],
                                         ):
+                                            proceed_after_error = await helper.prompt_yes_no(
+                                                f"Duplicate check failed on {tracker_name}. Do you want to proceed with the upload anyway?", default=False
+                                            )
+                                        if proceed_after_error:
                                             dupes = []
                                             # set trackers here so that they are not double checked later with cross seeding
                                             async with meta_lock:

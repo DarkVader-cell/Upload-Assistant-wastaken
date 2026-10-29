@@ -100,7 +100,7 @@ include = ["bin*", "data*", "src*", "web_ui*"]
 exclude = ["tests", "tmp", "build", "build.*", "web_ui.static.js.node_modules", "web_ui.static.js.node_modules.*"]
 
 [tool.setuptools.package-data]
-data = ["tags.json", "templates/*.csv", "templates/*.json", "unit3d_catalogs/*.json"]
+data = ["exoticaz_tags.json", "tags.json", "templates/*.csv", "templates/*.json", "unit3d_catalogs/*.json"]
 web_ui = ["static/*.ico", "static/*.webmanifest", "static/css/*.css", "static/img/**/*", "static/js/*.js", "templates/*.html"]
 
 [tool.ruff]
