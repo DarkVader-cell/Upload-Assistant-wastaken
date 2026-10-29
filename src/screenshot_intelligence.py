@@ -8,10 +8,26 @@ import threading
 import time
 import warnings
 from collections import OrderedDict
+from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import Any, TypedDict
 
 import numpy as np
 from PIL import Image, ImageOps
+
+from src.screenshot_review import ReviewedScreenshot
+
+
+class Score(TypedDict):
+    version: str
+    brightness: float
+    black_fraction: float
+    detail: float
+    edge_proxy: float
+    reasons: list[str]
+    fingerprint: int
+    thumbnail: bytes
+
 
 MAX_IMAGES = 100
 MAX_PIXELS = 16_000_000
@@ -22,13 +38,13 @@ ALGORITHM_VERSION = 1
 class ImageAnalyzer:
     """Serialized decode + bounded identity/version LRU, with no network access."""
 
-    def __init__(self, cache_size=256):
-        self._cache = OrderedDict()
+    def __init__(self, cache_size: int = 256) -> None:
+        self._cache: OrderedDict[tuple[object, ...], Score] = OrderedDict()
         self._lock = threading.Lock()
         self.cache_size = max(1, min(256, cache_size))
         self.decodes = 0
 
-    def inspect(self, path, root, version=0, cancelled=lambda: False):
+    def inspect(self, path: str | Path, root: str | Path, version: int = 0, cancelled: Callable[[], bool] = lambda: False) -> Score:
         path, root = Path(path), Path(root).resolve()
         resolved = path.resolve()
         if path.is_symlink() or not resolved.is_relative_to(root) or resolved == root or not resolved.is_file():
@@ -63,13 +79,13 @@ class ImageAnalyzer:
                     image.convert('RGB').save(output, format='JPEG', quality=75)
             if cancelled():
                 raise InterruptedError('Analysis cancelled')
-            reasons = []
+            reasons: list[str] = []
             if brightness < 0.06 and black_fraction > 0.9:
                 reasons.append('near-black')
             if detail < 0.05 or edge < 0.008:
                 reasons.append('low-detail-or-blur-proxy')
             identity = hashlib.sha256(repr(key).encode()).hexdigest()
-            result = {'version': identity, 'brightness': round(brightness, 4), 'black_fraction': round(black_fraction, 4),
+            result: Score = {'version': identity, 'brightness': round(brightness, 4), 'black_fraction': round(black_fraction, 4),
                       'detail': round(detail, 4), 'edge_proxy': round(edge, 4), 'reasons': reasons,
                       'fingerprint': fingerprint, 'thumbnail': output.getvalue()}
             self.decodes += 1
@@ -78,13 +94,14 @@ class ImageAnalyzer:
                 self._cache.popitem(last=False)
             return result
 
-    def review(self, items, root, *, version=lambda _item: 0, cancelled=lambda: False, budget_seconds=5):
+    def review(self, items: Sequence[ReviewedScreenshot], root: str | Path, *, version: Callable[[ReviewedScreenshot], int] = lambda _item: 0,
+               cancelled: Callable[[], bool] = lambda: False, budget_seconds: float = 5) -> dict[str, Any]:
         start = time.monotonic()
-        rows = []
+        rows: list[dict[str, Any]] = []
         for item in items[:MAX_IMAGES]:
             if cancelled():
                 raise InterruptedError('Analysis cancelled')
-            row = {'id': item.id, 'index': item.index, 'group': item.group, 'source': item.source,
+            row: dict[str, Any] = {'id': item.id, 'index': item.index, 'group': item.group, 'source': item.source,
                    'reasons': [], 'duplicate_of': [], 'text_or_credits': 'unknown', 'status': 'unknown'}
             if item.path is None:
                 row['reasons'] = ['remote-image-not-fetched']

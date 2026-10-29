@@ -3,15 +3,19 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from typing import Any
 
 from flask import Blueprint, Response, jsonify, render_template, request
+from PIL import Image
 
 from src.screenshot_intelligence import MAX_IMAGES, ImageAnalyzer
-from src.screenshot_review import image_version, list_review_items
+from src.screenshot_review import ReviewedScreenshot, image_version, list_review_items
 
 
-def create_blueprint(*, resolve_review, authenticated, csrf_valid, same_origin, csrf_token):
+def create_blueprint(*, resolve_review: Callable[[str], tuple[Path, Mapping[str, object]] | None],
+                     authenticated: Callable[[], bool], csrf_valid: Callable[[], bool], same_origin: Callable[[], bool], csrf_token: Callable[[], str]) -> Blueprint:
     bp = Blueprint('screenshot_intelligence', __name__)
     analyzer = ImageAnalyzer()
     lock = threading.Lock()
@@ -32,17 +36,17 @@ def create_blueprint(*, resolve_review, authenticated, csrf_valid, same_origin, 
         root, meta = result
         return root, list_review_items(root, meta)
 
-    def decisions(root):
+    def decisions(root: Path) -> dict[str, dict[str, str]]:
         path = root / 'screenshot_intelligence_decisions.json'
         try:
             if path.is_symlink() or path.stat().st_size > 65536:
                 return {}
-            value = json.loads(path.read_text())
+            value: dict[str, dict[str, str]] = json.loads(path.read_text())
             return value if isinstance(value, dict) else {}
         except (OSError, ValueError):
             return {}
 
-    def report(root, items):
+    def report(root: Path, items: list[ReviewedScreenshot]) -> dict[str, Any]:
         result = analyzer.review(items, root, version=lambda i: image_version(root, i.id, 0))
         saved = decisions(root)
         for row in result['images']:
@@ -71,18 +75,18 @@ def create_blueprint(*, resolve_review, authenticated, csrf_valid, same_origin, 
         try:
             root, items = resolve()
             item = next((i for i in items[:MAX_IMAGES] if i.id == identity and i.path is not None), None)
-            if item is None:
+            if item is None or item.path is None:
                 raise ValueError('Local image unavailable')
             result = analyzer.inspect(item.path, root, image_version(root, item.id, 0))
             return Response(result['thumbnail'], mimetype='image/jpeg', headers={'Cache-Control': 'private, max-age=0', 'X-Content-Type-Options': 'nosniff'})
-        except (ValueError, OSError):
+        except (ValueError, OSError, Image.DecompressionBombError, Image.DecompressionBombWarning):
             return jsonify(error='Local image unavailable'), 404
 
     @bp.post('/api/screenshot-intelligence/decision')
     def decision():
         try:
             root, items = resolve()
-            data = request.get_json(silent=True)
+            data: dict[str, Any] | None = request.get_json(silent=True)
             if not isinstance(data, dict) or data.get('decision') not in ('accepted', 'rejected', 'unreviewed'):
                 raise ValueError('Invalid decision')
             with lock:
