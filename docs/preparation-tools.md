@@ -23,7 +23,7 @@ Choose **Discover** in the application rail or **Discover candidates** in Librar
 3. Select configured target trackers. Filter for no recorded success, never
    selected, or recorded failure, and any available metadata. Unknown metadata
    does not match a metadata filter. History currently projects category and
-   resolution; codec/language/edition controls only match when actual projected
+   resolution/media type; codec/language/edition controls only match when actual projected
    evidence exists. Filenames are not silently promoted to metadata.
 4. Inspect provenance, timestamps, blockers and ranking. Fresh unambiguous
    available sources rank first, then lower missing-metadata heuristic work,
