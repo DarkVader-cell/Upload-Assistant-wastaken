@@ -114,8 +114,11 @@ def test_single_rejected_refill_preserves_accepted_slots_order_and_target(tmp_pa
 
 def test_image_scoring_performance(tmp_path):
     items = images(tmp_path)
+    four_k = tmp_path / '4k.png'
+    Image.new('RGB', (3840, 2160), '#234567').save(four_k)
+    items.append(ReviewedScreenshot('4k', four_k, len(items)))
     analyzer = ImageAnalyzer()
     start = time.perf_counter(); analyzer.review(items, tmp_path); cold = time.perf_counter() - start
     start = time.perf_counter(); analyzer.review(items, tmp_path); warm = time.perf_counter() - start
-    print(f'image scoring 3 unique small synthetic images: cold={cold:.4f}s warm={warm:.4f}s decodes={analyzer.decodes}')
-    assert cold < 10 and analyzer.decodes == 3
+    print(f'image scoring 3 small + 1 4K synthetic images: cold={cold:.4f}s warm={warm:.4f}s decodes={analyzer.decodes}')
+    assert cold < 10 and analyzer.decodes == 4
