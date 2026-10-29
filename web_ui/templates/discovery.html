@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><meta name="csrf-token" content="{{ csrf_token }}"><title>Library discovery — UA</title><script defer src="{{ url_for('static', filename='js/discovery.js') }}"></script></head>
+<body><nav><a href="/?workspace=library">Upload library</a> · <a href="/automation-rules">Rules</a> · <a href="/migration-planner">Seedbox planner</a></nav>
+<main><h1>Library discovery</h1><p>Recorded evidence only: no local success is NOT proof of tracker absence, seed status, capabilities or slot availability. Preparation estimates are heuristics, not measured time.</p>
+<button id="refresh">Refresh recorded evidence</button><p id="status" role="status"></p>
+<form id="filters"><label>Search <input name="q" maxlength="200"></label><label>Result <select name="mode"><option value="missing">No recorded success</option><option value="unattempted">Never selected</option><option value="failed">Recorded failed</option></select></label><div id="metadata-filters"></div><fieldset id="trackers"><legend>Target trackers</legend></fieldset><button>Filter</button></form>
+<p>Refresh reads bounded history and the existing browse index, never scans your library or contacts clients. Unknown metadata does not match a filter.</p>
+<div id="rows"></div><button id="previous">Previous</button><button id="next">Next</button><button id="preview">Preview selected preparation</button><pre id="plan"></pre><button id="queue" disabled>Create reviewed queue (no execution)</button><p id="queue-result"></p>
+</main></body></html>

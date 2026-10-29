@@ -1,0 +1,38 @@
+const {test} = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const {JSDOM} = require('jsdom');
+const tick = () => new Promise(resolve => setTimeout(resolve, 10));
+test('discovery renders evidence safely, previews selected IDs and creates queue without execution', async () => {
+  const dom = new JSDOM(fs.readFileSync('web_ui/templates/discovery.html', 'utf8'), {runScripts: 'outside-only', url: 'http://localhost/discovery'});
+  const {window: w} = dom, calls = [];
+  const candidate = {id:'stable', release_name:'<img onerror=alert(1)>', blockers:['unknown'], evidence:[], ranking_reasons:[], proposed_trackers:['A']};
+  w.confirm = () => true;
+  w.fetch = async (url, options) => {
+    calls.push({url, options});
+    let data;
+    if (url.startsWith('/api/discovery?')) data = {rows:[candidate], total:1, trackers:['A'], facets:{codec:['x265']}, updated_at:1000};
+    else if (url.endsWith('/preview')) data = {plans:[{path:'/synthetic/movie', trackers:['A']}], skipped:[]};
+    else if (url === '/api/save_queue') data = {path:'/tmp/synthetic-queue.txt'};
+    else throw Error('unexpected ' + url);
+    return {ok:true, json:async () => data};
+  };
+  w.eval(fs.readFileSync('web_ui/static/js/discovery.js', 'utf8'));
+  await tick();
+  const $ = id => w.document.getElementById(id);
+  assert.equal($('rows').querySelector('img'), null);
+  assert.match($('rows').textContent, /<img onerror/);
+  const checkbox = $('rows').querySelector('input'); checkbox.checked = true; checkbox.onchange();
+  const tracker = $('trackers').querySelector('input'); tracker.checked = true;
+  await $('preview').onclick();
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), {ids:['stable'], trackers:['A']});
+  assert.equal($('queue').disabled, false);
+  await $('queue').onclick();
+  assert.equal(calls.at(-1).url, '/api/save_queue');
+  assert.equal(JSON.parse(calls.at(-1).options.body).items[0].args, '-tk A');
+  assert.match($('queue-result').querySelector('a').href, /review_queue=/);
+  assert.equal(calls.some(c => c.url.includes('execute')), false);
+  assert.ok(calls.at(-1).options.headers['X-CSRF-Token']);
+  $('filters').onchange(); assert.equal($('queue').disabled, true);
+  dom.window.close();
+});
