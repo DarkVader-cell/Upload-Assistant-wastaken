@@ -44,7 +44,8 @@ def test_reachable_browse_discovery_reviewed_queue_rules_and_planner(tmp_path,mo
         assert saved['queued']
         reviewed=client.get('/api/workflow-tools/review-queue',query_string={'path':saved['path']})
         assert reviewed.status_code==200 and reviewed.json['items']==[{'path':str(source),'args':'-tk A'}]
-        assert client.get('/api/workflow-tools/review-queue',query_string={'path':str(source)}).status_code==400
+        for invalid in (str(source), '\x00', 'x'*4097):
+            assert client.get('/api/workflow-tools/review-queue',query_string={'path':invalid}).status_code==400
         settings=client.get('/api/automation-rules').json
         assert settings['references']=={'suggest_trackers':['A'],'preset':['Movie'],'client_profile':['local']}
         assert 'NEVER-EXPORT-SECRET' not in json.dumps(settings)

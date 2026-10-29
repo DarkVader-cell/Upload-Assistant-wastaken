@@ -79,7 +79,7 @@ def register_workflow_tools(app: Flask, *, state_dir: Path, config: Callable[[],
         if not authenticated():
             return jsonify(error='Authentication required'), 401
         path = request.args.get('path', '')
-        if not path or not issued_queue(path):
+        if not path or len(path) > 4096 or '\x00' in path or not issued_queue(path):
             return jsonify(error='Only an unchanged queue issued by this running Web UI can be reviewed'), 400
         try:
             # Issuance callback verifies the content hash and confines generated files.
