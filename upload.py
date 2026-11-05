@@ -2796,6 +2796,7 @@ async def do_the_thing(base_dir: str) -> None:
         queue, log_file = await QueueManager.handle_queue(path, meta, paths, base_dir, config=config)
         queue_list = cast(list[Any], queue)
         validate_subprocess_queue(queue_list)
+        queue_running = len(queue_list) > 1
 
         processed_files_count = 0
         skipped_files_count = 0
@@ -2939,7 +2940,8 @@ async def do_the_thing(base_dir: str) -> None:
                         else:
                             await save_processed_file(log_file, current_item_path)
                 await cleanup_manager.cleanup()
-                gc.collect()
+                if not queue_running or item_number % 4 == 0:
+                    gc.collect()
                 cleanup_manager.reset_terminal()
                 continue
 
@@ -3384,23 +3386,30 @@ async def do_the_thing(base_dir: str) -> None:
             if "limit_queue" in meta and meta.limit_queue > 0 and (processed_files_count - skipped_files_count) >= meta.limit_queue:
                 if sanitize_meta:
                     try:
-                        await asyncio.sleep(0.2)  # We can't race the status prints
+                        if not queue_running:
+                            await asyncio.sleep(0.2)  # We can't race the status prints
                         meta = await Redaction.clean_meta_for_export(meta)
                     except Exception as e:
                         logger.error(f"[red]Error cleaning meta for export: {e}")
                 await cleanup_manager.cleanup()
-                gc.collect()
+                if not queue_running or item_number % 4 == 0:
+                    gc.collect()
                 cleanup_manager.reset_terminal()
                 break
 
             if sanitize_meta:
                 try:
-                    await asyncio.sleep(0.2)
+                    if not queue_running:
+                        await asyncio.sleep(0.2)
                     meta = await Redaction.clean_meta_for_export(meta)
                 except Exception as e:
                     logger.error(f"[red]Error cleaning meta for export: {e}")
             await cleanup_manager.cleanup()
-            gc.collect()
+            # Avoid a full generational collection between every queue item;
+            # it is a visible pause on large queues. Periodic collection still
+            # bounds retained FFmpeg/PIL objects during long runs.
+            if not queue_running or item_number % 4 == 0:
+                gc.collect()
             cleanup_manager.reset_terminal()
         current_release_log_path.set(None)
 

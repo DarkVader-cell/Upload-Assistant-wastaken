@@ -67,6 +67,11 @@ def _positive_config_int(key: str, default: int) -> int:
         return default
 
 
+def _screenshot_worker_limit() -> int:
+    """Return the conservative FFmpeg worker limit shared by every capture path."""
+    return min(task_limit, _positive_config_int("screenshot_process_limit", 1))
+
+
 def xxx_contact_sheet_settings() -> tuple[int, int, int]:
     """Return configured XXX contact-sheet rows, columns, and video limit."""
     return (
@@ -611,7 +616,7 @@ async def disc_screenshots(
 
         logger.debug(f"[cyan]Collected frame information for {len(frame_info_results)} frames")
 
-    num_workers = min(num_screens, task_limit)
+    num_workers = min(num_screens, _screenshot_worker_limit())
 
     logger.debug(f"Using {num_workers} worker(s) for {num_screens} image(s)")
 
@@ -1001,7 +1006,7 @@ async def dvd_screenshots(
 
         logger.debug(f"[cyan]Collected frame information for {len(frame_info_results)} frames")
 
-    num_workers = min(num_screens + 1, task_limit)
+    num_workers = min(num_screens + 1, _screenshot_worker_limit())
 
     logger.debug(f"Using {num_workers} worker(s) for {num_screens} image(s)")
 
@@ -2118,11 +2123,7 @@ async def screenshots(
     # can exhaust the container PID limit and leave us with zero image files.
     # Keep screenshot capture conservative by default, while allowing a
     # deliberate override for deployments with more headroom.
-    try:
-        screenshot_limit = max(1, int(default_config.get("screenshot_process_limit", 1) or 1))
-    except TypeError, ValueError:
-        screenshot_limit = 1
-    num_workers = min(num_tasks, task_limit, screenshot_limit)
+    num_workers = min(num_tasks, _screenshot_worker_limit())
 
     test_time = str(ss_times[0] if ss_times else 0)
     hdr_tonemap = False
