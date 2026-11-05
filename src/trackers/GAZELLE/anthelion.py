@@ -286,6 +286,17 @@ class Anthelion:
             "flags[]": flags,
             "release_desc": await self.edit_desc(meta),
         }
+        # A staff-issued slot override is sent on the first request. Keep the
+        # value in runtime/config metadata; never hard-code a token in source.
+        meta_value = meta.get if hasattr(meta, "get") else lambda key: getattr(meta, key, None)
+        slot_token = str(
+            meta_value("ANTHELION_slot_override_token")
+            or meta_value("anthelion_slot_override_token")
+            or self.tracker_config.get("slot_override_token")
+            or ""
+        ).strip()
+        if slot_token:
+            data["token"] = slot_token
 
         if meta.is_disc == "BDMV":
             async with aiofiles.open(f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/BD_SUMMARY_00.txt", encoding="utf-8") as f:
@@ -352,6 +363,7 @@ class Anthelion:
                 max_retries = 5
             retry_delay = 5
             timeout = 40.0
+            trump_retry_used = False
 
             for attempt in range(max_retries):
                 try:
@@ -377,10 +389,43 @@ class Anthelion:
                             meta.tracker_status[self.tracker]["status_message"] = response_data
                             return True
 
-                        # 4xx (except 408 and 429) means the upload was refused; resending would not change that.
-                        # 409 is a filled slot that Guru+ can trump with the returned trump_key, which needs user confirmation on the site.
+                        # Guru+ receives a one-use trump_key in a 409 response.
+                        # Re-submit the exact same torrent once with that key. A
+                        # non-Guru account receives 403 and never reaches this path.
+                        if response.status_code == 409 and not trump_retry_used:
+                            try:
+                                conflict = response.json()
+                            except (json.JSONDecodeError, ValueError):
+                                conflict = {}
+                            trump_key = conflict.get("trump_key") if isinstance(conflict, dict) else None
+                            if isinstance(trump_key, str) and trump_key.strip():
+                                trump_retry_used = True
+                                data["trump_key"] = trump_key.strip()
+                                trump_reason = str(
+                                    meta_value("ANTHELION_trump_reason")
+                                    or meta_value("anthelion_trump_reason")
+                                    or self.tracker_config.get("trump_reason")
+                                    or ""
+                                ).strip()
+                                if trump_reason:
+                                    data["trump_reason"] = trump_reason
+                                status = meta.tracker_status.setdefault(self.tracker, {})
+                                status["anthelion_trump_key_used"] = True
+                                for key in ("dupe_of", "dupe_url", "slot", "expires"):
+                                    if isinstance(conflict.get(key), (str, int, float)):
+                                        status[f"anthelion_{key}"] = conflict[key]
+                                logger.info(f"{self.tracker}: 409 slot conflict supplied a trump_key; resubmitting the same torrent as a Guru+ trump.")
+                                continue
+
+                        # 4xx (except 408 and 429) means the upload was refused;
+                        # never spend a one-use trump key on another retry.
                         if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
                             meta.tracker_status[self.tracker]["status_message"] = f"data error: HTTP {response.status_code} - {response.text}"
+                            return False
+
+                        if trump_retry_used or attempt >= max_retries - 1:
+                            response_data = {"error": f"ANTHELION returned status code: {response.status_code}", "response_content": response.text}
+                            meta.tracker_status[self.tracker]["status_message"] = f"data error - {response_data}"
                             return False
 
                         if attempt < max_retries - 1:

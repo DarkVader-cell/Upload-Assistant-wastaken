@@ -156,10 +156,6 @@ class Vultu:
             if not (meta.tmdb or meta.tmdb_id or meta.imdb_tt):
                 logger.warning(f"{self.tracker}: [red]Movies and TV must be linked to a TMDB (or IMDb) entry.[/red]")
                 return False
-            if int(meta.screens or 0) < self.min_screenshots:
-                logger.warning(f"{self.tracker}: [red]Movies, TV and anime require at least {self.min_screenshots} screenshots (configured {meta.screens}).[/red]")
-                return False
-
         if len(await self.get_name(meta)) > self.max_name_length:
             logger.warning(f"{self.tracker}: [red]Release name is longer than {self.max_name_length} characters.[/red]")
             return False

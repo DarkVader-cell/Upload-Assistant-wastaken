@@ -323,11 +323,6 @@ class MTeam:
             else:
                 return False
 
-        # Screenshots
-        if meta.screens < 3:
-            logger.info(f"{self.tracker}: [bold yellow]At least 3 screenshots are required for video uploads. Skipping upload.[/bold yellow]")
-            return False
-
         # LGBT Content
         keywords_str = ", ".join(meta.keywords)
         genres = f"{keywords_str} {meta.combined_genres}"

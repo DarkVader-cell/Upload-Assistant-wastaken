@@ -31,6 +31,7 @@ from src.mediainfo import MediaInfo
 from src.meta import Meta
 from src.music.analyzer import RIPPER_LOG_RE, read_rip_log
 from src.screenshot_manifest import files as manifest_files
+from src.screenshot_validation import validate_description_screenshots
 from src.takescreens import TakeScreensManager
 from src.tracker_images import get_tracker_image_collection, has_tracker_image_collection
 from src.trackers.common import Common
@@ -2001,8 +2002,11 @@ class DescriptionBuilder:
                 await description_file.write(self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip())))  # fmt: off
 
         # fmt: off
-        return self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip()))  # ci: ua_signature v4.8
+        final_description = self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip()))  # ci: ua_signature v4.8
         # fmt: on
+        if str(meta.category or "").upper() in {"MOVIE", "TV"} and int(meta.screens or 0) >= 3:
+            validate_description_screenshots(final_description, meta, self.tracker)
+        return final_description
 
     async def _check_saved_pack_image_links(self, meta: Meta, approved_image_hosts: list[str]) -> dict[str, Any]:
         pack_images_file = Path(meta.base_dir) / "tmp" / meta.uuid / "pack_image_links.json"

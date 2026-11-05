@@ -1,0 +1,22 @@
+[Unit]
+Description=Dedicated catalogue discovery dashboard
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=artemis
+Group=artemis
+SupplementaryGroups=docker
+Environment=HOME=/home/artemis
+WorkingDirectory=/home/artemis/apps/ua-catalogue/current
+ExecStart=/home/artemis/apps/upload-assistant/.venv/bin/python -m src.catalogue_web --config /home/artemis/.config/ua-catalogue/runner.json --auth /home/artemis/.config/ua-catalogue/auth.json --port 8777
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=40
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

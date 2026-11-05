@@ -3,7 +3,6 @@ import re
 from pathlib import Path
 
 from src.meta import Meta
-from src.screenshot_manifest import files as manifest_files
 from src.slot_rules.profile import DISC, DV, ENCODE, H264, HDR10, HDR10P, HDTV, WEBDL, XVID, audio_family, channel_count
 
 
@@ -136,10 +135,6 @@ def lst_requirements(upload, meta, existing):
         pending.append('A modified third-party release can be Trumpable by the unmodified version; verify original files/names/metadata')
     if meta.personalrelease:
         pending.append('Personal release: all SHOULD requirements are MUST, including applicable sources, comparisons, logs, notes and track hygiene')
-    captured = manifest_files(meta.base_dir, meta.uuid, 'main') if meta.base_dir and meta.uuid else []
-    lossy_links = any(isinstance(image, dict) and re.search(r'\.(?:jpe?g)(?:[?#]|$)', str(image.get('raw_url') or ''), re.I) for image in (meta.image_list or []))
-    if len(captured) < 3 or int(meta.screens or 0) < 3 or lossy_links:
-        pending.append('Verify at least three lossless screenshots are actually included in the description; a thumbnail/JPEG extension is not lossless proof')
     original = str(meta.original_language or '').casefold()
     english = {'en','eng','english'}
     if original and original not in english | {'und','unknown'}:

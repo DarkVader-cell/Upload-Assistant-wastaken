@@ -377,7 +377,10 @@ class TrackerStatusManager:
                                 if slot_decision.why and slot_decision.why != explanation:
                                     explanation += " Why: " + slot_decision.why
                                 local_tracker_status["skip_reason"] = explanation
-                                local_tracker_status["status_message"] = f"{tracker_name} slot check: {explanation}"
+                                if local_meta.unattended and not local_meta.unattended_confirm:
+                                    local_tracker_status["status_message"] = f"{tracker_name} unattended upload skipped by slot check: {explanation}"
+                                else:
+                                    local_tracker_status["status_message"] = f"{tracker_name} slot check: {explanation}"
                             policy_rejection = slot_decision is not None and (
                                 (tracker_name == "PASSTHEPOPCORN" and slot_decision.verdict in {Verdict.BLOCK, Verdict.REVIEW}) or
                                 (tracker_name in {"AITHER", "HDBITS", "LST", "BLUTOPIA"} and (slot_decision.verdict is Verdict.BLOCK or

@@ -450,6 +450,22 @@ class UploadHelper:
         logger.info(f"[{color}]{bottom}[/{color}]", extra=gui_off)
         logger.info("")
 
+    def _slot_skip_notice(self, tracker_name: str, decision: SlotDecision, *, unattended: bool) -> str:
+        """Return a precise, user-facing explanation for a slot-driven skip."""
+        reason = decision.reason.strip() or "the slot rules did not confirm this upload"
+        if decision.verdict is Verdict.BLOCK:
+            return f"{tracker_name}: slot rules blocked this upload: {reason}"
+        if decision.requires_evidence:
+            prefix = "unattended upload skipped" if unattended else "upload paused for review"
+            return f"{tracker_name}: {prefix}; required slot evidence is missing: {reason}"
+        prefix = "unattended upload skipped" if unattended else "upload requires review"
+        return f"{tracker_name}: {prefix}; slot occupancy is not confirmed as safe: {reason}"
+
+    def _publish_slot_skip_notice(self, tracker_name: str, decision: SlotDecision, meta: Meta) -> None:
+        message = self._slot_skip_notice(tracker_name, decision, unattended=bool(meta.unattended and not meta.unattended_confirm))
+        logger.info(message)
+        webui_events.notice("attention", message, tracker=tracker_name)
+
     def _show_slot_fallback(self, meta: Meta, tracker_name: str) -> None:
         """Explain that the basic dupe check is used when slot rules don't apply."""
         from src.slot_rules.registry import has_slot_rules, slot_rules_apply
@@ -543,7 +559,7 @@ class UploadHelper:
                 logger.info(f"PASSTHEPOPCORN: skipping release rejected by the supplied PTP rules: {slot_decision.reason}")
                 return True, meta
             if not interactive:
-                logger.info(f"PASSTHEPOPCORN: skipping unattended upload requiring PTP review: {slot_decision.reason}")
+                self._publish_slot_skip_notice(tracker_name, slot_decision, meta)
                 return True, meta
             approved = await self.prompt_yes_no("Have you checked the required evidence/staff approval and confirmed this PTP upload is permitted?", default=False)
             meta.we_asked = True
@@ -555,7 +571,7 @@ class UploadHelper:
             evidence_shown = True
             if not interactive:
                 meta[f"{tracker_name}_cross_seed"] = False
-                logger.info(f"{tracker_name}: skipping unattended upload that needs source/comparison/staff-approval evidence.")
+                self._publish_slot_skip_notice(tracker_name, slot_decision, meta)
                 return True, meta
             approved = await self.prompt_yes_no(f"Have you verified the required {tracker_name} source/quality evidence, comparisons and any required rights/staff approval?", default=False)
             meta.we_asked = True
@@ -610,15 +626,10 @@ class UploadHelper:
                 if meta.dupe is not False:
                     return False, meta
                 if not interactive:
-                    if slot_verdict is Verdict.REVIEW:
-                        # A known slot conflict is unresolved in unattended mode;
-                        # do not silently upload just because the filtered dupe
-                        # list is empty. Independent allowed slots returned above
-                        # still proceed normally.
-                        logger.info(f"{tracker_name}: skipping unattended upload while slot occupancy requires review.")
-                        return True, meta
-                    logger.info(f"[bold red]{tracker_name}: skipping upload, slot rules recommend against it.[/bold red]")
-
+                    # A slot decision must never be reduced to the generic
+                    # "dupe" message, especially when unattended mode cannot
+                    # ask the operator to resolve it.
+                    self._publish_slot_skip_notice(tracker_name, slot_decision, meta)
                     return True, meta
                 try:
                     upload = await self.prompt_yes_no(f"Upload to {tracker_name} anyway?", default=False)

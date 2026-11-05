@@ -8,12 +8,13 @@ better stream, and untouched originals remain alongside derived hybrids.
 import re
 from collections.abc import Sequence
 from contextlib import suppress
+
+from src.screenshot_manifest import files as manifest_files
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
 
 from src.meta import Meta
-from src.screenshot_manifest import files as manifest_files
 from src.slot_rules.base import SlotRules, add_context, describe_releases, edition_text, is_repack_of
 from src.slot_rules.models import SlotDecision, Verdict
 from src.slot_rules.profile import (
@@ -42,14 +43,6 @@ REMINDERS = (
     "Verify uniform original filenames, single-file/multiple-file layout, no extraneous payload files/PII/advertising/templates, English description. Seed ≥7 days OR 5 active seeders. If slow (<100Mbps) or unconnectable, wait 24h OR 2 seeders before another upload. Exceptions require helpdesk approval.",
     "REPACK/PROPER/RERip/RE-ISSUE replaces its verified original only. Dead-equivalent eligibility needs unanswered reseed ≥1 week plus last seed >1 month, OR last seed >2 months with equal/better quality; seed count alone proves neither.",
 )
-
-
-def screenshot_count(m):
-    count = len(m.image_list or [])
-    if count < 3 and m.uuid and m.base_dir:
-        with suppress(OSError, ValueError):
-            count = max(count, len(manifest_files(m.base_dir, m.uuid)))
-    return count
 
 
 def track_family(t):
@@ -164,8 +157,6 @@ class BlutopiaSlotRules(SlotRules):
                 if get("BLUTOPIA_mvc") is True or "MVC" in str(m.video_codec or "").upper():
                     return "MVC 3D Blu-ray discs must use ISO", pending
                 pending.append("Verify MVC 3D Blu-ray is in ISO, not extracted folders")
-            if not iso and screenshot_count(m) < 3:
-                pending.append("At least three valid screenshots are required outside the Blu-ray ISO exception")
             if (get("BLUTOPIA_movie_collection") is True or get("BLUTOPIA_multi_season") is True) and get("BLUTOPIA_official_retail_boxset") is False:
                 return "Movie collections/multiple seasons must be direct official retail disc box sets", pending
             pending.append("Verify unique retail unmodified disc/box-set contents and required BD Quick Summary, DVD IFO+largest VOB, or HD-DVD main EVO reports")
@@ -302,8 +293,6 @@ class BlutopiaSlotRules(SlotRules):
             )
         if m.personalrelease:
             pending.append("Personal release: SHOULD requirements are MUST, including applicable sources, audio assets, tags, logs and subtitle hygiene")
-        if screenshot_count(m) < 3:
-            pending.append(f"Screenshots: {screenshot_count(m)} available; BLU requires at least 3 valid screenshots in the actual description.")
         if not m.mediainfo:
             pending.append("MediaInfo: no parsed report was supplied for this upload; provide the required report in the tracker parser.")
         if not p.audio_languages or not m.original_language:

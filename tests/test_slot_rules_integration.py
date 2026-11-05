@@ -113,6 +113,7 @@ async def test_unattended_block_skips_even_without_basic_dupes(monkeypatch: pyte
     is_dupe, _meta = await helper.dupe_check([], make_meta(unattended=True), "AITHER", decision(Verdict.BLOCK))
     assert is_dupe is True
     assert prompts == []
+    assert any("slot rules blocked this upload: test reason" in message for message in messages)
 
 
 @pytest.mark.asyncio
@@ -122,8 +123,11 @@ async def test_unattended_review_keeps_basic_result(monkeypatch: pytest.MonkeyPa
     helper = make_helper(monkeypatch, messages, prompts)
     is_dupe, _meta = await helper.dupe_check(["other release"], make_meta(unattended=True), "AITHER", decision(Verdict.REVIEW))
     assert is_dupe is True
-    is_dupe, _meta = await helper.dupe_check([], make_meta(unattended=True), "AITHER", decision(Verdict.REVIEW))
-    assert is_dupe is False
+    review = decision(Verdict.REVIEW)
+    review.conflicts = [{"name": "Fictional Film 2021 1080p BluRay x264-NOGRPB"}]
+    is_dupe, _meta = await helper.dupe_check([], make_meta(unattended=True), "AITHER", review)
+    assert is_dupe is True
+    assert any("unattended upload skipped" in message and "slot occupancy is not confirmed as safe" in message for message in messages)
 
 
 @pytest.mark.asyncio

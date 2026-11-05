@@ -1,0 +1,8 @@
+#!/usr/bin/env python3
+"""Standalone alias; no catalogue configuration, server or account is required."""
+
+import runpy
+from pathlib import Path
+
+if __name__ == "__main__":
+    runpy.run_path(str(Path(__file__).with_name("catalogue-media.py")), run_name="__main__")

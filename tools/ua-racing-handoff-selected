@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Manual non-UA/racing handoff.  Accepts a content path from QUI or Deluge.
+set -euo pipefail
+[ "$#" -eq 1 ] || { echo "usage: ua-racing-handoff-selected CONTENT_PATH_OR_INFOHASH" >&2; exit 2; }
+set -a
+. /home/artemis/.config/upload-assistant/whatbox.env
+set +a
+export SSHPASS="$UA_WHATBOX_PASSWORD"
+encoded="$(printf '%s' "$1" | base64 -w 0)"
+selection="$(sshpass -e ssh -o BatchMode=no artemisprime@clementine.whatbox.ca /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/bin/racing-handoff-select.py --base64 "$encoded")"
+hash="$(printf '%s' "$selection" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hash"])')"
+printf '%s\n' "$UA_WHATBOX_PASSWORD" | sshpass -e ssh -o BatchMode=no artemisprime@clementine.whatbox.ca /mnt/nvme11n1/artemisprime/Upload-Assistant-wastaken/bin/handoff-to-grape.py --password-stdin --racing="$hash"

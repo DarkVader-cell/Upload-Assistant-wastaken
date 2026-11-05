@@ -4878,7 +4878,7 @@ function AudionutsUAGUI() {
     if (!sessionId || screenshotActionId) return;
     if (
       !window.confirm(
-        `Regenerate every screenshot in ${group === "main" ? "this file" : `the ${group} group`}?`,
+        `Retry the screenshot stage for ${group === "main" ? "this file" : `the ${group} group`}? This does not rerun upload stages.`,
       )
     )
       return;
@@ -9084,11 +9084,11 @@ function AudionutsUAGUI() {
                   )
                 }
                 className="rounded-md border border-purple-500 px-2 py-1 text-xs text-purple-400 hover:bg-purple-500/10 disabled:opacity-50"
-                title="Regenerate every screenshot for this file"
+                title="Retry the screenshot stage for this file"
               >
                 {screenshotActionId === "regenerate:main"
-                  ? "Regenerating…"
-                  : "Regenerate file"}
+                  ? "Retrying…"
+                  : "Retry screenshots"}
               </button>
               {renderReviewExpandButton("screenshots")}
             </div>

@@ -502,7 +502,7 @@ def screenshot_par_scale_factors(
     return pixel_aspect_ratio, 1.0
 
 
-@holds_slot("screenshots", "screenshot capture")
+@holds_slot("screenshots", "screenshot capture", priority=-100)
 async def disc_screenshots(
     meta: Meta,
     filename: str,
@@ -890,7 +890,7 @@ async def matching_dvd_title(disc_path: Path, expected_duration: float) -> int |
     return None
 
 
-@holds_slot("screenshots", "screenshot capture")
+@holds_slot("screenshots", "screenshot capture", priority=-100)
 async def dvd_screenshots(
     meta: Meta,
     disc_num: int,
@@ -1890,7 +1890,7 @@ async def generate_ebook_screenshots(
     return [str(screen) for screen in screenshots]
 
 
-@holds_slot("screenshots", "screenshot capture")
+@holds_slot("screenshots", "screenshot capture", priority=-100)
 async def screenshots(
     path: str,
     filename: str,

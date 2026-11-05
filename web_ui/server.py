@@ -7173,6 +7173,36 @@ def add_execution_screenshot():
     return jsonify({"success": True})
 
 
+@app.route("/api/execution_screenshots/regenerate", methods=["POST"])
+@limiter.limit("300 per hour", key_func=_rate_limit_key_func, override_defaults=True)
+def regenerate_execution_screenshots():
+    """Retry the screenshot stage for one reviewed execution without rerunning upload stages."""
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+    payload = _request_json_dict()
+    session_id = _stringify_preview_value(payload.get("session_id"))
+    group = _stringify_preview_value(payload.get("group")) or "main"
+    if group not in {"main", "disc", "menu"} and not group.startswith("PLAYLIST_") and not group.startswith("FILE_"):
+        return jsonify({"success": False, "error": "Invalid screenshot group"}), 400
+    resolved = _resolve_execution_screenshot_review(session_id)
+    if resolved is None:
+        return jsonify({"success": False, "error": "Screenshots are not available yet"}), 404
+    temp_dir, meta_data = resolved
+    meta_data = _screenshot_review_meta(temp_dir, meta_data)
+    if not _screenshot_capture_supported(meta_data):
+        return jsonify({"success": False, "error": "Screenshot capture is not supported for this release"}), 400
+    try:
+        from src.screenshot_review import regenerate_screenshot_group
+
+        items = asyncio.run(regenerate_screenshot_group(temp_dir, meta_data, group))
+    except (FileNotFoundError, ValueError) as error:
+        return jsonify({"success": False, "error": str(error)}), 404
+    except Exception as error:
+        console.print(f"Screenshot stage retry failed for {session_id}: {error}", markup=False)
+        return jsonify({"success": False, "error": "Could not retry the screenshot stage"}), 500
+    return jsonify({"success": True, "count": len(items), "group": group})
+
+
 @app.route("/api/execution_screenshots/<screenshot_id>/<action>", methods=["POST"])
 @limiter.limit("600 per hour", key_func=_rate_limit_key_func, override_defaults=True)
 def mutate_execution_screenshot(screenshot_id: str, action: str):

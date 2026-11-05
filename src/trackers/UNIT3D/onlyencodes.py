@@ -7,7 +7,6 @@ from src.get_desc import DescriptionBuilder
 from src.get_name import build_name_components
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
-from src.tracker_images import get_tracker_image_collection
 from src.trackers.common import Common
 from src.trackers.naming import BLU_NAME_RULES, add_incomplete_pack_marker, build_video_name
 from src.trackers.UNIT3D import UNIT3D
@@ -195,21 +194,12 @@ class OnlyEncodes(UNIT3D):
         if meta.type in ("WEBDL", "WEBRIP") and not meta.service:
             logger.info(f"{self.tracker}: [bold red]Streaming service could not be detected; skipping upload.[/bold red]")
             return False
-        if int(meta.screens or 0) < 3:
-            logger.info(f"{self.tracker}: [bold yellow]At least 3 full-screen screenshots are required. Skipping upload.[/bold yellow]")
-            return False
-
         return not (
             meta.is_disc != "BDMV"
             and not await self.common.check_language_requirements(meta, self.tracker, languages_to_check=["english"], check_audio=True, check_subtitle=True)
         )
 
     async def get_description(self, meta: Meta) -> dict[str, str]:
-        screenshots = get_tracker_image_collection(meta, self.tracker, "screenshots") or []
-        linked_screenshots = [image for image in screenshots if isinstance(image, dict) and image.get("web_url") and (image.get("raw_url") or image.get("img_url"))]
-        if len(linked_screenshots) < 3:
-            raise ValueError(f"{self.tracker}: At least 3 hosted, linked screenshots are required")
-
         builder = DescriptionBuilder(self.tracker, self.config)
         # OnlyEncodes requires linked medium thumbnails from the first episode or
         # movie. Keep these overrides local so other trackers retain user settings.

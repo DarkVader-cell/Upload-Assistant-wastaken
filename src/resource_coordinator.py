@@ -82,7 +82,8 @@ def _queue_dir(name: str) -> Path:
 
 def _ticket_is_live(ticket: Path) -> bool:
     try:
-        created, pid_text = ticket.stem.split("-", 1)
+        parts = ticket.stem.split("-")
+        created, pid_text = parts[-2:]
         pid = int(pid_text)
         int(created)
     except ValueError:
@@ -96,6 +97,19 @@ def _ticket_is_live(ticket: Path) -> bool:
         return True
 
 
+def _ticket_process_key(stem: str) -> str:
+    """Extract the process key from a legacy or priority-prefixed ticket."""
+    parts = stem.split("-")
+    return "-".join(parts[-2:]) if len(parts) >= 2 else stem
+
+
+def _ticket_path(name: str, priority: int) -> Path:
+    # Lower numeric priorities run first. Priority zero keeps the legacy name
+    # format so old/stale queues remain compatible.
+    prefix = f"{100000 + priority:06d}-" if priority else ""
+    return _queue_dir(name) / f"{prefix}{_own_key()}.ticket"
+
+
 def _first_live_ticket(name: str) -> str | None:
     queue_dir = _queue_dir(name)
     try:
@@ -103,23 +117,26 @@ def _first_live_ticket(name: str) -> str | None:
     except OSError:
         return None
     for ticket in tickets:
-        if ticket.stem == _own_key() or _ticket_is_live(ticket):
+        if _ticket_process_key(ticket.stem) == _own_key() or _ticket_is_live(ticket):
             return ticket.stem
         with contextlib.suppress(OSError):
             ticket.unlink()
     return None
 
 
-def _ensure_ticket(name: str) -> None:
-    ticket = _queue_dir(name) / f"{_own_key()}.ticket"
+def _ensure_ticket(name: str, priority: int = 0) -> None:
+    ticket = _ticket_path(name, priority)
     if not ticket.exists():
         ticket.parent.mkdir(parents=True, exist_ok=True)
         ticket.touch()
 
 
 def _remove_ticket(name: str) -> None:
+    queue_dir = _queue_dir(name)
     with contextlib.suppress(OSError):
-        (_queue_dir(name) / f"{_own_key()}.ticket").unlink()
+        for ticket in queue_dir.glob("*.ticket"):
+            if _ticket_process_key(ticket.stem) == _own_key():
+                ticket.unlink()
 
 
 def _try_lock(lock_path: Path) -> BinaryIO | None:
@@ -165,10 +182,10 @@ def _join_existing_hold(name: str) -> bool:
         return True
 
 
-def _try_acquire(name: str) -> bool:
+def _try_acquire(name: str, priority: int = 0) -> bool:
     if _join_existing_hold(name):
         return True
-    _ensure_ticket(name)
+    _ensure_ticket(name, priority)
     if _first_live_ticket(name) != _own_key():
         return False
     lock_file = _try_lock(LOCK_DIR / f"{name}.lock")
@@ -196,9 +213,10 @@ def _release(name: str) -> None:
             _remove_ticket(name)
 
 
-async def _acquire_once(name: str) -> bool:
+async def _acquire_once(name: str, priority: int = 0) -> bool:
     """Try the slot in a worker thread without leaking it if this coroutine is cancelled."""
-    future = asyncio.ensure_future(asyncio.to_thread(_try_acquire, name))
+    acquire_call = (lambda: _try_acquire(name)) if priority == 0 else (lambda: _try_acquire(name, priority))
+    future = asyncio.ensure_future(asyncio.to_thread(acquire_call))
     try:
         return await asyncio.shield(future)
     except asyncio.CancelledError:
@@ -212,12 +230,12 @@ async def _acquire_once(name: str) -> bool:
 
 
 @contextlib.asynccontextmanager
-async def resource_slot(name: str, label: str) -> AsyncGenerator[None]:
-    """Hold ``name`` across processes; the oldest waiting run acquires it first."""
+async def resource_slot(name: str, label: str, *, priority: int = 0) -> AsyncGenerator[None]:
+    """Hold ``name`` across processes; lower-priority values acquire first."""
     if name not in RESOURCES:
         raise ValueError(f"Unknown resource slot: {name}")
 
-    if not await _acquire_once(name):
+    if not await _acquire_once(name, priority):
         with _state_lock:
             _waiters[name] = _waiters.get(name, 0) + 1
         progress_id = f"wait-{name}"
@@ -226,7 +244,7 @@ async def resource_slot(name: str, label: str) -> AsyncGenerator[None]:
         try:
             while True:
                 await asyncio.sleep(POLL_SECONDS)
-                if await _acquire_once(name):
+                if await _acquire_once(name, priority):
                     break
         finally:
             with _state_lock:
@@ -242,13 +260,13 @@ async def resource_slot(name: str, label: str) -> AsyncGenerator[None]:
         _release(name)
 
 
-def holds_slot(name: str, label: str) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Coroutine[Any, Any, R]]]:
+def holds_slot(name: str, label: str, *, priority: int = 0) -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Coroutine[Any, Any, R]]]:
     """Run the decorated coroutine function inside ``resource_slot``."""
 
     def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Coroutine[Any, Any, R]]:
         @functools.wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            async with resource_slot(name, label):
+            async with resource_slot(name, label, priority=priority):
                 return await func(*args, **kwargs)
 
         return wrapper
