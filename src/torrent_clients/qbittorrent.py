@@ -323,12 +323,12 @@ class QbittorrentClientMixin:
             if qbt_session:
                 await qbt_session.aclose()
             return meta
-        logger.debug(f"[cyan]Searching for infohash: {info_hash}")
+        logger.debug(f"[cyan]Searching for infohash: {info_hash_v1}")
         logger.debug(f"[cyan]Fetching qBittorrent properties ({'proxy' if proxy_url else 'direct'}, pathed={pathed})[/cyan]")
 
         class TorrentInfo:
             def __init__(self, properties_data: dict[str, Any]) -> None:
-                self.hash = str(properties_data.get("hash", info_hash) or info_hash)
+                self.hash = str(properties_data.get("hash", info_hash_v1) or info_hash_v1)
                 self.infohash_v1 = str(properties_data.get("infohash_v1", "") or "")
                 self.name = properties_data.get("name", "")
                 self.comment = properties_data.get("comment", "")
@@ -364,12 +364,12 @@ class QbittorrentClientMixin:
                         raise RuntimeError("qbt_client should not be None")
                     request_started = time.perf_counter()
                     torrent_properties = await self.retry_qbt_operation(
-                        lambda: asyncio.to_thread(qbt_client.torrents_properties, torrent_hash=info_hash),
-                        f"Get torrent properties for hash {info_hash}",
+                        lambda: asyncio.to_thread(qbt_client.torrents_properties, torrent_hash=info_hash_v1),
+                        f"Get torrent properties for hash {info_hash_v1}",
                         initial_timeout=14.0,
                     )
                     logger.debug(f"[cyan]qBittorrent properties direct response: elapsed={time.perf_counter() - request_started:.2f}s[/cyan]")
-                    logger.debug(f"[cyan]Retrieved torrent properties via client for hash: {info_hash}")
+                    logger.debug(f"[cyan]Retrieved torrent properties via client for hash: {info_hash_v1}")
 
                     torrents = [TorrentInfo(torrent_properties)]
                 except Exception as e:
@@ -401,7 +401,7 @@ class QbittorrentClientMixin:
                 # the v1 hash.  A strict v1==requested comparison therefore
                 # discarded valid hybrid torrents as "not found".
                 resolved_v1_hash = str(getattr(torrent, "infohash_v1", "") or "")
-                resolved_hash = resolved_v1_hash or str(getattr(torrent, "hash", "") or info_hash)
+                resolved_hash = resolved_v1_hash or str(getattr(torrent, "hash", "") or info_hash_v1)
                 if resolved_hash:
                     comment = getattr(torrent, "comment", "")
 
