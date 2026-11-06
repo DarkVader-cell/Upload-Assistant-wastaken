@@ -12,6 +12,7 @@ from src import payload_preview
 from src.cogs.redaction import Redaction
 from src.console import logger
 from src.description_review import get_base_description
+from src.get_name import is_redundant_aka
 from src.manual_input import confirm_override
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager

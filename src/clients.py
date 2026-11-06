@@ -18,7 +18,7 @@ from src.console import logger
 from src.meta import Meta
 from src.stats import record_event_async
 from src.torrent_clients import DelugeClientMixin, QbittorrentClientMixin, RtorrentClientMixin, TransmissionClientMixin
-from src.torrent_clients.path_utils import coerce_str_list, is_path_under
+from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local
 from src.torrent_clients.qbittorrent import QbitAccess, qui_request
 from src.torrent_manifest import TorrentManifest
 from src.torrent_policy import HDBITS_POLICY, TorrentStats, generic_reuse_allowed

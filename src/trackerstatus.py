@@ -14,7 +14,6 @@ from src.cleanup import cleanup_manager
 from src.console import logger, prompt_in_thread
 from src.dupe_checking import DupeChecker
 from src.imdb import imdb_manager
-from src.languages import languages_manager
 from src.meta import Meta
 from src.metadata_searching import get_douban_id
 from src.runtime.tracker_requests import retry_readonly
@@ -324,7 +323,7 @@ class TrackerStatusManager:
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="success", duration_ms=(time.monotonic() - search_started) * 1000
                                 )
-                            except Exception:
+                            except Exception as e:
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="error", duration_ms=(time.monotonic() - search_started) * 1000
                                 )

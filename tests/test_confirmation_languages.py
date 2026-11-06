@@ -52,6 +52,26 @@ def test_detected_languages_survive_repeated_confirmation_corrections(tmp_path, 
     ask_string.assert_not_called()
 
 
+def test_stale_empty_checked_languages_are_redetected(tmp_path):
+    release = tmp_path / "tmp" / "release"
+    release.mkdir(parents=True)
+    (release / "MEDIAINFO.txt").write_text("Audio\nFormat : E-AC-3\nLanguage : English\nText\nFormat : UTF-8\nLanguage : Spanish\n", encoding="utf-8")
+    meta = Meta(base_dir=str(tmp_path), uuid="release", path=str(tmp_path / "release.mkv"), category="MOVIE", language_checked=True, audio_languages=[], subtitle_languages=[])
+    asyncio.run(LanguagesManager().process_desc_language(meta))
+    assert meta.audio_languages == ["English"]
+    assert meta.subtitle_languages == ["Spanish"]
+    assert meta.language_checked is True
+
+
+def test_language_detection_error_does_not_mark_checked(tmp_path, monkeypatch):
+    meta = Meta(base_dir=str(tmp_path), uuid="release", path=str(tmp_path / "release.mkv"), category="MOVIE")
+    manager = LanguagesManager()
+    monkeypatch.setattr(manager, "parsed_mediainfo", AsyncMock(side_effect=RuntimeError("simulated parse failure")))
+    with pytest.raises(RuntimeError, match="simulated parse failure"):
+        asyncio.run(manager.process_desc_language(meta))
+    assert meta.language_checked is False
+
+
 def test_manually_entered_languages_survive_confirmation_correction(tmp_path, monkeypatch):
     config = {"DEFAULT": {"screens": 1}}
     prep = SimpleNamespace(config=config)

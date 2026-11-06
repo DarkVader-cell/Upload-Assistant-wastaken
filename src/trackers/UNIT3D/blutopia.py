@@ -3,6 +3,8 @@ import re
 from dataclasses import replace
 from typing import Any
 
+import cli_ui
+
 from src.console import logger
 from src.get_name import build_name_components
 from src.manual_input import Question, ask, confirm_override

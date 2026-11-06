@@ -5,6 +5,7 @@ import platform
 import re
 from pathlib import Path
 from typing import Any, ClassVar, cast
+from urllib.parse import urljoin, urlsplit
 
 import aiofiles
 import httpx

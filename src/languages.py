@@ -63,6 +63,16 @@ class LanguagesManager:
         return deduped
 
     @staticmethod
+    def _manual_audio_languages(meta: Meta) -> list[str]:
+        """Return explicit audio-language overrides in their original order."""
+        raw = meta.manual_audio_languages
+        if not raw:
+            return []
+        values = [raw] if isinstance(raw, str) else raw
+        languages = [part.strip() for value in values for part in str(value).split(",") if part.strip()]
+        return LanguagesManager._dedupe_preserve_order(languages)
+
+    @staticmethod
     async def _ask_track_languages(meta: Meta, key: str, title: str, tracks: list[str], kind: str) -> list[str] | None:
         """Ask for the languages of tracks that have none; an empty answer skips the upload."""
         return await ask(
@@ -280,7 +290,11 @@ class LanguagesManager:
             meta.no_subs = False
 
         if meta.language_checked:
-            return
+            if meta.audio_languages or meta.unattended_audio_skip:
+                return
+            # Older failed detections could persist a checked marker with no
+            # audio and no skip decision. Re-read MediaInfo instead of trusting it.
+            meta.language_checked = False
         status_dict = meta.tracker_status.setdefault(tracker, {}) if tracker else {}
         if "unattended_audio_skip" not in meta:
             meta.unattended_audio_skip = False
@@ -444,6 +458,8 @@ class LanguagesManager:
 
             except Exception as e:
                 logger.error(f"[red]Error processing mediainfo languages: {e}[/red]")
+                meta.language_checked = False
+                raise
 
             meta.language_checked = True
             return
