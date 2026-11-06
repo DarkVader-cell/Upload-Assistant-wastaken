@@ -865,13 +865,19 @@ class HDBits:
             if manifest.is_file():
                 all_image_files = [str(path) for path in manifest_files(meta.base_dir, meta.uuid, "main") if path.suffix.casefold() == ".png"]
 
-        if not all_image_files and not meta.comparison and not meta.hdb_offer:
+        if not meta.comparison and not meta.hdb_offer:
             images = [item for item in meta.image_list if isinstance(item, dict)] if isinstance(meta.image_list, list) else []
-            if images:
-                logger.info("HDBITS: local screenshots are absent; recovering full-size hosted screenshots for rehosting.")
+            limit = 3 if meta.category == "TV" and meta.tv_pack == 0 else 6
+            expected = min(limit, len(images), meta.screens or limit)
+            if images and (not all_image_files or len(all_image_files) < expected):
+                logger.info("HDBITS: local screenshots are incomplete; recovering the hosted set for rehosting.")
                 directory = Path(meta.base_dir) / "tmp" / meta.uuid / "rehosted_images" / "HDBITS"
-                limit = 3 if meta.category == "TV" and meta.tv_pack == 0 else 6
-                all_image_files = [str(path) for path in await recover_hosted_images(directory, images, limit)]
+                recovered = [str(path) for path in await recover_hosted_images(directory, images, limit)]
+                if len(recovered) >= expected:
+                    all_image_files = recovered
+                else:
+                    self._screenshot_warning(meta, "The local screenshot set is incomplete and hosted recovery did not restore all images. Using existing hosted screenshots; verify them on HDBits.")
+                    return None
 
 
         # At this point, all_image_files contains paths to all images we want to upload

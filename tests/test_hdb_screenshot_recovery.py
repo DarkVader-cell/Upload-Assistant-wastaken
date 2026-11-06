@@ -93,6 +93,45 @@ async def test_normal_upload_recovers_cached_hosted_images_but_offer_does_not(re
 
 
 @pytest.mark.asyncio
+async def test_partial_local_screenshots_recover_complete_hosted_set(release, monkeypatch):
+    from src.screenshot_manifest import register
+    directory = Path(release.base_dir) / "tmp/release/screenshots"
+    directory.mkdir()
+    local = directory / "local.png"
+    local.write_bytes(b"local")
+    register(release.base_dir, release.uuid, [local], "main")
+    release.image_list = [{"raw_url": f"https://example.org/{i}.png"} for i in range(3)]
+    recovered = []
+    for i in range(3):
+        path = Path(release.base_dir) / f"recovered-{i}.png"
+        path.write_bytes(f"image-{i}".encode())
+        recovered.append(path)
+    monkeypatch.setattr("src.trackers.hdbits.recover_hosted_images", AsyncMock(return_value=recovered))
+    tracker = HDBits(CONFIG)
+    post = AsyncMock(return_value=SimpleNamespace(status_code=200, text="\n".join([BB] * 3)))
+    monkeypatch.setattr(tracker, "_post_image_batch", post)
+    assert (await tracker.hdbimg_upload(release)).count("[img]") == 3
+    assert len(post.await_args.args[2]) == 3
+
+
+@pytest.mark.asyncio
+async def test_partial_local_and_failed_recovery_falls_back_to_hosted(release, monkeypatch):
+    from src.screenshot_manifest import register
+    directory = Path(release.base_dir) / "tmp/release/screenshots"
+    directory.mkdir()
+    local = directory / "local.png"
+    local.write_bytes(b"local")
+    register(release.base_dir, release.uuid, [local], "main")
+    release.image_list = [{"raw_url": f"https://example.org/{i}.png"} for i in range(3)]
+    monkeypatch.setattr("src.trackers.hdbits.recover_hosted_images", AsyncMock(return_value=[]))
+    tracker = HDBits(CONFIG)
+    monkeypatch.setattr(tracker, "_post_image_batch", AsyncMock())
+    assert await tracker.hdbimg_upload(release) is None
+    tracker._post_image_batch.assert_not_awaited()
+    assert release.tracker_status["HDBITS"]["screenshot_warnings"]
+
+
+@pytest.mark.asyncio
 async def test_bounded_recovery_downloads_full_size_not_gallery(tmp_path, monkeypatch):
     image = io.BytesIO()
     Image.new("RGB", (8, 8), "red").save(image, format="PNG")
