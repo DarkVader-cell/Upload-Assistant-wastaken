@@ -46,6 +46,7 @@ mdurl==0.1.2
 mobi==0.4.1
 msgspec==0.22.0
 mutagen==1.48.1
+numpy==2.5.4
 ordered-set==4.1.0
 packaging==26.3
 pillow==13.0.0
