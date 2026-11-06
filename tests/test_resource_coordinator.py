@@ -67,6 +67,15 @@ def _tickets(lock_dir: Path) -> list[Path]:
     return list((lock_dir / "torrent-hash.queue").glob("*.ticket"))
 
 
+@pytest.mark.asyncio
+async def test_priority_screenshot_ticket_can_acquire_its_own_slot(lock_dir: Path) -> None:
+    async with asyncio.timeout(2):
+        async with rc.resource_slot("screenshots", "screenshot capture", priority=-100):
+            assert "screenshots" in rc._holds
+    assert "screenshots" not in rc._holds
+    assert not list((lock_dir / "screenshots.queue").glob("*.ticket"))
+
+
 def test_processes_never_overlap_and_oldest_waiter_goes_first(tmp_path: Path, lock_dir: Path) -> None:
     log = tmp_path / "events.log"
     releases = {name: tmp_path / f"release-{name}" for name in ("holder", "older", "newer")}

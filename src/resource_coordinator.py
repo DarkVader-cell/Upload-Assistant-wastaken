@@ -195,7 +195,8 @@ def _try_acquire(name: str, priority: int = 0) -> bool:
     if _join_existing_hold(name):
         return True
     _ensure_ticket(name, priority)
-    if _first_live_ticket(name) != _own_key():
+    first = _first_live_ticket(name)
+    if first is None or _ticket_process_key(first) != _own_key():
         return False
     lock_file = _try_lock(LOCK_DIR / f"{name}.lock")
     if lock_file is None:
