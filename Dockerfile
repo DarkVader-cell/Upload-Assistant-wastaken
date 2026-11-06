@@ -1,4 +1,4 @@
-FROM python:3.15
+FROM python:3.15 AS python-deps
 
 # Build-only dependencies are deliberately isolated from the final image.
 # A few Python packages compile native/Rust extensions on architectures where
