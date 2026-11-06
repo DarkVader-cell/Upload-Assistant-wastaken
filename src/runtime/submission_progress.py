@@ -109,16 +109,22 @@ class SubmissionJournal:
             return dict(row) if row else None
 
     def begin(self, tracker, *, confirmation=None):
+        """Claim a tracker submission, accepting an explicit batch retry token.
+
+        ``ALL``/``*`` is intentionally only a retry authorization for an
+        uncertain attempt.  A journaled acknowledgement still wins and is
+        never reposted, even when a batch confirmation is supplied.
+        """
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT * FROM submissions WHERE tracker=?', (tracker,)).fetchone()
             if row:
                 if row['state'] == 'posting' and _alive(row['owner']):
                     raise SubmissionNeedsReviewError(f'{tracker}: another submission is still active; do not start a second POST')
-                if confirmation != row['nonce']:
-                    if row['state'] == 'acknowledged' and confirmation is None:
-                        return False
-                    raise SubmissionNeedsReviewError(f'{tracker}: a previous POST may have reached the site. Verify it on-site; only then use --confirm-not-uploaded {tracker}:{row["nonce"]}. This permission is valid for only this interrupted attempt.')
+                if row['state'] == 'acknowledged' and confirmation in (None, '*', 'ALL'):
+                    return False
+                if confirmation not in (row['nonce'], '*', 'ALL'):
+                    raise SubmissionNeedsReviewError(f'{tracker}: a previous POST may have reached the site. Verify it on-site; only then use --confirm-not-uploaded {tracker}:{row["nonce"]} (or ALL after checking every tracker). This permission is valid for only this interrupted attempt.')
             db.execute('INSERT OR REPLACE INTO submissions VALUES (?, ?, ?, NULL, NULL, NULL, ?)', (tracker, 'posting', _owner(), str(uuid.uuid4())))
         return True
 

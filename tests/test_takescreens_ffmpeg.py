@@ -230,7 +230,9 @@ async def test_run_ffmpeg_prefers_configured_binary(tmp_path, monkeypatch):
     command = ffmpeg.input(str(tmp_path / "source.mkv")).output(str(tmp_path / "frame.png"), vframes=1)
     await takescreens.run_ffmpeg(command)
 
-    assert captured[0][0] == str(executable)
+    assert str(executable) in captured[0]
+    if takescreens.platform.system() == "Linux":
+        assert captured[0][:4] == ("ionice", "-c", "2", "-n")
 
 
 @pytest.mark.asyncio

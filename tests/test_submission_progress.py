@@ -42,6 +42,19 @@ def test_uncertain_post_requires_fresh_one_shot_confirmation(tmp_path):
         store.begin('AITHER', confirmation=token)
 
 
+def test_batch_confirmation_retries_uncertain_trackers_but_not_acknowledged(tmp_path):
+    meta = prepared(tmp_path)
+    store = SubmissionJournal.for_meta(meta)
+    store.begin('AITHER')
+    store.uncertain('AITHER')
+    assert store.begin('AITHER', confirmation='ALL')
+    store.uncertain('AITHER')
+    meta.tracker_status['AITHER']['torrent_id'] = 42
+    _path, _raw = torrent_file(meta)
+    store.acknowledge('AITHER', meta)
+    assert store.begin('AITHER', confirmation='ALL') is False
+
+
 def test_ack_restores_exact_torrent_without_reposting(tmp_path):
     meta = prepared(tmp_path)
     path, raw = torrent_file(meta)

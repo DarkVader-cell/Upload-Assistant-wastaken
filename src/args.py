@@ -1202,7 +1202,7 @@ class Args:
         parser.add_argument(
             "-webui", "--webui", nargs="?", const="127.0.0.1:5000", metavar="HOST:PORT", help="Start the web UI server only (format: host:port, default: 127.0.0.1:5000)"
         )
-        parser.add_argument("--confirm-not-uploaded", nargs="+", default=None, help="After checking on-site, supply TRACKER:REVIEW_TOKEN from the interrupted-attempt message. One-shot permission to retry that POST; never bypasses slot/duplicate rules")
+        parser.add_argument("--confirm-not-uploaded", nargs="+", default=None, help="After checking on-site, supply TRACKER:REVIEW_TOKEN; use ALL once you have checked every uncertain tracker. One-shot retry permission; never bypasses slot/duplicate rules")
         parser.add_argument("-dm", "--delete-meta", action="store_true", required=False, dest="delete_meta", help="Delete only meta.json from tmp directory")
         parser.add_argument("-dtmp", "--delete-tmp", action="store_true", required=False, dest="delete_tmp", help="Delete tmp directory for the working file/folder")
         parser.add_argument("-cleanup", "--cleanup", action="store_true", required=False, help="Clean up tmp directory")

@@ -129,9 +129,14 @@ async def process_trackers(
     if isinstance(confirmations, str):
         confirmations = [confirmations]
     confirmed_absent = {}
+    confirm_all = False
     for entry in confirmations:
         for value in str(entry).split(","):
-            name, separator, token = value.strip().partition(":")
+            value = value.strip()
+            if value.upper() in {"ALL", "*"}:
+                confirm_all = True
+                continue
+            name, separator, token = value.partition(":")
             if separator and token:
                 confirmed_absent[Meta.canonical_tracker_name(name.upper())] = token
 
@@ -140,7 +145,11 @@ async def process_trackers(
             return await callback()
         status = meta.tracker_status.setdefault(tracker, {})
         try:
-            claimed = await asyncio.to_thread(journal.begin, tracker, confirmation=confirmed_absent.get(tracker))
+            claimed = await asyncio.to_thread(
+                journal.begin,
+                tracker,
+                confirmation="ALL" if confirm_all else confirmed_absent.get(tracker),
+            )
         except sqlite3.Error as error:
             message = f'{tracker}: local submission journal is busy/unavailable ({Redaction.redact_value(str(error))}). No NEW tracker request was started by this attempt. Preserve the database and existing receipts.'
             status.update(upload=False, upload_success=False, needs_review=True, status_message=message)

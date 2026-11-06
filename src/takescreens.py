@@ -8,6 +8,7 @@ import platform
 import random
 import re
 import secrets
+import shutil
 import sys
 import tempfile
 import time
@@ -464,6 +465,16 @@ async def run_ffmpeg(command: Any) -> tuple[int | None, bytes, bytes]:
             candidate = Path(ff_bin_dir) / arch / "ffmpeg"
             if Path(candidate).exists():
                 cmd_list[0] = str(candidate)
+
+    # Give capture reads the highest best-effort disk I/O priority.  This is
+    # deliberately opt-out: ionice is unavailable on some platforms and the
+    # capture must still work normally there.
+    if (
+        platform.system() == "Linux"
+        and default_config.get("screenshot_io_priority", True)
+        and shutil.which("ionice")
+    ):
+        cmd_list = ["ionice", "-c", "2", "-n", "0", *cmd_list]
 
     # Spawn the selected bundled binary or the system/default command.
     process = await asyncio.create_subprocess_exec(

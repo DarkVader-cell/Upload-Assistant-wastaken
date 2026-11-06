@@ -320,6 +320,8 @@ config: dict[str, Any] = {
         # Limit concurrent screenshot captures independently of other FFmpeg work.
         # Keep this at 1 in containers with a low PID limit.
         "screenshot_process_limit": "1",
+        # Use best-effort max disk I/O priority for FFmpeg screenshot reads on Linux.
+        "screenshot_io_priority": True,
         # Set to True to reduce CPU usage by applying an additional FFmpeg limit.
         "ffmpeg_limit": False,
         # FFmpeg compression level for screenshots (0-9).
