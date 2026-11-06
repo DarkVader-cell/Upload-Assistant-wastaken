@@ -148,6 +148,8 @@ class Meta:
     aka: str = ""
     anime: bool = False
     anon: bool = False
+    # Pre-answers from --answer KEY=VALUE (see src/manual_input.py).
+    answers: dict[str, str] = field(default_factory=dict)
     ant_user_tags: bool | None = None
     archive_password: str | None = None
     args_line_queue: bool | None = None
@@ -194,6 +196,7 @@ class Meta:
     bluray_cover_urls: dict[str, Any] = field(default_factory=dict)
     bluray_score: int = 100
     bluray_single_score: int = 100
+    bluray_url: str = ""
     book_asin: str | None = None
     book_author: str | None = None
     book_isbn: str | None = None
@@ -403,6 +406,8 @@ class Meta:
     mal_manual: str | int | None = None
     mal: int | None = None
     manga: bool = False
+    # Answers given to src/manual_input.py questions; reloaded from meta.json.
+    manual_answers: dict[str, Any] = field(default_factory=dict)
     manual_category: str | None = None
     manual_commentary: bool = False
     manual_data: str | None = None
@@ -540,6 +545,8 @@ class Meta:
     regex_year: str = ""
     region: str = ""
     region_overrides: dict[str, str] = field(default_factory=dict)
+    # Upload form fields changed per tracker in the Web UI; None leaves a field out.
+    payload_edits: dict[str, dict[str, Any]] = field(default_factory=dict)
     refundable: bool = False
     rehash: bool = False
     rehosted_artwork_url: str | None = None
@@ -614,6 +621,8 @@ class Meta:
     skipit: bool = False
     # The user chose to skip this release at the confirmation prompt.
     skipped_by_user: bool = False
+    # Site check mode cannot handle this release yet (for example, a BDMV disc).
+    skipped_unsupported: bool = False
     skipping: str | None = None
     sorted_filelist: bool = False
     source_size: int = 0

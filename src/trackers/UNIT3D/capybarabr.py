@@ -215,6 +215,11 @@ class CapybaraBR(UNIT3D):
             cbr_name = f"{meta.title} {update} {meta.game_version} {year_str} - {tag} {game_lang}{dlc}"
 
         elif category in ("MOVIE", "TV"):
+            # The default name omits HC; CapybaraBR naming wants it right after the WEB source.
+            if meta.hardcoded_subs and meta.type in ("WEBDL", "WEBRIP"):
+                web_type = "WEB-DL" if meta.type == "WEBDL" else "WEBRip"
+                cbr_name = cbr_name.replace(f" {web_type} ", f" {web_type} HC ", 1)
+
             cbr_name = (
                 cbr_name.replace("DD+ ", "DDP")
                 .replace("DD ", "DD")
@@ -270,7 +275,8 @@ class CapybaraBR(UNIT3D):
                             audio_tag = ""
 
                 if audio_tag:
-                    if "-" in cbr_name:
+                    # Without a group tag the last hyphen may belong to the name itself (e.g. WEB-DL)
+                    if meta.tag and "-" in cbr_name:
                         parts = cbr_name.rsplit("-", 1)
 
                         match = None

@@ -9,18 +9,20 @@ permissions:
 
 jobs:
   python-compatibility:
-    name: Python 3.14 compatibility
+    name: Python ${{ matrix.python }} compatibility
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.14", "3.15"]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.14
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements.txt
+          python-version: ${{ matrix.python }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -75,11 +77,13 @@ jobs:
         run: python benchmarks/benchmark_runtime.py --smoke
 
   tests:
-    name: Pytest (${{ matrix.os }})
+    name: Pytest (${{ matrix.os }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
+        os: [Ubuntu, Windows]
+        python: ["3.14", "3.15"]
         include:
           - os: Ubuntu
             runner: ubuntu-24.04
@@ -89,12 +93,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.14
+      - name: Set up Python ${{ matrix.python }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
-          cache: pip
-          cache-dependency-path: requirements.txt
+          python-version: ${{ matrix.python }}
 
       - name: Install Python dependencies
         run: python -m pip install -r requirements.txt pytest pytest-asyncio

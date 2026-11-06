@@ -16,7 +16,7 @@ import guessit
 from torf import Torrent
 
 from src import webui_events
-from src.bluray_com import get_bluray_releases
+from src.bluray_com import find_bluray_url, get_bluray_releases, use_bluray_url
 from src.book_prep import AUDIOBOOK_EXTENSIONS, BOOK_EXTENSIONS, BOOK_SERVICES
 from src.cleanup import cleanup_manager
 from src.clients import Clients
@@ -786,7 +786,8 @@ async def validate_media(_prep_instance: Any, meta: Meta) -> None:
         if not valid_mi:
             logger.info("[red]MediaInfo validation failed. This file does not contain (Unique ID).")
             meta.valid_mi = False
-            await asyncio.sleep(2)
+            if not meta.unattended:
+                await asyncio.sleep(2)
 
     mediainfo_tracks = meta.mediainfo.get("media", {}).get("track") or []
     meta.has_multiple_default_subtitle_tracks = len([track for track in mediainfo_tracks if track["@type"] == "Text" and track["Default"] == "Yes"]) > 1
@@ -922,7 +923,9 @@ def _should_add_bluray_link(meta: Meta, config: dict[str, Any]) -> bool:
 def _should_fetch_bluray_info(meta: Meta, get_bluray_info: bool, add_bluray_link: bool = False) -> bool:
     return bool(
         meta.is_disc in ("BDMV", "DVD")
-        and (add_bluray_link or (get_bluray_info and (not meta.distributor or not meta.region)))
+        # add_bluray_link only widens an enabled lookup; it never enables one on its own.
+        and get_bluray_info
+        and (add_bluray_link or not meta.distributor or not meta.region)
         and meta.imdb_id != 0
         and (add_bluray_link or not meta.edit)
         and not meta.site_check
@@ -1522,26 +1525,35 @@ async def finalize_metadata(
     meta.bluray_score = int(float(prep_instance.config["DEFAULT"].get("bluray_score", 100)))
     meta.bluray_single_score = int(float(prep_instance.config["DEFAULT"].get("bluray_single_score", 100)))
     meta.use_bluray_images = prep_instance.config["DEFAULT"].get("use_bluray_images", False)
-    if not meta.hdb_offer and _should_fetch_bluray_info(meta, get_bluray_info, _should_add_bluray_link(meta, prep_instance.config)):
-        releases = await get_bluray_releases(meta)
+    releases: list[Any] = []
+    if meta.bluray_url and meta.is_disc in ("BDMV", "DVD") and not meta.site_check:
+        # An explicit edition needs no IMDb ID or search, and also applies when editing.
+        releases = await use_bluray_url(meta, meta.bluray_url)
+    elif _should_fetch_bluray_info(meta, get_bluray_info, _should_add_bluray_link(meta, prep_instance.config)):
+        # A matched tracker release often links its edition already, which the search may not list.
+        linked_url = find_bluray_url([*meta.tracker_description_raw.values(), meta.description], meta.is_disc)
+        if linked_url:
+            logger.info(f"[green]Using the Blu-ray.com edition linked in the tracker description: {linked_url}[/green]")
+            releases = await use_bluray_url(meta, linked_url, required=False)
+        if not releases:
+            releases = await get_bluray_releases(meta)
+    if releases and meta.is_disc in ("BDMV", "DVD") and meta.use_bluray_images:
+        # and if we getting bluray/dvd images, we'll rehost them
+        url_host_mapping = {
+            "ibb.co": "imgbb",
+            "pixhost.to": "pixhost",
+            "imgbox.com": "imgbox",
+            "lostimg.cc": "lostimg",
+        }
 
-        if releases and meta.is_disc in ("BDMV", "DVD") and meta.use_bluray_images:
-            # and if we getting bluray/dvd images, we'll rehost them
-            url_host_mapping = {
-                "ibb.co": "imgbb",
-                "pixhost.to": "pixhost",
-                "imgbox.com": "imgbox",
-                "lostimg.cc": "lostimg",
-            }
-
-            approved_image_hosts = ["imgbox", "imgbb", "pixhost"]
-            await prep_instance.rehost_images_manager.check_hosts(
-                meta,
-                "covers",
-                url_host_mapping=url_host_mapping,
-                img_host_index=1,
-                approved_image_hosts=approved_image_hosts,
-            )
+        approved_image_hosts = ["imgbox", "imgbb", "pixhost"]
+        await prep_instance.rehost_images_manager.check_hosts(
+            meta,
+            "covers",
+            url_host_mapping=url_host_mapping,
+            img_host_index=1,
+            approved_image_hosts=approved_image_hosts,
+        )
 
     # user override check that only sets data after metadata setting
     user_overrides = prep_instance.config["DEFAULT"].get("user_overrides", False)
@@ -1700,7 +1712,8 @@ async def finalize_metadata(
             if not valid_mi_settings:
                 logger.info("[red]MediaInfo validation failed. This file does not contain encode settings.")
                 meta.valid_mi_settings = False
-                await asyncio.sleep(2)
+                if not meta.unattended:
+                    await asyncio.sleep(2)
 
         meta.stream = await prep_instance.stream_optimized(meta.stream)
 

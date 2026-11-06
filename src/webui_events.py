@@ -24,7 +24,7 @@ import os
 import re
 import sys
 import time
-from collections.abc import Generator, Iterable, Mapping
+from collections.abc import Callable, Generator, Iterable, Mapping
 from datetime import date, datetime
 from pathlib import Path
 from threading import Lock
@@ -46,6 +46,9 @@ TRACKER_STATUSES = frozenset({"pending", "success", "failed", "skipped", "dupe",
 MAX_TEXT_LENGTH = 1000
 MAX_LIST_ITEMS = 500
 MAX_EVENT_BYTES = 262144
+# The Web UI runs uploads unbuffered in a Windows pseudo console, which takes
+# only part of a write over 16 KB and drops the rest; events go out in pieces.
+STDOUT_WRITE_CHUNK = 4096
 MAX_CHECK_MESSAGES = 20
 # Local artwork the Web UI may serve as a queue item's cover thumbnail.
 ARTWORK_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp"})
@@ -72,6 +75,22 @@ _FLAG_CODE = re.compile(r"[a-z]{2}")
 
 def enabled() -> bool:
     return os.environ.get(GUI_EVENTS_ENV) == "1" and bool(os.environ.get(GUI_EVENT_NONCE_ENV))
+
+
+# In-process observers (e.g. aggregate statistics) of stage changes and request
+# matches. They are called in CLI runs too, and never receive release names.
+_listeners: list[Callable[[str, Mapping[str, Any]], None]] = []
+
+
+def add_listener(listener: Callable[[str, Mapping[str, Any]], None]) -> None:
+    if listener not in _listeners:
+        _listeners.append(listener)
+
+
+def _notify(kind: str, payload: Mapping[str, Any]) -> None:
+    for listener in _listeners:
+        with contextlib.suppress(Exception):
+            listener(kind, payload)
 
 
 def event_prefix(nonce: str) -> str:
@@ -116,8 +135,10 @@ def _emit(kind: str, payload: Mapping[str, Any]) -> None:
         return
     if len(line) > MAX_EVENT_BYTES:
         return
+    text = f"\n{event_prefix(os.environ.get(GUI_EVENT_NONCE_ENV, ''))}{line}\n"
     with _stdout_lock, contextlib.suppress(Exception):
-        sys.stdout.write(f"\n{event_prefix(os.environ.get(GUI_EVENT_NONCE_ENV, ''))}{line}\n")
+        for start in range(0, len(text), STDOUT_WRITE_CHUNK):
+            sys.stdout.write(text[start : start + STDOUT_WRITE_CHUNK])
         sys.stdout.flush()
 
 
@@ -186,6 +207,7 @@ def stage(key: str, status: StageStatus) -> None:
         _started_stages.add(key)
     elif _active_stage == key:
         _active_stage = None
+    _notify("stage", {"key": key, "status": status})
     _emit("stage", {"key": key, "status": status})
 
 
@@ -493,6 +515,10 @@ def _context_payload() -> dict[str, Any] | None:
 
 def prompt_open(prompt_type: Literal["yes_no", "text", "choice", "multi_choice"], question: Any, *, choices: Iterable[Any] = (), default: Any = None) -> int | None:
     """Announce an interactive prompt and return its id for ``prompt_close``."""
+    from src.console import check_prompt_allowed
+
+    # A blocked question must not flash up in the Web UI before it is refused.
+    check_prompt_allowed()
     if not enabled():
         return None
     prompt_id = next(_prompt_ids)
@@ -647,6 +673,7 @@ def tracker_result(
 
 
 def request_match(tracker: str, name: Any, *, link: Any = None, reward: Any = None, status: Any = None, exact: bool = False) -> None:
+    _notify("request", {"tracker": str(tracker), "exact": bool(exact)})
     if not enabled():
         return
     payload: dict[str, Any] = {"tracker": plain_text(tracker, 64), "name": plain_text(name, 300, markup=False), "exact": bool(exact)}

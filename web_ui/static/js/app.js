@@ -675,6 +675,7 @@ const argumentSections = [
       { flag: "--edition", placeholder: "TEXT" },
       { flag: "--region", placeholder: "REGION" },
       { flag: "--distributor", placeholder: "NAME" },
+      { flag: "--bluray-url", placeholder: "URL" },
     ],
   },
   {
@@ -730,6 +731,12 @@ const argumentSections = [
       { flag: "--only-if-languages", placeholder: "en,fr" },
       { flag: "--poster", placeholder: "URL_OR_PATH", path: "file" },
       { flag: "--banner", placeholder: "URL_OR_PATH", path: "file" },
+      {
+        flag: "--answer",
+        placeholder: "KEY=VALUE",
+        description:
+          "Answer a question the upload would ask, e.g. game.subcategory=dlc (--answer help lists the keys)",
+      },
     ],
   },
   {
@@ -2138,6 +2145,649 @@ function ArgumentPathBrowser({ mode, apiBase, isDarkMode, onPick }) {
   );
 }
 
+/** Commit group names on blur while preserving normal text editing. */
+function TrackerGroupName({ group, onRename }) {
+  const [name, setName] = useState(group.name);
+  useEffect(() => setName(group.name), [group.name]);
+  return (
+    <input
+      className="ua-tracker-group-name"
+      aria-label={`Rename ${group.name} group`}
+      draggable={false}
+      value={name}
+      maxLength={60}
+      onChange={(event) => setName(event.target.value)}
+      onBlur={(event) => {
+        const nextName = event.target.value.trim() || group.name;
+        setName(nextName);
+        onRename(nextName);
+      }}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") event.currentTarget.value = group.name;
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          event.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
+
+/** Organize browser-local tracker placement independently from upload selection. */
+function TrackerOrganizer({
+  trackers,
+  catalog,
+  selectedTrackers,
+  onGroupSelection,
+  editing,
+  disabled,
+  compact,
+  children,
+}) {
+  const model = window.UATrackerLayout;
+  const [layout, setLayout] = useState(() => model.load(storage));
+  const [newGroupName, setNewGroupName] = useState("");
+  const [announcement, setAnnouncement] = useState("");
+  const [dropTarget, setDropTarget] = useState(null);
+  const [resetPending, setResetPending] = useState(false);
+  const [optionsTracker, setOptionsTracker] = useState(null);
+  const [showMoveTargets, setShowMoveTargets] = useState(false);
+  const dragRef = useRef(null);
+  const optionsButtonsRef = useRef(new Map());
+  const restoreOptionsFocusRef = useRef(null);
+  useEffect(() => {
+    storage.set(model.STORAGE_KEY, JSON.stringify(layout));
+  }, [layout]);
+  useEffect(() => {
+    if (!editing || disabled) {
+      dragRef.current = null;
+      setDropTarget(null);
+      setResetPending(false);
+      setOptionsTracker(null);
+      setShowMoveTargets(false);
+      restoreOptionsFocusRef.current = null;
+    }
+  }, [editing, disabled]);
+  useEffect(() => {
+    if (!optionsTracker && restoreOptionsFocusRef.current) {
+      optionsButtonsRef.current.get(restoreOptionsFocusRef.current)?.focus();
+      restoreOptionsFocusRef.current = null;
+    }
+  }, [optionsTracker, layout]);
+  useEffect(() => {
+    if (!optionsTracker) return undefined;
+    const closeOnOutsidePointer = (event) => {
+      const card = optionsButtonsRef.current
+        .get(optionsTracker)
+        ?.closest(".ua-tracker-card");
+      if (card?.contains(event.target)) return;
+      restoreOptionsFocusRef.current = null;
+      setOptionsTracker(null);
+      setShowMoveTargets(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer, true);
+    return () =>
+      document.removeEventListener("pointerdown", closeOnOutsidePointer, true);
+  }, [optionsTracker]);
+
+  const sections = model.sections(layout, trackers);
+  const hasLayout = layout.pinned.length > 0 || layout.groups.length > 0;
+  const moveTracker = (name, sectionId, before = null) => {
+    if (!editing || disabled) return;
+    setLayout((current) =>
+      model.moveTracker(current, name, sectionId, before, catalog),
+    );
+    const displayName =
+      trackers.find((tracker) => tracker.name === name)?.display_name || name;
+    setAnnouncement(
+      `${displayName} moved to ${sections.find((section) => section.id === sectionId)?.name || "group"}.`,
+    );
+  };
+  const closeTrackerOptions = () => {
+    restoreOptionsFocusRef.current = optionsTracker;
+    setOptionsTracker(null);
+    setShowMoveTargets(false);
+  };
+  const chooseMoveTarget = (name, sectionId, before = null) => {
+    if (!editing || disabled) return;
+    moveTracker(name, sectionId, before);
+    restoreOptionsFocusRef.current = name;
+    setOptionsTracker(null);
+    setShowMoveTargets(false);
+  };
+  const finishDrag = () => {
+    dragRef.current = null;
+    setDropTarget(null);
+  };
+  const startDrag = (event, item) => {
+    if (!editing || disabled) {
+      event.preventDefault();
+      return;
+    }
+    dragRef.current = item;
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", item.id);
+  };
+  const allowDrop = (event, sectionId, before = null) => {
+    const drag = dragRef.current;
+    if (!editing || disabled || !drag) return;
+    if (drag.type === "group" && sectionId === model.PINNED) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "move";
+    const targetBefore = drag.type === "group" ? null : before;
+    if (
+      dropTarget?.sectionId !== sectionId ||
+      dropTarget?.before !== targetBefore
+    )
+      setDropTarget({ sectionId, before: targetBefore });
+  };
+  const drop = (event, sectionId, before = null) => {
+    const drag = dragRef.current;
+    if (!editing || disabled || !drag) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (drag.type === "tracker") moveTracker(drag.id, sectionId, before);
+    else if (sectionId !== model.PINNED) {
+      setLayout((current) =>
+        model.moveGroup(
+          current,
+          drag.id,
+          sectionId === model.UNGROUPED ? null : sectionId,
+        ),
+      );
+      setAnnouncement("Group order updated.");
+    }
+    finishDrag();
+  };
+  const nudgeTracker = (section, index, direction) => {
+    if (index + direction < 0 || index + direction >= section.trackers.length)
+      return;
+    const before =
+      direction < 0
+        ? section.trackers[index - 1]?.name
+        : section.trackers[index + 2]?.name;
+    chooseMoveTarget(section.trackers[index].name, section.id, before || null);
+  };
+  const nudgeGroup = (id, direction) => {
+    const index = layout.groups.findIndex((group) => group.id === id);
+    const before =
+      direction < 0
+        ? layout.groups[index - 1]?.id
+        : layout.groups[index + 2]?.id;
+    setLayout((current) => model.moveGroup(current, id, before || null));
+    setAnnouncement("Group order updated.");
+  };
+  const addGroup = () => {
+    const name = newGroupName.trim();
+    if (!name) return;
+    setLayout((current) => ({
+      ...current,
+      groups: [
+        ...current.groups,
+        {
+          id: `group-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 9)}`,
+          name,
+          trackers: [],
+        },
+      ],
+    }));
+    setNewGroupName("");
+    setAnnouncement(`${name} group created.`);
+  };
+
+  return (
+    <div className="ua-tracker-organizer" data-editing={editing || undefined}>
+      {editing && (
+        <div className="ua-tracker-layout-editor">
+          <p>
+            Use the pin icon to keep favourites in Pinned, or add your own
+            groups. Drag trackers to arrange them, or use a tracker’s ⋯ button
+            to move it between groups or change its order. Use the handles to
+            reorder groups. Your layout saves automatically in this browser.
+          </p>
+          <div className="ua-tracker-layout-toolbar">
+            <input
+              aria-label="New tracker group name"
+              placeholder="New group name…"
+              maxLength={60}
+              value={newGroupName}
+              onChange={(event) => setNewGroupName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  addGroup();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="ua-tracker-layout-button"
+              onClick={addGroup}
+              disabled={!newGroupName.trim()}
+            >
+              <LucideIcon name="plus" className="h-3 w-3" /> Add group
+            </button>
+            <button
+              type="button"
+              className="ua-tracker-layout-button ua-tracker-layout-reset"
+              onClick={() => setResetPending(true)}
+            >
+              Reset layout
+            </button>
+          </div>
+          {resetPending && (
+            <div className="ua-tracker-layout-confirm" role="alert">
+              <span>Remove all pins, groups and custom ordering?</span>
+              <button
+                type="button"
+                className="ua-tracker-layout-button"
+                onClick={() => {
+                  setLayout(model.normalize(null));
+                  setResetPending(false);
+                  setAnnouncement(
+                    "Tracker layout reset. Upload selection is unchanged.",
+                  );
+                }}
+              >
+                Reset layout
+              </button>
+              <button
+                type="button"
+                className="ua-tracker-layout-button"
+                onClick={() => setResetPending(false)}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      <div
+        className={compact && !editing ? "max-h-48 overflow-y-auto pr-1" : ""}
+      >
+        {trackers.length === 0 && (
+          <p className="text-xs opacity-70">
+            No configured trackers. Turn on Show all supported trackers to
+            choose one.
+          </p>
+        )}
+        {sections.map((section) => {
+          const custom = ![model.PINNED, model.UNGROUPED].includes(section.id);
+          if (!editing && section.trackers.length === 0) return null;
+          const groupIndex = layout.groups.findIndex(
+            (group) => group.id === section.id,
+          );
+          const selectedCount = section.trackers.filter((tracker) =>
+            selectedTrackers.has(tracker.name),
+          ).length;
+          const allSelected =
+            selectedCount > 0 && selectedCount === section.trackers.length;
+          const selectionAction = allSelected ? "Deselect all" : "Select all";
+          return (
+            <section
+              key={section.id}
+              className="ua-tracker-group"
+              aria-label={section.name}
+              data-drop-target={
+                (dropTarget?.sectionId === section.id && !dropTarget.before) ||
+                undefined
+              }
+              onDragOver={(event) => allowDrop(event, section.id)}
+              onDrop={(event) => drop(event, section.id)}
+              onDragLeave={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget))
+                  setDropTarget(null);
+              }}
+            >
+              {(editing || hasLayout) && (
+                <div className="ua-tracker-group-heading">
+                  {editing && custom && (
+                    <button
+                      type="button"
+                      className="ua-tracker-drag-handle"
+                      draggable
+                      onDragStart={(event) =>
+                        startDrag(event, { type: "group", id: section.id })
+                      }
+                      onDragEnd={finishDrag}
+                      aria-label={`Drag ${section.name} group`}
+                      title="Drag to reorder group"
+                    >
+                      <LucideIcon
+                        name="grip-vertical"
+                        className="h-3.5 w-3.5"
+                      />
+                    </button>
+                  )}
+                  {editing && custom ? (
+                    <TrackerGroupName
+                      group={section}
+                      onRename={(name) =>
+                        setLayout((current) => ({
+                          ...current,
+                          groups: current.groups.map((group) =>
+                            group.id === section.id
+                              ? { ...group, name }
+                              : group,
+                          ),
+                        }))
+                      }
+                    />
+                  ) : (
+                    <h3>{section.name}</h3>
+                  )}
+                  <span className="ua-tracker-group-count">
+                    {editing
+                      ? section.trackers.length
+                      : `${selectedCount} of ${section.trackers.length} selected`}
+                  </span>
+                  {!editing && (
+                    <div
+                      className="ua-tracker-group-selection"
+                      role="group"
+                      aria-label={`Tracker selection for ${section.name}`}
+                    >
+                      <button
+                        type="button"
+                        className="ua-tracker-layout-button"
+                        aria-label={`${selectionAction} visible trackers in ${section.name}`}
+                        title={`${selectionAction} visible trackers in ${section.name}`}
+                        disabled={disabled || section.trackers.length === 0}
+                        onClick={() =>
+                          onGroupSelection(
+                            section.trackers.map((tracker) => tracker.name),
+                            !allSelected,
+                          )
+                        }
+                      >
+                        {selectionAction}
+                      </button>
+                    </div>
+                  )}
+                  {editing && custom && (
+                    <div className="ua-tracker-group-actions">
+                      <button
+                        type="button"
+                        className="ua-tracker-layout-icon"
+                        aria-label={`Move ${section.name} group up`}
+                        title="Move group up"
+                        disabled={groupIndex === 0}
+                        onClick={() => nudgeGroup(section.id, -1)}
+                      >
+                        <LucideIcon name="chevron-up" className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="ua-tracker-layout-icon"
+                        aria-label={`Move ${section.name} group down`}
+                        title="Move group down"
+                        disabled={groupIndex === layout.groups.length - 1}
+                        onClick={() => nudgeGroup(section.id, 1)}
+                      >
+                        <LucideIcon name="chevron-down" className="h-3 w-3" />
+                      </button>
+                      <button
+                        type="button"
+                        className="ua-tracker-layout-button"
+                        onClick={() => {
+                          setLayout((current) =>
+                            model.removeGroup(current, section.id),
+                          );
+                          setAnnouncement(
+                            `${section.name} group removed. Its trackers are now ungrouped.`,
+                          );
+                        }}
+                        title="Remove heading and return its trackers to Ungrouped"
+                      >
+                        Remove group
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              <div className="ua-tracker-chip-list grid gap-2">
+                {section.trackers.map((tracker, index) => {
+                  const pinned = layout.pinned.includes(tracker.name);
+                  const displayName = tracker.display_name || tracker.name;
+                  return (
+                    <div
+                      key={tracker.name}
+                      className="ua-tracker-card"
+                      draggable={editing && optionsTracker !== tracker.name}
+                      onDragStart={(event) =>
+                        startDrag(event, { type: "tracker", id: tracker.name })
+                      }
+                      onDragEnd={finishDrag}
+                      data-drop-before={
+                        (dropTarget?.sectionId === section.id &&
+                          dropTarget.before === tracker.name) ||
+                        undefined
+                      }
+                      onDragOver={(event) =>
+                        allowDrop(event, section.id, tracker.name)
+                      }
+                      onDrop={(event) => drop(event, section.id, tracker.name)}
+                    >
+                      <div className="ua-tracker-card-main">
+                        {editing && (
+                          <button
+                            type="button"
+                            className="ua-tracker-drag-handle"
+                            draggable
+                            onDragStart={(event) =>
+                              startDrag(event, {
+                                type: "tracker",
+                                id: tracker.name,
+                              })
+                            }
+                            onDragEnd={finishDrag}
+                            aria-label={`Drag ${displayName}`}
+                            title="Drag to move tracker"
+                          >
+                            <LucideIcon
+                              name="grip-vertical"
+                              className="h-3 w-3"
+                            />
+                          </button>
+                        )}
+                        {children(tracker, editing)}
+                        {editing && (
+                          <button
+                            ref={(element) => {
+                              if (element)
+                                optionsButtonsRef.current.set(
+                                  tracker.name,
+                                  element,
+                                );
+                              else
+                                optionsButtonsRef.current.delete(tracker.name);
+                            }}
+                            type="button"
+                            className="ua-tracker-options-trigger"
+                            aria-label={`Options for ${displayName}`}
+                            title="Tracker options"
+                            aria-expanded={optionsTracker === tracker.name}
+                            aria-controls={
+                              optionsTracker === tracker.name
+                                ? `tracker-options-${tracker.name}`
+                                : undefined
+                            }
+                            disabled={disabled}
+                            onClick={() => {
+                              if (optionsTracker === tracker.name)
+                                closeTrackerOptions();
+                              else {
+                                setOptionsTracker(tracker.name);
+                                setShowMoveTargets(false);
+                              }
+                            }}
+                          >
+                            <svg
+                              width="14"
+                              height="14"
+                              viewBox="0 0 24 24"
+                              fill="currentColor"
+                              aria-hidden="true"
+                            >
+                              <circle cx="5" cy="12" r="2" />
+                              <circle cx="12" cy="12" r="2" />
+                              <circle cx="19" cy="12" r="2" />
+                            </svg>
+                          </button>
+                        )}
+                        {editing && (
+                          <button
+                            type="button"
+                            className="ua-tracker-pin"
+                            aria-label={`${pinned ? "Unpin" : "Pin"} ${displayName}`}
+                            aria-pressed={pinned}
+                            title={`${pinned ? "Unpin" : "Pin"} ${displayName}`}
+                            disabled={disabled}
+                            onClick={() => {
+                              if (optionsTracker === tracker.name)
+                                closeTrackerOptions();
+                              setLayout((current) =>
+                                model.togglePin(current, tracker.name),
+                              );
+                              setAnnouncement(
+                                `${displayName} ${pinned ? "unpinned" : "pinned"}.`,
+                              );
+                            }}
+                          >
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="1.7"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <path d="M16 3 21 8l-4 1-3 5-1 4-7-7 4-1 5-3zM9 15l-6 6" />
+                            </svg>
+                          </button>
+                        )}
+                      </div>
+                      {editing && optionsTracker === tracker.name && (
+                        <div
+                          id={`tracker-options-${tracker.name}`}
+                          className="ua-tracker-options-panel"
+                          role="group"
+                          aria-label={
+                            showMoveTargets
+                              ? `Choose a group for ${displayName}`
+                              : `Tracker options for ${displayName}`
+                          }
+                          onKeyDown={(event) => {
+                            if (event.key === "Escape") {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              closeTrackerOptions();
+                            }
+                          }}
+                        >
+                          {showMoveTargets ? (
+                            <>
+                              <span className="ua-tracker-options-heading">
+                                Move to group
+                              </span>
+                              {sections
+                                .filter((target) => target.id !== section.id)
+                                .map((target, targetIndex) => (
+                                  <button
+                                    key={target.id}
+                                    type="button"
+                                    className="ua-tracker-layout-button"
+                                    autoFocus={targetIndex === 0}
+                                    disabled={disabled}
+                                    onClick={() =>
+                                      chooseMoveTarget(tracker.name, target.id)
+                                    }
+                                  >
+                                    {target.name}
+                                  </button>
+                                ))}
+                              <button
+                                type="button"
+                                className="ua-tracker-layout-button"
+                                onClick={() => setShowMoveTargets(false)}
+                              >
+                                Back
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                className="ua-tracker-layout-button"
+                                autoFocus
+                                disabled={disabled}
+                                onClick={() => setShowMoveTargets(true)}
+                              >
+                                Move to…
+                              </button>
+                              <button
+                                type="button"
+                                className="ua-tracker-layout-button"
+                                aria-label={`Move ${displayName} earlier`}
+                                disabled={disabled || index === 0}
+                                onClick={() => nudgeTracker(section, index, -1)}
+                              >
+                                <LucideIcon
+                                  name="chevron-left"
+                                  className="h-3 w-3"
+                                />
+                                Move earlier
+                              </button>
+                              <button
+                                type="button"
+                                className="ua-tracker-layout-button"
+                                aria-label={`Move ${displayName} later`}
+                                disabled={
+                                  disabled ||
+                                  index === section.trackers.length - 1
+                                }
+                                onClick={() => nudgeTracker(section, index, 1)}
+                              >
+                                <LucideIcon
+                                  name="chevron-right"
+                                  className="h-3 w-3"
+                                />
+                                Move later
+                              </button>
+                            </>
+                          )}
+                          <button
+                            type="button"
+                            className="ua-tracker-layout-button"
+                            onClick={closeTrackerOptions}
+                          >
+                            Close
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                {editing && section.trackers.length === 0 && (
+                  <p className="ua-tracker-group-empty">Drop trackers here.</p>
+                )}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+      <span className="sr-only" role="status" aria-live="polite">
+        {announcement}
+      </span>
+    </div>
+  );
+}
+
+/** Coordinate the Upload page, its browser preferences, and upload runs. */
 function AudionutsUAGUI() {
   const API_BASE = window.location.origin + "/api";
   // Derive an application base path from the API base so links work under subpath deployments
@@ -2228,6 +2878,7 @@ function AudionutsUAGUI() {
   const [showAllSupportedTrackers, setShowAllSupportedTrackers] =
     useState(false);
   const [failedFavicons, setFailedFavicons] = useState(new Set());
+  const [isEditingTrackerLayout, setIsEditingTrackerLayout] = useState(false);
   const [isExecuting, setIsExecuting] = useState(Boolean(screenshotMode));
   const [, setIsOutputExpanded] = useState(false);
   const [showExecutionPreview, setShowExecutionPreview] = useState(false);
@@ -2278,6 +2929,11 @@ function AudionutsUAGUI() {
   // Run options changed on the open "Is this correct?" prompt, by option key;
   // only values that differ from what the run reported are kept.
   const [runGuiRunOptions, setRunGuiRunOptions] = useState({
+    key: null,
+    values: {},
+  });
+  // Upload data changed on the same prompt, as {tracker: {field: value}}.
+  const [runGuiPayloadEdits, setRunGuiPayloadEdits] = useState({
     key: null,
     values: {},
   });
@@ -2355,6 +3011,8 @@ function AudionutsUAGUI() {
   const descriptionVersionRef = useRef(
     screenshotMode?.description.version || 0,
   );
+  // Media id of the item the description draft state belongs to; a queue moves on without a new session.
+  const descriptionMediaRef = useRef(null);
   const descriptionEditorRef = useRef(null);
   const [descriptionAction, setDescriptionAction] = useState("");
   const [canAddExecutionScreenshot, setCanAddExecutionScreenshot] = useState(
@@ -2733,6 +3391,10 @@ function AudionutsUAGUI() {
   const quiEventsAbortControllerRef = useRef(null);
 
   // File Browser search states
+  const [fileBrowserFolderOnly, setFileBrowserFolderOnly] = useState(false);
+  const [fileBrowserFolder, setFileBrowserFolder] = useState("");
+  const fileBrowserFolderOnlyRef = useRef(false);
+  const fileBrowserFolderRef = useRef("");
   const [fileBrowserSearch, setFileBrowserSearch] = useState("");
   const [fileBrowserSearchResults, setFileBrowserSearchResults] =
     useState(null);
@@ -4074,6 +4736,17 @@ function AudionutsUAGUI() {
     setCustomArgs((prev) => syncTrackersToArgs(prev, nextSet, defaultTrackers));
   };
 
+  const handleTrackerGroupSelection = (trackerNames, selected) => {
+    if (isExecuting) return;
+    const nextSet = new Set(selectedTrackers);
+    for (const name of trackerNames) {
+      if (selected) nextSet.add(name);
+      else nextSet.delete(name);
+    }
+    setSelectedTrackers(nextSet);
+    setCustomArgs((prev) => syncTrackersToArgs(prev, nextSet, defaultTrackers));
+  };
+
   const toggleTrackerStatusDetails = (trackerName) => {
     setExpandedTrackerStatusDetails((current) => {
       const next = new Set(current);
@@ -4160,73 +4833,130 @@ function AudionutsUAGUI() {
     };
 
     return (
-      <div
-        className={`mt-3 space-y-2 p-3 rounded-lg border ${isDarkMode ? "bg-gray-900 border-gray-700 text-white" : "bg-gray-50 border-gray-200 text-gray-800"}`}
-      >
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-xs font-semibold uppercase tracking-wider opacity-75">
+      <div className="ua-tracker-selector mt-3 space-y-2 p-3 rounded-lg border">
+        <div className="ua-tracker-selector-header">
+          <span className="ua-tracker-selector-title text-xs font-semibold uppercase tracking-wider opacity-75">
             Select Trackers (-tk):
           </span>
-          <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => checkTrackerStatuses(statusTargets)}
-                className="ua-tracker-status-check rounded-md border px-2 py-1 text-[10px] font-semibold"
-                disabled={
-                  isExecuting ||
-                  isCheckingTrackerStatuses ||
-                  statusTargets.length === 0
-                }
-              >
-                {isCheckingTrackerStatuses ? "Checking…" : "Check status"}
-              </button>
-              <span className="text-[10px] opacity-60">{checkedAge}</span>
+          <div className="ua-tracker-toolbar">
+            <div
+              className="ua-tracker-toolbar-group"
+              role="group"
+              aria-label="Tracker selection"
+            >
+              <span className="ua-tracker-toolbar-caption" aria-hidden="true">
+                Tracker selection
+              </span>
+              <div className="ua-tracker-toolbar-controls">
+                <button
+                  type="button"
+                  title="Restore your configured default tracker selection"
+                  onClick={() => {
+                    setSelectedTrackers(new Set(defaultTrackers));
+                    setCustomArgs(
+                      syncTrackersToArgs(
+                        customArgs,
+                        defaultTrackers,
+                        defaultTrackers,
+                      ),
+                    );
+                  }}
+                  className="ua-tracker-layout-button ua-tracker-toolbar-button"
+                  disabled={isExecuting}
+                >
+                  Reset to Defaults
+                </button>
+                <button
+                  type="button"
+                  title="Deselect all trackers for this upload"
+                  onClick={() => {
+                    const nextSet = new Set();
+                    setSelectedTrackers(nextSet);
+                    setCustomArgs(
+                      syncTrackersToArgs(customArgs, nextSet, defaultTrackers),
+                    );
+                  }}
+                  className="ua-tracker-layout-button ua-tracker-toolbar-button"
+                  disabled={isExecuting}
+                >
+                  Clear All
+                </button>
+              </div>
             </div>
-            <label className="inline-flex cursor-pointer items-center gap-1.5 text-[10px] font-medium">
-              <input
-                type="checkbox"
-                checked={showAllSupportedTrackers}
-                onChange={(event) =>
-                  setShowAllSupportedTrackers(event.target.checked)
-                }
-                className="ua-theme-checkbox h-3.5 w-3.5"
-                disabled={isExecuting}
-              />
-              <span>Show all supported trackers</span>
-            </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedTrackers(new Set(defaultTrackers));
-                  setCustomArgs(
-                    syncTrackersToArgs(
-                      customArgs,
-                      defaultTrackers,
-                      defaultTrackers,
-                    ),
-                  );
-                }}
-                className="ua-accent-link text-[10px] underline font-medium"
-                disabled={isExecuting}
-              >
-                Reset to Defaults
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const nextSet = new Set();
-                  setSelectedTrackers(nextSet);
-                  setCustomArgs(
-                    syncTrackersToArgs(customArgs, nextSet, defaultTrackers),
-                  );
-                }}
-                className="ua-accent-link text-[10px] underline font-medium"
-                disabled={isExecuting}
-              >
-                Clear All
-              </button>
+            <div
+              className="ua-tracker-toolbar-group"
+              role="group"
+              aria-label="Tracker status"
+            >
+              <span className="ua-tracker-toolbar-caption" aria-hidden="true">
+                Tracker status
+              </span>
+              <div className="ua-tracker-toolbar-status">
+                <button
+                  type="button"
+                  onClick={() => checkTrackerStatuses(statusTargets)}
+                  className="ua-tracker-layout-button ua-tracker-toolbar-button ua-tracker-status-check"
+                  title="Check whether tracker websites are reachable"
+                  disabled={
+                    isExecuting ||
+                    isCheckingTrackerStatuses ||
+                    statusTargets.length === 0
+                  }
+                >
+                  {isCheckingTrackerStatuses ? "Checking…" : "Check now"}
+                </button>
+                <span className="text-[10px] opacity-60">{checkedAge}</span>
+              </div>
+            </div>
+            <div
+              className="ua-tracker-toolbar-group ua-tracker-toolbar-layout"
+              role="group"
+              aria-label="Layout and view"
+            >
+              <span className="ua-tracker-toolbar-caption" aria-hidden="true">
+                Layout &amp; view
+              </span>
+              <div className="ua-tracker-toolbar-controls">
+                <button
+                  type="button"
+                  className="ua-tracker-layout-button ua-tracker-toolbar-button"
+                  aria-pressed={isEditingTrackerLayout && !isExecuting}
+                  disabled={isExecuting}
+                  onClick={() =>
+                    setIsEditingTrackerLayout((current) => !current)
+                  }
+                >
+                  {isEditingTrackerLayout && !isExecuting
+                    ? "Done"
+                    : "Edit layout"}
+                </button>
+                <button
+                  type="button"
+                  className="ua-tracker-layout-button ua-tracker-toolbar-button ua-tracker-filter-toggle"
+                  aria-label="Show all supported trackers"
+                  aria-pressed={showAllSupportedTrackers}
+                  title={
+                    showAllSupportedTrackers
+                      ? "Show only configured or selected trackers"
+                      : "Show all supported trackers, including unconfigured trackers"
+                  }
+                  disabled={isExecuting}
+                  onClick={() =>
+                    setShowAllSupportedTrackers((current) => !current)
+                  }
+                >
+                  <span
+                    className="ua-tracker-filter-indicator"
+                    aria-hidden="true"
+                  >
+                    <LucideIcon
+                      name="check"
+                      className={`h-2.5 w-2.5 ${showAllSupportedTrackers ? "" : "invisible"}`}
+                    />
+                  </span>
+                  Show all supported trackers
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -4329,16 +5059,16 @@ function AudionutsUAGUI() {
             })}
           </div>
         )}
-        <div
-          className={`ua-tracker-chip-list grid gap-2 pr-1 ${!isExecuting && !isTerminalView ? "" : "max-h-48 overflow-y-auto"}`}
+        <TrackerOrganizer
+          trackers={visibleTrackers}
+          catalog={trackers}
+          selectedTrackers={selectedTrackers}
+          onGroupSelection={handleTrackerGroupSelection}
+          editing={isEditingTrackerLayout && !isExecuting}
+          disabled={isExecuting}
+          compact={isExecuting || isTerminalView}
         >
-          {visibleTrackers.length === 0 && (
-            <span className="text-xs opacity-70">
-              No configured trackers. Turn on Show all supported trackers to
-              choose one.
-            </span>
-          )}
-          {visibleTrackers.map((tracker) => {
+          {(tracker, editing) => {
             const isSelected = selectedTrackers.has(tracker.name);
             const isDefault = defaultTrackers.has(tracker.name);
             const isConfigured = tracker.configured !== false;
@@ -4357,14 +5087,11 @@ function AudionutsUAGUI() {
                 type="button"
                 key={tracker.name}
                 onClick={() => handleTrackerToggle(tracker.name)}
-                disabled={isExecuting}
+                disabled={isExecuting || editing}
+                aria-pressed={isSelected}
                 data-color-mode={isDarkMode ? "dark" : "light"}
                 className={`ua-tracker-chip flex min-w-0 items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium border transition-all ${
-                  isSelected
-                    ? "ua-tracker-chip-selected"
-                    : isDarkMode
-                      ? "bg-gray-800 border-gray-700 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-                      : "bg-white border-gray-300 text-gray-600 hover:bg-gray-50 hover:text-gray-900"
+                  isSelected ? "ua-tracker-chip-selected" : ""
                 }`}
                 title={`${tracker.display_name}${isDefault ? " (Default)" : ""}${
                   !isConfigured ? " (Not configured)" : ""
@@ -4411,8 +5138,8 @@ function AudionutsUAGUI() {
                 />
               </button>
             );
-          })}
-        </div>
+          }}
+        </TrackerOrganizer>
       </div>
     );
   };
@@ -4491,6 +5218,7 @@ function AudionutsUAGUI() {
       setDescriptionDraft("");
       setDescriptionView("edit");
       descriptionVersionRef.current = 0;
+      descriptionMediaRef.current = null;
       setDescriptionVersion(0);
       setDescriptionDirty(false);
       setCanAddExecutionScreenshot(false);
@@ -4541,6 +5269,18 @@ function AudionutsUAGUI() {
         const data = await response.json();
         if (!cancelled && data && data.success && data.media) {
           setExecutionPreview(data.media);
+          if (data.media.media_id !== descriptionMediaRef.current) {
+            // A new queue item: forget the previous item's draft and version,
+            // otherwise its higher version would reject this item's draft and
+            // the Description panel would keep showing the old text.
+            descriptionMediaRef.current = data.media.media_id;
+            descriptionVersionRef.current = 0;
+            descriptionDirtyRef.current = false;
+            setDescriptionVersion(0);
+            setDescriptionDraft("");
+            setDescriptionDirty(false);
+            setExecutionDescription(null);
+          }
           if (Array.isArray(data.media.progress)) {
             setProgressItems((prev) =>
               mergeProgressItemsById(prev, data.media.progress),
@@ -5355,7 +6095,10 @@ function AudionutsUAGUI() {
 
   /** Paths in the order the file browser displays them. */
   const getVisiblePaths = () => {
-    if (fileBrowserSearch) {
+    if (
+      fileBrowserSearch &&
+      (fileBrowserSearchLoading || fileBrowserSearchResults)
+    ) {
       if (!fileBrowserSearchResults || !fileBrowserSearchResults.items)
         return [];
       return sortItems(fileBrowserSearchResults.items).map((item) => item.path);
@@ -6010,11 +6753,39 @@ function AudionutsUAGUI() {
     return pathEditor;
   };
 
+  const invalidateFileBrowserSearch = () => {
+    ++fileBrowserSearchId.current;
+    clearTimeout(fileBrowserSearchTimer.current);
+    fileBrowserSearchCompletion.current?.();
+    fileBrowserSearchCompletion.current = null;
+    fileBrowserSearchQuery.current = "";
+    setFileBrowserSearchResults(null);
+    setFileBrowserSearchLoading(false);
+  };
+
+  const changeFileBrowserSearchMode = (enabled) => {
+    fileBrowserFolderOnlyRef.current = enabled;
+    setFileBrowserFolderOnly(enabled);
+    invalidateFileBrowserSearch();
+  };
+
+  const setFileBrowserSearchFolder = (path) => {
+    const changed = fileBrowserFolderRef.current !== path;
+    fileBrowserFolderRef.current = path;
+    setFileBrowserFolder(path);
+    // Only a changed scope invalidates results; all-locations searches
+    // do not depend on tree navigation.
+    if (changed && fileBrowserFolderOnlyRef.current)
+      invalidateFileBrowserSearch();
+  };
+
   const collapseFileBrowser = () => {
+    setFileBrowserSearchFolder("");
     setExpandedFolders(new Set());
   };
 
   const toggleFolder = async (path) => {
+    setFileBrowserSearchFolder(path);
     const newExpanded = new Set(expandedFolders);
 
     if (newExpanded.has(path)) {
@@ -6113,6 +6884,15 @@ function AudionutsUAGUI() {
         settle();
         return;
       }
+      const folderOnly = fileBrowserFolderOnlyRef.current;
+      const folder = fileBrowserFolderRef.current;
+      if (folderOnly && !folder) {
+        // The adjacent scope prompt stays visible; keep the tree usable.
+        setFileBrowserSearchResults(null);
+        setFileBrowserSearchLoading(false);
+        settle();
+        return;
+      }
       setFileBrowserSearchLoading(true);
       const onAbort = () => {
         if (fileBrowserSearchId.current === searchId) {
@@ -6124,20 +6904,25 @@ function AudionutsUAGUI() {
       };
       signal?.addEventListener("abort", onAbort, { once: true });
       fileBrowserSearchTimer.current = setTimeout(async () => {
-        if (signal?.aborted) {
+        if (signal?.aborted || fileBrowserSearchId.current !== searchId) {
           settle();
           return;
         }
         try {
           const response = await apiFetch(
-            `${API_BASE}/browse_search?q=${encodeURIComponent(searchQuery)}`,
+            `${API_BASE}/browse_search?q=${encodeURIComponent(searchQuery)}${folderOnly ? `&path=${encodeURIComponent(folder)}` : ""}`,
             { signal },
           );
           if (signal?.aborted) return;
+          // Proxies can answer with an HTML error page; never surface a
+          // JSON parse error as the search message.
+          const data = await response.json().catch(() => null);
           if (!response.ok) {
-            throw new Error(`Search request failed (${response.status})`);
+            throw new Error(
+              data?.error || `Search request failed (${response.status})`,
+            );
           }
-          const data = await response.json();
+          if (!data) throw new Error("Search failed. Please try again.");
           if (signal?.aborted) return;
           // Early return if the search has changed since this request
           if (fileBrowserSearchId.current !== searchId) return;
@@ -6155,6 +6940,7 @@ function AudionutsUAGUI() {
           console.error("File browser search failed:", error);
           if (fileBrowserSearchId.current === searchId) {
             setFileBrowserSearchResults({
+              error: error.message || "Search failed. Please try again.",
               items: [],
               query: searchQuery,
               count: 0,
@@ -6194,7 +6980,9 @@ function AudionutsUAGUI() {
         <div
           className={`p-4 text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
         >
-          <p className="text-sm">No results found</p>
+          <p className="text-sm" role="status">
+            {results.error || "No results found"}
+          </p>
         </div>
       );
     }
@@ -8451,6 +9239,8 @@ function AudionutsUAGUI() {
 
   const saveExecutionDescription = async (content = descriptionDraft) => {
     if (!sessionId || descriptionAction) return;
+    // A response that arrives after the queue moved on belongs to the previous item.
+    const mediaId = descriptionMediaRef.current;
     setDescriptionAction("save");
     try {
       const response = await apiFetch(`${API_BASE}/execution_description`, {
@@ -8463,6 +9253,7 @@ function AudionutsUAGUI() {
         }),
       });
       const data = await response.json().catch(() => null);
+      if (mediaId !== descriptionMediaRef.current) return;
       if (!response.ok || !data?.success) {
         if (response.status === 409 && Number.isInteger(data?.version)) {
           descriptionVersionRef.current = data.version;
@@ -8494,6 +9285,7 @@ function AudionutsUAGUI() {
 
   const resetExecutionDescription = async (sourceKey) => {
     if (!sessionId || descriptionAction) return;
+    const mediaId = descriptionMediaRef.current;
     setDescriptionAction(`reset:${sourceKey}`);
     try {
       const response = await apiFetch(
@@ -8509,6 +9301,7 @@ function AudionutsUAGUI() {
         },
       );
       const data = await response.json().catch(() => null);
+      if (mediaId !== descriptionMediaRef.current) return;
       if (!response.ok || !data?.success) {
         if (response.status === 409 && Number.isInteger(data?.version)) {
           descriptionVersionRef.current = data.version;
@@ -10538,6 +11331,223 @@ function AudionutsUAGUI() {
     });
   };
 
+  // Each tracker's upload form as it is known now. Simple fields can be
+  // changed; the changes are sent with "yes" and used for that tracker only.
+  const renderRunGuiPayloads = (
+    previews,
+    edits,
+    errors,
+    notice,
+    key,
+    disabled,
+  ) => {
+    const update = (tracker, field, value) =>
+      setRunGuiPayloadEdits({
+        key,
+        values: RunGui.updatePayloadEdits(edits, tracker, field, value),
+      });
+    const renderControl = (tracker, field, value) => {
+      if (field.kind === "flag" && field.editable) {
+        return (
+          <input
+            type="checkbox"
+            checked={value === true}
+            onChange={() => update(tracker, field, value !== true)}
+            disabled={disabled}
+            aria-label={field.label}
+            className="h-4 w-4"
+          />
+        );
+      }
+      if (field.kind === "choice" && field.editable) {
+        return (
+          <select
+            value={value}
+            onChange={(event) => update(tracker, field, event.target.value)}
+            disabled={disabled}
+            aria-label={field.label}
+            className="ua-run-gui-input w-full min-w-0 rounded border px-1.5 py-1 text-sm disabled:opacity-50"
+          >
+            {field.choices.map(([option, label]) => (
+              <option key={option} value={option}>
+                {label === option ? label : `${label} (${option})`}
+              </option>
+            ))}
+          </select>
+        );
+      }
+      if (field.kind === "text") {
+        return (
+          <input
+            type="text"
+            value={value}
+            inputMode={field.numeric ? "numeric" : undefined}
+            maxLength={field.max}
+            onChange={(event) => update(tracker, field, event.target.value)}
+            disabled={disabled}
+            aria-label={field.label}
+            className="ua-run-gui-input w-full min-w-0 rounded border px-1.5 py-1 font-mono text-xs disabled:opacity-50"
+          />
+        );
+      }
+      if (field.kind === "deferred") {
+        return (
+          <span className="ua-run-gui-muted text-xs italic">{field.note}</span>
+        );
+      }
+      return (
+        <span className="ua-run-gui-muted break-all font-mono text-xs">
+          {field.kind === "choice"
+            ? field.display || field.value
+            : field.kind === "flag"
+              ? value
+                ? "on"
+                : "off"
+              : field.value}
+        </span>
+      );
+    };
+    return (
+      <div>
+        {renderRunGuiSectionLabel("Upload data")}
+        <p className="ua-run-gui-muted mt-1 text-xs">
+          Changes apply only to that tracker&apos;s upload form. The .torrent
+          and the other trackers are not changed. Fields marked with a warning
+          sign come from the release&apos;s metadata and are better corrected by
+          answering No.
+        </p>
+        {notice && (
+          <p className="ua-run-gui-muted mt-1 text-xs" data-tone="attention">
+            {notice}
+          </p>
+        )}
+        <div className="mt-1.5 space-y-1.5">
+          {previews.map((preview) => {
+            const changed = edits[preview.tracker] || {};
+            const count = Object.keys(changed).length;
+            const warnings = RunGui.payloadEditWarnings(preview, edits);
+            const warningCount = Object.keys(warnings).length;
+            return (
+              <details
+                key={preview.tracker}
+                className="ua-run-gui-details ua-run-gui-release-name rounded-md px-2.5 py-1.5"
+              >
+                <summary className="cursor-pointer text-sm">
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-2 align-middle">
+                    {renderRunGuiTracker(preview.tracker)}
+                    {preview.name && (
+                      <span className="ua-run-gui-muted min-w-0 truncate font-mono text-xs">
+                        {preview.name}
+                      </span>
+                    )}
+                    {count > 0 && (
+                      <span
+                        className="ua-run-gui-chip shrink-0 rounded-md px-1.5 py-0.5 text-xs"
+                        data-tone="attention"
+                      >
+                        {count} changed
+                      </span>
+                    )}
+                    {warningCount > 0 && (
+                      <span
+                        className="ua-run-gui-chip inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs"
+                        data-tone="error"
+                      >
+                        <LucideIcon name="triangle-alert" className="h-3 w-3" />
+                        {warningCount}{" "}
+                        {warningCount === 1 ? "warning" : "warnings"}
+                      </span>
+                    )}
+                  </span>
+                </summary>
+                <dl className="mt-2 space-y-1">
+                  {preview.fields.map((field) => {
+                    const value = RunGui.payloadFieldValue(
+                      field,
+                      edits,
+                      preview.tracker,
+                    );
+                    const isChanged = field.key in changed;
+                    const error = (errors[preview.tracker] || {})[field.key];
+                    const warning = warnings[field.key];
+                    const advice = field.editable
+                      ? RunGui.payloadRoleAdvice(field.role)
+                      : "";
+                    return (
+                      <div
+                        key={field.key}
+                        className="ua-run-gui-payload-row grid min-w-0 items-center gap-x-3 gap-y-0.5 rounded px-1.5 py-1 sm:grid-cols-[11rem_minmax(0,1fr)_auto]"
+                        data-changed={isChanged}
+                      >
+                        <dt
+                          className="flex min-w-0 items-center gap-1 text-xs"
+                          title={field.key}
+                        >
+                          <span className="truncate">{field.label}</span>
+                          {advice && !warning && (
+                            // Shown before any change: these values are better corrected at their source.
+                            <span
+                              className="ua-run-gui-payload-advice shrink-0"
+                              title={advice}
+                              aria-label={advice}
+                            >
+                              <LucideIcon
+                                name="triangle-alert"
+                                className="h-3 w-3"
+                              />
+                            </span>
+                          )}
+                        </dt>
+                        <dd className="min-w-0">
+                          {renderControl(preview.tracker, field, value)}
+                          {error && (
+                            <span
+                              className="mt-0.5 block text-xs"
+                              data-tone="error"
+                            >
+                              {error}
+                            </span>
+                          )}
+                          {warning && !error && (
+                            <span
+                              className="ua-run-gui-payload-warning mt-0.5 flex items-start gap-1 text-xs"
+                              data-tone="attention"
+                              role="note"
+                            >
+                              <LucideIcon
+                                name="triangle-alert"
+                                className="mt-0.5 h-3 w-3 shrink-0"
+                              />
+                              <span>{warning}</span>
+                            </span>
+                          )}
+                        </dd>
+                        <dd>
+                          {isChanged && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                update(preview.tracker, field, field.value)
+                              }
+                              disabled={disabled}
+                              className="ua-run-gui-link text-xs disabled:opacity-50"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </dd>
+                      </div>
+                    );
+                  })}
+                </dl>
+              </details>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   /** List only the upload targets inside the final confirmation question. */
   const renderRunGuiDupeClearContext = (context) => {
     const names = splitTrackers(context.clear_trackers);
@@ -10670,8 +11680,7 @@ function AudionutsUAGUI() {
       context.kind === "dupes"
         ? view.attention.filter(
             (notice) =>
-              notice.item === prompt.item &&
-              notice.tracker === context.tracker,
+              notice.item === prompt.item && notice.tracker === context.tracker,
           )
         : [];
     const missing =
@@ -10853,9 +11862,19 @@ function AudionutsUAGUI() {
         : [];
     const changedRunOptions =
       runGuiRunOptions.key === selectionKey ? runGuiRunOptions.values : {};
-    const yesAnswer = Object.keys(changedRunOptions).length
-      ? `yes ${JSON.stringify(changedRunOptions)}`
-      : "yes";
+    const payloadPreviews =
+      context.kind === "confirm" ? RunGui.readPayloadPreviews(context) : [];
+    const payloadEdits =
+      runGuiPayloadEdits.key === selectionKey ? runGuiPayloadEdits.values : {};
+    const payloadErrors = RunGui.payloadEditErrors(
+      payloadPreviews,
+      payloadEdits,
+    );
+    const hasPayloadErrors = Object.keys(payloadErrors).length > 0;
+    const yesAnswer = RunGui.buildConfirmAnswer(
+      changedRunOptions,
+      payloadEdits,
+    );
     if (runOptions.length) {
       details = (
         <>
@@ -10863,6 +11882,23 @@ function AudionutsUAGUI() {
           {renderRunGuiRunOptions(
             runOptions,
             changedRunOptions,
+            selectionKey,
+            disabled,
+          )}
+        </>
+      );
+    }
+    if (payloadPreviews.length || context.payload_notice) {
+      details = (
+        <>
+          {details}
+          {renderRunGuiPayloads(
+            payloadPreviews,
+            payloadEdits,
+            payloadErrors,
+            typeof context.payload_notice === "string"
+              ? context.payload_notice
+              : "",
             selectionKey,
             disabled,
           )}
@@ -10927,11 +11963,17 @@ function AudionutsUAGUI() {
               <button
                 type="button"
                 onClick={() => answer(yesAnswer)}
-                disabled={disabled}
+                disabled={disabled || hasPayloadErrors}
                 className="ua-run-gui-answer flex items-center gap-1.5 rounded-lg px-4 py-2 font-medium disabled:opacity-50"
                 data-variant="yes"
                 data-default={prompt?.default === true}
-                title={prompt?.default === true ? "Default answer" : undefined}
+                title={
+                  hasPayloadErrors
+                    ? "Fix the highlighted upload data first"
+                    : prompt?.default === true
+                      ? "Default answer"
+                      : undefined
+                }
               >
                 <LucideIcon name="check" className="h-4 w-4" />
                 Yes
@@ -11800,6 +12842,30 @@ function AudionutsUAGUI() {
    * It is shown either in the sidebar or in the larger modal, never both,
    * because the tree's scroll position and keyboard focus use one ref.
    */
+  const renderFolderSearchControl = () => (
+    <div className="mt-2 min-w-0 text-xs">
+      <label className="inline-flex cursor-pointer items-center gap-2">
+        <input
+          type="checkbox"
+          className="ua-theme-checkbox h-4 w-4"
+          checked={fileBrowserFolderOnly}
+          onChange={(event) =>
+            changeFileBrowserSearchMode(event.target.checked)
+          }
+        />
+        Search this folder
+      </label>
+      {fileBrowserFolderOnly && (
+        <p
+          className="mt-1 break-all"
+          role={fileBrowserFolder ? undefined : "status"}
+        >
+          {fileBrowserFolder || "Select a folder in the tree before searching."}
+        </p>
+      )}
+    </div>
+  );
+
   const renderFileBrowserBody = (inModal) => (
     <>
       <div className="ua-upload-panel-header p-4 border-b">
@@ -11866,6 +12932,10 @@ function AudionutsUAGUI() {
             aria-label="Search files and folders"
             value={fileBrowserSearch}
             onChange={(e) => handleFileBrowserSearch(e.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.nativeEvent.isComposing)
+                handleFileBrowserSearch(event.currentTarget.value);
+            }}
             placeholder="Search files and folders..."
             className={`w-full pl-8 pr-8 py-1.5 text-sm rounded border ${
               isDarkMode
@@ -11888,6 +12958,7 @@ function AudionutsUAGUI() {
             </button>
           )}
         </div>
+        {renderFolderSearchControl()}
       </div>
       {renderSelectAllBar()}
       <div
@@ -11902,7 +12973,8 @@ function AudionutsUAGUI() {
         }}
         className={`${!inModal && hasDescFile && !descBrowserCollapsed ? "flex-1 max-h-[50%]" : "flex-1"} min-h-0 overflow-y-auto`}
       >
-        {fileBrowserSearch ? (
+        {fileBrowserSearch &&
+        (fileBrowserSearchLoading || fileBrowserSearchResults) ? (
           fileBrowserSearchLoading ? (
             <div
               className={`p-4 text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
@@ -12072,6 +13144,13 @@ function AudionutsUAGUI() {
                       aria-label="Search files and folders"
                       value={fileBrowserSearch}
                       onChange={(e) => handleFileBrowserSearch(e.target.value)}
+                      onKeyDown={(event) => {
+                        if (
+                          event.key === "Enter" &&
+                          !event.nativeEvent.isComposing
+                        )
+                          handleFileBrowserSearch(event.currentTarget.value);
+                      }}
                       placeholder="Search files and folders..."
                       className={`w-full pl-8 pr-8 py-1.5 text-sm rounded border ${
                         isDarkMode
@@ -12094,12 +13173,14 @@ function AudionutsUAGUI() {
                       </button>
                     )}
                   </div>
+                  {renderFolderSearchControl()}
                 </div>
                 {renderSelectAllBar()}
                 <div
                   className={`flex-1 overflow-y-auto ${hasDescFile && !descBrowserCollapsed ? "max-h-[50%]" : ""}`}
                 >
-                  {fileBrowserSearch ? (
+                  {fileBrowserSearch &&
+                  (fileBrowserSearchLoading || fileBrowserSearchResults) ? (
                     fileBrowserSearchLoading ? (
                       <div
                         className={`p-4 text-center ${isDarkMode ? "text-gray-400" : "text-gray-500"}`}
@@ -12640,7 +13721,7 @@ function AudionutsUAGUI() {
                       setReviewPanelOpen("screenshots", !isScreenshotReviewOpen)
                     }
                     aria-pressed={isScreenshotReviewOpen}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isScreenshotReviewOpen ? "ua-accent-action" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isScreenshotReviewOpen ? "ua-accent-action" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
                     title="Review generated screenshots"
                   >
                     <ScreenshotsIcon />
@@ -12655,7 +13736,7 @@ function AudionutsUAGUI() {
                     setReviewPanelOpen("description", !isDescriptionReviewOpen)
                   }
                   aria-pressed={isDescriptionReviewOpen}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isDescriptionReviewOpen ? "ua-accent-action" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isDescriptionReviewOpen ? "ua-accent-action" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
                   title="Review and edit the base description"
                 >
                   <DescriptionIcon />
@@ -12667,7 +13748,7 @@ function AudionutsUAGUI() {
                       setReviewPanelOpen("mediainfo", !isMediaInfoOpen)
                     }
                     aria-pressed={isMediaInfoOpen}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors ${isMediaInfoOpen ? "ua-accent-action" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${isMediaInfoOpen ? "ua-accent-action" : isDarkMode ? "bg-gray-700 hover:bg-gray-600 text-gray-100" : "bg-gray-100 hover:bg-gray-200 text-gray-700"}`}
                     title={`View the ${mediaInfoLabel} report`}
                   >
                     <MediaInfoIcon />
@@ -12681,7 +13762,7 @@ function AudionutsUAGUI() {
                       ? "Cancel scheduled upload"
                       : "Kill process and clear terminal"
                   }
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg transition-colors bg-red-600 hover:bg-red-700 text-white"
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors bg-red-600 hover:bg-red-700 text-white"
                   title={
                     activeTabScheduled
                       ? "Cancel scheduled upload"

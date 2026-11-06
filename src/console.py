@@ -21,6 +21,32 @@ from rich.text import Text
 _original_input = builtins.input
 
 
+class PromptBlockedError(BaseException):
+    """A question was asked where none may be (while building a Web UI preview).
+
+    A BaseException, so code that falls back to a default on ``Exception`` does
+    not hide that the real run would have asked.
+    """
+
+
+_prompts_blocked = contextvars.ContextVar("prompts_blocked", default=False)
+
+
+@contextlib.contextmanager
+def prompts_blocked() -> Generator[None]:
+    """Refuse every question asked in this block, including from worker threads it starts."""
+    token = _prompts_blocked.set(True)
+    try:
+        yield
+    finally:
+        _prompts_blocked.reset(token)
+
+
+def check_prompt_allowed() -> None:
+    if _prompts_blocked.get():
+        raise PromptBlockedError("a question was asked while questions are blocked")
+
+
 def _safe_input(prompt: str = "") -> str:
     """Thread-safe input that avoids readline terminal state corruption.
 
@@ -30,6 +56,7 @@ def _safe_input(prompt: str = "") -> str:
     by using `sys.stdin.readline` natively fixes this at the cost of history and
     advanced editing commands, which aren't needed for our CLI prompts.
     """
+    check_prompt_allowed()
     prompt_id = None
     if prompt and os.environ.get("UA_WEBUI_GUI_EVENTS") == "1":
         from src import webui_events
@@ -60,6 +87,9 @@ def ansi_to_html(ansi_chunk: str, width: int = 120) -> str:
     with inline styles so it can be embedded directly into the web UI.
     """
     try:
+        # Windows pipes and ConPTY end lines with CRLF. Rich decodes a carriage
+        # return as "rewrite this line", which would blank every CRLF line.
+        ansi_chunk = ansi_chunk.replace("\r\n", "\n")
         c = Console(file=io.StringIO(), record=True, force_terminal=True, width=width)
         # Try parsing ANSI sequences first. If there are no style spans and
         # the chunk looks like Rich markup (e.g. contains [bold] tags),
@@ -284,6 +314,8 @@ async def buffer_console_logs() -> AsyncGenerator[None]:
 
 async def prompt_in_thread[PromptResult](callback: Callable[..., PromptResult], /, *args: Any, **kwargs: Any) -> PromptResult:
     """Run an interactive prompt without blocking the event loop or interleaving logs."""
+    # Refuse before the question is printed, not when its answer is read.
+    check_prompt_allowed()
     async with buffer_console_logs():
         return await asyncio.to_thread(callback, *args, **kwargs)
 

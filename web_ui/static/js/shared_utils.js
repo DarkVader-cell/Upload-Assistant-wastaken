@@ -3,8 +3,8 @@
   const THEME_KEY = "ua_config_theme";
   const COLOR_THEME_KEY = "ua_color_theme";
   const INTERFACE_STYLE_KEY = "ua_interface_style";
-  const DEFAULT_COLOR_THEME = "charcoal";
-  const DEFAULT_INTERFACE_STYLE = "square";
+  const DEFAULT_COLOR_THEME = "amber";
+  const DEFAULT_INTERFACE_STYLE = "rounded";
   const LUCIDE_ICON_BASE = "/static/img/lucide-icons";
   const WEB_UI_ICON_MAP = Object.freeze({
     book: "book-open",
@@ -26,6 +26,7 @@
   });
   const STATS_ICON_MAP = Object.freeze({
     "activity-heatmap": "flame",
+    "after-upload": "hand-coins",
     "api-operations": "network",
     "artifact-activity": "boxes",
     "average-item-size": "chart-spline",
@@ -40,6 +41,8 @@
     "execution-source": "square-terminal",
     "external-operations": "globe",
     "hashing-io-avoided": "gauge",
+    "hashing-throughput": "chart-column-increasing",
+    "image-hosts": "images",
     "items-completed": "clipboard-check",
     "media-profile": "list-tree",
     "nzbs-created": "cloud-upload",
@@ -47,11 +50,13 @@
     "pioneering-rate": "flag",
     "screenshots-created": "image-plus",
     settings: "sliders-horizontal",
+    "stage-timing": "hourglass",
     "streaming-services": "circle-play",
     "successful-uploads": "upload",
     "torrents-created": "magnet",
     "unique-data-uploaded": "file-stack",
     "upload-flow": "workflow",
+    "upload-problems": "triangle-alert",
     "uploads-by-destination": "crosshair",
   });
 
@@ -68,6 +73,12 @@
     });
   }
   const UA_THEMES = Object.freeze([
+    {
+      id: "amber",
+      label: "Amber",
+      description: "Graphite and amber (default)",
+      swatch: ["#16181b", "#f0a43a"],
+    },
     {
       id: "amethyst",
       label: "Amethyst",
@@ -550,6 +561,7 @@
   });
   const UA_TRACKER_SCOPES = new Set([
     "alpharatio",
+    "amigosshare",
     "anthelion",
     "beyondhd",
     "bithdtv",

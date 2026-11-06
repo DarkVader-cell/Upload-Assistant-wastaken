@@ -22,7 +22,7 @@ from langcodes import tag_parser
 from torf import Torrent
 from unidecode import unidecode
 
-from src import webui_events
+from src import language_names, webui_events
 from src.api_key_expiry import observe_tracker_response
 from src.bbcode import BBCODE
 from src.console import console, logger, prompt_in_thread
@@ -31,6 +31,7 @@ from src.distributors import distributor_name
 from src.exportmi import export_info
 from src.genre_map import AUDIBLE_ENG_GENRE_MAP, AUDIBLE_PTBR_GENRE_MAP, ENG_TO_PTBR_GENRE_MAP
 from src.languages import languages_manager
+from src.manual_input import Question, ask, confirm_override
 from src.meta import Meta
 from src.runtime.tracker_requests import TrackerReadError, error_kind, retry_readonly
 from src.torrent_manifest import TorrentManifest
@@ -138,8 +139,8 @@ class Common:
                 continue
             try:
                 parsed_lang = langcodes.Language.get(parse_input)
-                display_name = parsed_lang.display_name()
-                language_name = parsed_lang.language_name()
+                display_name = language_names.display_name(parsed_lang)
+                language_name = language_names.language_name(parsed_lang)
                 language_code = parsed_lang.language
                 for value in (display_name, language_name, language_code):
                     if value:
@@ -230,7 +231,7 @@ class Common:
             return ""
         try:
             parsed_lang = langcodes.Language.get(language)
-            display_name = parsed_lang.display_name()
+            display_name = language_names.display_name(parsed_lang)
             return display_name.lower() if display_name else language.lower()
         except tag_parser.LanguageTagError, LookupError, AttributeError, ValueError:
             return language.lower()
@@ -628,11 +629,26 @@ class Common:
             return True
 
     async def prompt_user_for_confirmation(self, message: str, meta: Meta | None = None) -> bool:
-        if meta and meta.unattended and not meta.unattended_confirm:
-            return False
-        with webui_events.field_prompt("Confirmation", {"Release": (meta.name or meta.title) if meta else ""}, hint=message, actions=[("y", "Yes"), ("n", "No")]):
-            response = (await prompt_in_thread(cli_ui.ask_string, f"{message} (Y/n): ", default="") or "").strip().lower()
-        return response == "" or response == "y"
+        with webui_events.field_prompt("Confirmation", {"Release": (meta.name or meta.title) if meta else ""}, hint=message):
+            return await confirm_override(meta, message, default=True)
+
+    async def _ask_douban_link(self, meta: Meta, summary: dict[str, Any], reason: str) -> str:
+        link = await ask(
+            meta,
+            Question(
+                key="douban.url",
+                kind="text",
+                prompt="Please enter Douban link (leave empty to skip)",
+                title="Douban link",
+                hint=f"{reason} Enter a Douban link, or leave it blank to skip.",
+                placeholder="https://movie.douban.com/subject/...",
+                summary={**summary, "Douban link": ""},
+                focus="Douban link",
+                unattended="fail",
+                empty_ok=True,
+            ),
+        )
+        return link or ""
 
     @staticmethod
     def _unit3d_title_key(value: object) -> str:
@@ -985,32 +1001,12 @@ class Common:
                             raise KeyError("No data in response")
                     except KeyError, IndexError, TypeError:
                         logger.info("[red]Unable to get data from ptgen using IMDb")
-                        if not meta.unattended or (meta.unattended and meta.unattended_confirm):
-                            with webui_events.field_prompt(
-                                "Douban link",
-                                {"Release": meta.name or meta.title, "IMDb ID": meta.imdb_tt, "Douban link": ""},
-                                focus="Douban link",
-                                hint="Unable to get data from PT-Gen using IMDb. Enter a Douban link, or leave it blank to skip.",
-                                actions=[("", "Skip")],
-                                placeholder="https://movie.douban.com/subject/...",
-                            ):
-                                params["url"] = await prompt_in_thread(cli_ui.ask_string, "Please enter Douban link:", default="") or ""
-                        else:
-                            params["url"] = ""
+                        params["url"] = await self._ask_douban_link(
+                            meta, {"Release": meta.name or meta.title, "IMDb ID": meta.imdb_tt}, "Unable to get data from PT-Gen using IMDb."
+                        )
                 else:
                     logger.info("[red]No IMDb id was found.")
-                    if not meta.unattended or (meta.unattended and meta.unattended_confirm):
-                        with webui_events.field_prompt(
-                            "Douban link",
-                            {"Release": meta.name or meta.title, "Douban link": ""},
-                            focus="Douban link",
-                            hint="No IMDb ID was found for PT-Gen. Enter a Douban link, or leave it blank to skip.",
-                            actions=[("", "Skip")],
-                            placeholder="https://movie.douban.com/subject/...",
-                        ):
-                            params["url"] = await prompt_in_thread(cli_ui.ask_string, "Please enter Douban link:", default="") or ""
-                    else:
-                        params["url"] = ""
+                    params["url"] = await self._ask_douban_link(meta, {"Release": meta.name or meta.title}, "No IMDb ID was found for PT-Gen.")
 
                 # Fetch with douban URL
                 ptgen_json = await fetch_ptgen(client, url, params)
@@ -1444,7 +1440,7 @@ class Common:
 
         return f"{resolution} @ {video_bitrate} kbps - {audio} @ {audio_bitrate} kbps"
 
-    def check_and_confirm_adult_media_upload(self, meta: Meta, tracker: str) -> bool:
+    async def check_and_confirm_adult_media_upload(self, meta: Meta, tracker: str) -> bool:
         """
         Check if the media is categorized as adult/pornographic and prompt the user for confirmation before uploading to a non-adult tracker.
 
@@ -1453,13 +1449,8 @@ class Common:
         :return: True if the user confirms or if the media is not adult, False otherwise.
         """
         if meta.adult_media:
-            if not meta.unattended or (meta.unattended and meta.unattended_confirm):
-                logger.info(f"[bold red]Pornography is not allowed at {tracker}.[/bold red]")
-                if cli_ui.ask_yes_no("Do you want to upload anyway?", default=False):
-                    pass
-                else:
-                    return False
-            else:
+            logger.info(f"[bold red]Pornography is not allowed at {tracker}.[/bold red]")
+            if not await confirm_override(meta):
                 return False
 
         return True
@@ -1662,18 +1653,19 @@ class Common:
             return ""
 
         # Final fallback: ask user
-        if meta.unattended and not meta.unattended_confirm:
-            logger.info(f"{tracker}: [yellow]Unattended mode: Gêneros não encontrados. Pulando upload para {tracker}.[/yellow]")
-            meta.skipping = f"{tracker}"
-            return ""
-
-        with webui_events.field_prompt(
-            "Gêneros",
-            {"Tracker": tracker, "Release": meta.name or meta.title, "Gêneros": ""},
-            focus="Gêneros",
-            hint="Gêneros não encontrados. Separe por vírgula; até 5 são usados.",
-            placeholder="ex.: ação, drama",
-        ):
-            tags_raw = await prompt_in_thread(cli_ui.ask_string, f"Digite os gêneros (no formato do {tracker}): ")
-        raw_list = [unidecode(t.strip()).replace(" ", ".") for t in re.split(r"[,;]", tags_raw or "") if t.strip()]
+        genres = await ask(
+            meta,
+            Question(
+                key="genres.ptbr",
+                kind="list",
+                prompt=f"{tracker}: Digite os gêneros (no formato do {tracker})",
+                title="Gêneros",
+                hint="Gêneros não encontrados. Separe por vírgula; até 5 são usados.",
+                placeholder="ex.: ação, drama",
+                summary={"Tracker": tracker, "Release": meta.name or meta.title, "Gêneros": ""},
+                focus="Gêneros",
+                tracker=tracker,
+            ),
+        )
+        raw_list = [unidecode(t).replace(" ", ".") for t in genres or []]
         return ", ".join(raw_list[:5])

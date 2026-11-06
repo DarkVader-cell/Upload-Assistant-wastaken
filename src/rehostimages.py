@@ -15,6 +15,7 @@ from src.artwork import is_public_http_url, is_valid_image_bytes
 from src.console import logger
 from src.image_hosts import is_enabled_image_host
 from src.meta import Meta
+from src.release_locks import release_image_lock
 from src.screenshot_manifest import files as manifest_files
 from src.takescreens import TakeScreensManager
 from src.temp_paths import artwork_dir, dynamic_hdr_plots_dir, menu_screenshots_dir, screenshots_dir, spectrograms_dir
@@ -218,19 +219,24 @@ async def check_tracker_image_hosts(meta: Meta, tracker_class: Any) -> None:
 
     policy = getattr(tracker_class, "image_host_policy", None)
     rehost_manager = getattr(tracker_class, "rehost_images_manager", None)
-    if isinstance(policy, ImageHostPolicy) and rehost_manager is not None:
-        required_tags = (
-            ["tonemapped"] if getattr(tracker_class, "requires_tonemapped_hdr_screenshots", False) and any(marker in meta.hdr for marker in ("HDR", "DV", "HLG")) else []
-        )
-        if required_tags:
-            await rehost_manager.check_policy(meta, tracker_class.tracker, policy, required_image_tags=required_tags)
-        else:
-            await rehost_manager.check_policy(meta, tracker_class.tracker, policy)
+    check_hosts = getattr(tracker_class, "check_image_hosts", None)
+    uses_policy = isinstance(policy, ImageHostPolicy) and rehost_manager is not None
+    if not uses_policy and not callable(check_hosts):
         return
 
-    check_hosts = getattr(tracker_class, "check_image_hosts", None)
-    if callable(check_hosts):
-        await check_hosts(meta)
+    # Trackers upload concurrently, and rehosting switches meta.imghost and the
+    # capture settings on the shared meta while it runs: take turns.
+    async with release_image_lock(meta):
+        if uses_policy:
+            required_tags = (
+                ["tonemapped"] if getattr(tracker_class, "requires_tonemapped_hdr_screenshots", False) and any(marker in meta.hdr for marker in ("HDR", "DV", "HLG")) else []
+            )
+            if required_tags:
+                await rehost_manager.check_policy(meta, tracker_class.tracker, policy, required_image_tags=required_tags)
+            else:
+                await rehost_manager.check_policy(meta, tracker_class.tracker, policy)
+        elif callable(check_hosts):
+            await check_hosts(meta)
 
 
 def _image_host(raw_url: str, url_host_mapping: Mapping[str, str]) -> str:
@@ -688,7 +694,7 @@ async def _handle_image_upload(
             elif meta.is_disc == "DVD":
                 await takescreens_manager.dvd_screenshots(meta, disc_num=0, retry_cap=True)
             elif meta.category == "XXX":
-                await takescreens_manager.xxx_contact_sheets(meta.filelist or [], folder_id, base_dir, meta)
+                await takescreens_manager.xxx_contact_sheets(meta.filelist or [], folder_id, base_dir, meta, extra_screens=needed_screenshots)
             elif path:
                 await takescreens_manager.screenshots(
                     path,

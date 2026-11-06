@@ -6,15 +6,15 @@ from pathlib import Path
 from typing import Any, cast
 
 import aiofiles
-import cli_ui
 import httpx
 from rich.markup import escape
 
-from src import webui_events
+from src import payload_preview
 from src.cogs.redaction import Redaction
-from src.console import logger, prompt_in_thread
+from src.console import logger
 from src.get_desc import DescriptionBuilder
 from src.languages import languages_manager
+from src.manual_input import Question, ask, choices_from
 from src.mediainfo import strip_report_by_line
 from src.meta import Meta
 from src.torrent_policy import ANTHELION_POLICY
@@ -214,24 +214,27 @@ class Anthelion:
                 logger.info(f"{self.tracker}: [green]Using IMDb genres for tagging: {', '.join(tags)}")
 
         if not tags:
-            if meta.unattended and not meta.unattended_confirm:
-                logger.info(f"{self.tracker}: [yellow]Unattended mode: No genres found for tagging. Skipping {self.tracker} upload.[/yellow]")
-                meta.skipping = f"{self.tracker}"
-                return ""
             logger.info(f"{self.tracker}: [yellow]No genres found for tagging. Tag required.")
             logger.info(
                 f"{self.tracker}: [yellow]api will accept this upload, but no tag will be added.\nYou must manually add at least one tag from the approved list when uploaded."
             )
-            await asyncio.sleep(3)
-            with webui_events.field_prompt(
-                "Tag",
-                {"Tracker": self.tracker, "Release": meta.name or meta.title, "Tag": ""},
-                focus="Tag",
-                hint="No genres were found. Enter at least one tag (genre) from the approved list. Leaving it blank uploads without a tag.",
-                actions=[("", "Upload without a tag")],
-                placeholder="e.g. drama",
-            ):
-                user_tag = await prompt_in_thread(cli_ui.ask_string, "Please enter at least one tag (genre) to use for the upload", default="")
+            user_tag = await ask(
+                meta,
+                Question(
+                    key="anthelion.tag",
+                    kind="text",
+                    prompt=f"{self.tracker}: Please enter at least one tag (genre) to use for the upload, or leave empty to upload without a tag",
+                    title="Tag",
+                    hint="No genres were found. Enter at least one tag (genre) from the approved list. Leaving it blank uploads without a tag.",
+                    placeholder="e.g. drama",
+                    summary={"Tracker": self.tracker, "Release": meta.name or meta.title, "Tag": ""},
+                    focus="Tag",
+                    tracker=self.tracker,
+                    empty_ok=True,
+                ),
+            )
+            if user_tag is None:
+                return ""
             if user_tag:
                 tags.append(user_tag.replace(" ", ".").lower())
                 meta.ant_user_tags = True
@@ -257,18 +260,53 @@ class Anthelion:
                 ant_type = 1
 
         if ant_type is None:
-            if not meta.unattended:
-                ant_type_list = ["Feature Film", "Short Film"]
-                with webui_events.field_prompt("Release type", {"Tracker": self.tracker, "Release": meta.name or meta.title}):
-                    choice = await prompt_in_thread(cli_ui.ask_choice, "Select the proper type for ANTHELION", choices=ant_type_list)
-                # Map the choice back to the integer
-                type_map = {"Feature Film": 0, "Short Film": 1}
-                ant_type = type_map.get(choice, 0)
-            else:
-                logger.debug(f"{self.tracker}: [bold red]type could not be determined automatically in unattended mode.")
-                ant_type = 0  # Default to Feature Film in unattended mode
+            choice = await ask(
+                meta,
+                Question(
+                    key="anthelion.type",
+                    kind="choice",
+                    prompt="Select the proper type for ANTHELION",
+                    title="Release type",
+                    choices=choices_from(["Feature Film", "Short Film"]),
+                    default="Feature Film",
+                    summary={"Tracker": self.tracker, "Release": meta.name or meta.title},
+                    tracker=self.tracker,
+                    unattended="default",
+                ),
+            )
+            ant_type = {"Feature Film": 0, "Short Film": 1}.get(str(choice), 0)
 
         return ant_type
+
+    async def get_payload_preview(self, meta: Meta) -> payload_preview.TrackerPreview:
+        """The upload form as it is known before screenshots, for the Web UI to show and edit."""
+        data: dict[str, Any] = {"type": await self.get_type(meta), "action": "upload", "tmdbid": meta.tmdb, "flags[]": await self.get_flags(meta)}
+        if meta.is_disc == "BDMV":
+            data["audioformat"] = await self.get_audio(meta)
+        if meta.scene:
+            data["scene"] = 1
+        release_group = await self.get_release_group(meta)
+        if release_group and release_group not in self.banned_groups:
+            data["releasegroup"] = release_group
+        if meta.anon or self.tracker_config.get("anon", False):
+            data["anonymous"] = 1
+        specs = {
+            "type": payload_preview.choice("Type", [(0, "Feature Film"), (1, "Short Film")], role="none"),
+            "action": payload_preview.readonly("Action"),
+            "tmdbid": payload_preview.number("TMDB ID"),
+            "flags[]": payload_preview.readonly("Flags"),
+            "audioformat": payload_preview.text("Audio format"),
+            "scene": payload_preview.flag("Scene", on=1, off=None),
+            "releasegroup": payload_preview.text("Release group"),
+            "anonymous": payload_preview.flag("Anonymous", on=1, off=None),
+        }
+        deferred = {
+            "tags": "Chosen in a question after this one when needed",
+            "release_desc": payload_preview.DESCRIPTION_NOTE,
+            "bdinfo" if meta.is_disc == "BDMV" else "mediainfo": "Read from the MediaInfo/BDInfo report at upload time",
+            "screenshots": "Uploaded after this question",
+        }
+        return payload_preview.describe(self.tracker, data, specs, deferred=deferred)
 
     async def upload(self, meta: Meta) -> bool:
         await self.common.create_torrent_for_upload(meta, self.tracker, self.source_flag)
@@ -327,28 +365,34 @@ class Anthelion:
             data.update({"anonymous": 1})
 
         if meta.adult_media:
-            if not meta.unattended or (meta.unattended and meta.unattended_confirm):
-                logger.info(f"{self.tracker}: [bold red]Adult content detected[/bold red]")
-                with webui_events.field_prompt(
-                    "Adult content screenshots",
-                    {"Tracker": self.tracker, "Release": meta.name or meta.title},
+            logger.info(f"{self.tracker}: [bold red]Adult content detected[/bold red]")
+            safe_screens = await ask(
+                meta,
+                Question(
+                    key="anthelion.safe_screens",
+                    kind="confirm",
+                    prompt="Are the screenshots safe?",
+                    title="Adult content screenshots",
+                    default=False,
                     hint="Adult content was detected. Confirm whether the screenshots are safe to include.",
-                ):
-                    safe_screens = await prompt_in_thread(cli_ui.ask_yes_no, "Are the screenshots safe?", default=False)
-                if safe_screens:
-                    data.update({"screenshots": "\n".join([x["raw_url"] for x in meta.image_list][:4])})
-                    if not meta.ant_user_tags:
-                        data.update({"flagchangereason": f"Adult with screens uploaded with {meta.ua_name}"})
-                    else:
-                        data.update({"flagchangereason": f"Adult with screens uploaded with {meta.ua_name}. User to add tags manually."})
+                    summary={"Tracker": self.tracker, "Release": meta.name or meta.title},
+                    tracker=self.tracker,
+                    unattended="default",
+                ),
+            )
+            if safe_screens:
+                data.update({"screenshots": "\n".join([x["raw_url"] for x in meta.image_list][:4])})
+                if not meta.ant_user_tags:
+                    data.update({"flagchangereason": f"Adult with screens uploaded with {meta.ua_name}"})
                 else:
-                    data.update({"screenshots": ""})  # No screenshots for adult content
+                    data.update({"flagchangereason": f"Adult with screens uploaded with {meta.ua_name}. User to add tags manually."})
             else:
-                data.update({"screenshots": ""})
+                data.update({"screenshots": ""})  # No screenshots for adult content
         else:
             data.update({"screenshots": "\n".join([x["raw_url"] for x in meta.image_list][:4])})
             if meta.ant_user_tags:
                 data.update({"flagchangereason": "User prompted to add tags manually"})
+        data = payload_preview.apply_payload_edits(meta, self.tracker, data)
 
         headers = {
             "User-Agent": f"{meta.ua_name} {(meta.current_version if meta.current_version is not None else 'github.com/wastaken7/Upload-Assistant')} ({platform.system()} {platform.release()})"

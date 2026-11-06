@@ -193,7 +193,7 @@ class TrackerStatusManager:
                 tracker_class = tracker_class_map[tracker_name](config=self.config)
                 if tracker_name == "PASSTHEPOPCORN" and local_meta.get("imdb_id", 0) == 0:
                     local_tracker_status["skipped"] = True
-                    local_tracker_status["skip_reason"] = "missing IMDb ID"
+                    local_tracker_status["skip_reason"] = "missing_fields"
 
                 if not local_tracker_status["skipped"]:
                     result = await tracker_setup.check_banned_group(tracker_class.tracker, tracker_class.banned_groups, local_meta)
@@ -222,7 +222,7 @@ class TrackerStatusManager:
                     if book_missing:
                         logger.info(f"[yellow]{tracker_name}: Skipping upload because required BOOK fields are missing: {', '.join(book_missing)}[/yellow]")
                         local_tracker_status["skipped"] = True
-                        local_tracker_status["skip_reason"] = f"missing required BOOK fields: {', '.join(book_missing)}"
+                        local_tracker_status["skip_reason"] = "missing_fields"
 
                 # Check for missing required GAME fields in unattended mode
                 elif local_meta.get("category") == "GAME" and local_meta.get("unattended", False):
@@ -235,15 +235,7 @@ class TrackerStatusManager:
                     if game_missing:
                         logger.info(f"[yellow]{tracker_name}: Skipping upload because required GAME fields are missing: {', '.join(game_missing)}[/yellow]")
                         local_tracker_status["skipped"] = True
-                        local_tracker_status["skip_reason"] = f"missing required GAME fields: {', '.join(game_missing)}"
-
-                if not local_tracker_status["banned"] and not local_tracker_status["skipped"]:
-                    if not local_meta.language_checked:
-                        await languages_manager.process_desc_language(local_meta, tracker=tracker_name)
-                    if requires_english_subtitles_for_non_english_audio(local_meta, tracker_name):
-                        logger.info(f"[yellow]{tracker_name}: Skipping upload because non-English audio requires English subtitles.[/yellow]")
-                        local_tracker_status["skipped"] = True
-                        local_tracker_status["skip_reason"] = "non-English audio requires English subtitles"
+                        local_tracker_status["skip_reason"] = "missing_fields"
 
                 if not local_tracker_status["banned"] and not local_tracker_status["skipped"]:
                     claimed = await tracker_setup.get_torrent_claims(local_meta, tracker_name)
@@ -281,6 +273,7 @@ class TrackerStatusManager:
                                 logger.info(f"[bold red]Error searching for duplicates on {tracker_name}: {e}[/bold red]")
                                 if local_meta.get("unattended", False):
                                     local_tracker_status["skipped"] = True
+                                    local_tracker_status["skip_reason"] = "search_error"
                                     local_meta.skipping = tracker_name
                                     local_tracker_status["skip_reason"] = f"duplicate search failed: {e}"
                                     dupes = []
@@ -301,6 +294,7 @@ class TrackerStatusManager:
                                                 meta.setdefault("dupe_checked_trackers", []).append(tracker_name)
                                         else:
                                             local_tracker_status["skipped"] = True
+                                            local_tracker_status["skip_reason"] = "search_error"
                                             local_meta.skipping = tracker_name
                                             local_tracker_status["skip_reason"] = "duplicate search was declined"
                                             dupes = []
@@ -334,11 +328,34 @@ class TrackerStatusManager:
                                 await record_event_async(
                                     "api", service=tracker_name, operation="search", outcome="error", duration_ms=(time.monotonic() - search_started) * 1000
                                 )
-                                logger.warning("PASSTHEPOPCORN: group search failed; slot occupancy is unknown. Skipping PTP, not the other trackers.")
-                                local_tracker_status["skipped"] = True
-                                local_meta.skipping = tracker_name
-                                local_tracker_status["skip_reason"] = "PTP group search failed; slot occupancy is unknown"
-                                dupes = []
+                                logger.info(f"[bold red]Error searching for duplicates on {tracker_name}: {e}[/bold red]")
+                                if local_meta.get("unattended", False):
+                                    local_tracker_status["skipped"] = True
+                                    local_tracker_status["skip_reason"] = "search_error"
+                                    local_meta.skipping = tracker_name
+                                    dupes = []
+                                else:
+                                    try:
+                                        with webui_events.prompt_context(
+                                            kind="tracker_checks",
+                                            tracker=tracker_name,
+                                            check_messages=[f"Error searching for duplicates on {tracker_name}: {e}"],
+                                        ):
+                                            proceed_after_error = await helper.prompt_yes_no(
+                                                f"Duplicate check failed on {tracker_name}. Do you want to proceed with the upload anyway?", default=False
+                                            )
+                                        if proceed_after_error:
+                                            dupes = []
+                                        else:
+                                            local_tracker_status["skipped"] = True
+                                            local_tracker_status["skip_reason"] = "search_error"
+                                            local_meta.skipping = tracker_name
+                                            dupes = []
+                                    except EOFError:
+                                        logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
+                                        await cleanup_manager.cleanup()
+                                        cleanup_manager.reset_terminal()
+                                        sys.exit(1)
                         else:
                             dupes = []
                     else:

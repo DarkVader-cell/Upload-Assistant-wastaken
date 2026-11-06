@@ -4,12 +4,12 @@ import json
 import platform
 import re
 from pathlib import Path
-from typing import Any, cast
-from urllib.parse import urljoin, urlsplit
+from typing import Any, ClassVar, cast
 
 import aiofiles
 import httpx
 
+from src import payload_preview, unit3d_catalogs
 from src.api_key_expiry import record_api_key_expiry, warn_api_key_expiry
 from src.artwork import is_valid_image_bytes
 from src.cogs.redaction import Redaction
@@ -34,6 +34,8 @@ class UNIT3D:
     supported_categories: tuple[str, ...] = ("TV", "MOVIE")
     tracker: str = ""
     banned_groups: tuple[str, ...] = ()
+    # Options of ID fields whose getters ignore mapping_only, for the Web UI preview.
+    payload_choices: ClassVar[dict[str, tuple[tuple[str, str], ...]]] = {}
     base_url: str = ""
     pending_url: str = ""
     search_url: str = ""
@@ -42,6 +44,9 @@ class UNIT3D:
     # gets only the upload's type and resolution; slot rules get the whole title
     # through ``meta["<TRACKER>_title_releases"]``.
     search_whole_title: bool = False
+    # UNIT3D stores descriptions in a MySQL TEXT column, which holds 65,535 bytes.
+    # None for sites that widened the column.
+    max_description_bytes: int | None = 65535
 
     def __init__(self, config: dict[str, Any], tracker_name: str):
         self.config = config
@@ -379,6 +384,54 @@ class UNIT3D:
             )
         }
 
+    def fit_description(self, meta: Meta, description: str) -> str:
+        """Drop the MediaInfo of later discs, last disc first, until the description fits the column."""
+        limit = self.max_description_bytes
+        if not limit or len(description.encode("utf-8")) <= limit:
+            return description
+
+        builder = DescriptionBuilder(self.tracker, self.config)
+
+        def formatted_blocks(disc: dict[str, Any]) -> list[str]:
+            # Whole spoiler blocks keep the BBCode balanced; match them as the tracker formatting left them.
+            return [builder.tracker_specific_formats(self.tracker, block) for block in DescriptionBuilder.disc_mediainfo_blocks(disc)]
+
+        # Later discs follow the first disc's MediaInfo, so identical MediaInfo never matches the first disc.
+        later_start = 0
+        for block in formatted_blocks(meta.discs[0]) if meta.discs else []:
+            index = description.find(block)
+            if index != -1:
+                later_start = max(later_start, index + len(block))
+
+        dropped = 0
+        for disc in reversed(meta.discs[1:]):
+            found = False
+            for block in formatted_blocks(disc):
+                index = description.rfind(block, later_start)
+                if index == -1:
+                    continue
+                # A BDMV spoiler title is the disc's only label above its screenshots, so keep the name.
+                replacement = str(disc.get("name", "BDINFO")) if disc["type"] == "BDMV" else ""
+                head = description[:index].rstrip(" ")
+                tail = description[index + len(block) :].lstrip(" ")
+                if not replacement:
+                    # Collapse only the blank lines around the cut; the rest of the description keeps its formatting.
+                    newlines = len(head) - len(head.rstrip("\n")) + len(tail) - len(tail.lstrip("\n"))
+                    head, tail = head.rstrip("\n") + "\n" * min(newlines, 2), tail.lstrip("\n")
+                description = head + replacement + tail
+                found = True
+            if found:
+                dropped += 1
+                if len(description.encode("utf-8")) <= limit:
+                    break
+
+        size = len(description.encode("utf-8"))
+        if dropped:
+            logger.info(f"{self.tracker}: [yellow]Description exceeded {limit} bytes; removed the MediaInfo of {dropped} later disc(s).[/yellow]")
+        if size > limit:
+            logger.warning(f"{self.tracker}: [yellow]Description is {size} bytes, above the {limit}-byte limit; the upload may be rejected.[/yellow]")
+        return description
+
     async def get_mediainfo(self, meta: Meta) -> dict[str, str]:
         if meta.bdinfo or (meta.category in ["GAME", "BOOK"] and not meta.audiobook):
             mediainfo = ""
@@ -605,12 +658,11 @@ class UNIT3D:
         sticky = await self.get_flag(meta, "sticky")
         return {"sticky": sticky}
 
-    async def get_data(self, meta: Meta) -> dict[str, str]:
+    async def get_data(self, meta: Meta, preview: bool = False) -> dict[str, str]:
+        """Build the upload form; a ``preview`` leaves out the description, MediaInfo and BDInfo."""
         results = await asyncio.gather(
             self.get_name(meta),
-            self.get_description(meta),
-            self.get_mediainfo(meta),
-            self.get_bdinfo(meta),
+            *(() if preview else (self.get_description(meta), self.get_mediainfo(meta), self.get_bdinfo(meta))),
             self.get_category_id(meta),
             self.get_type_id(meta),
             self.get_resolution_id(meta),
@@ -640,6 +692,9 @@ class UNIT3D:
         for r in results:
             merged.update(r)
 
+        if isinstance(merged.get("description"), str):
+            merged["description"] = self.fit_description(meta, merged["description"])
+
         # Handle exclusive flag centrally for all UNIT3D trackers
         # Priority: meta.exclusive > tracker config > default (not set)
         exclusive_flag = None
@@ -649,6 +704,64 @@ class UNIT3D:
             merged["exclusive"] = exclusive_flag
 
         return merged
+
+    async def get_payload_specs(self, meta: Meta) -> dict[str, payload_preview.Spec]:
+        """Labels and edit controls for this tracker's upload form fields."""
+        flags = {
+            "anonymous": "Anonymous",
+            "personal_release": "Personal release",
+            "internal": "Internal",
+            "stream": "Stream optimized",
+            "sd": "SD",
+            "featured": "Featured",
+            "doubleup": "Double upload",
+            "sticky": "Sticky",
+            "exclusive": "Exclusive",
+            "mod_queue_opt_in": "Moderation queue",
+            "draft_queue_opt_in": "Draft",
+            "draft": "Draft",
+        }
+        specs: dict[str, payload_preview.Spec] = {key: payload_preview.flag(label) for key, label in flags.items()}
+        specs.update(
+            {
+                "name": payload_preview.text("Name"),
+                "keywords": payload_preview.text("Keywords"),
+                "tmdb": payload_preview.number("TMDB ID"),
+                "imdb": payload_preview.number("IMDb ID"),
+                "tvdb": payload_preview.number("TVDB ID"),
+                "mal": payload_preview.number("MAL ID"),
+                "igdb": payload_preview.number("IGDB ID"),
+                "season_number": payload_preview.number("Season"),
+                "episode_number": payload_preview.number("Episode"),
+                "free": payload_preview.choice("Freeleech", [(str(percent), f"{percent}%") for percent in (0, 25, 50, 75, 100)]),
+                "description": payload_preview.readonly("Description"),
+                "mediainfo": payload_preview.readonly("MediaInfo"),
+                "bdinfo": payload_preview.readonly("BDInfo"),
+            }
+        )
+        for key, label, getter in (
+            ("category_id", "Category", self.get_category_id),
+            ("type_id", "Type", self.get_type_id),
+            ("resolution_id", "Resolution", self.get_resolution_id),
+        ):
+            spec = await payload_preview.mapping_choice(label, getter, meta, key)
+            if spec is None and key in self.payload_choices:
+                spec = payload_preview.choice(label, self.payload_choices[key])
+            if spec is not None:
+                specs[key] = spec
+        specs["region_id"] = payload_preview.choice("Region", unit3d_catalogs.region_choices(self.tracker))
+        specs["distributor_id"] = payload_preview.choice("Distributor", unit3d_catalogs.distributor_choices(self.tracker))
+        return specs
+
+    async def get_payload_preview(self, meta: Meta) -> payload_preview.TrackerPreview:
+        """The upload form as it is known before screenshots, for the Web UI to show and edit."""
+        data = await self.get_data(meta, preview=True)
+        deferred = {"description": payload_preview.DESCRIPTION_NOTE}
+        if meta.bdinfo:
+            deferred["bdinfo"] = "Read from the BDInfo report at upload time"
+        elif not (meta.category in ["GAME", "BOOK"] and not meta.audiobook):
+            deferred["mediainfo"] = "Read from the MediaInfo report at upload time"
+        return payload_preview.describe(self.tracker, data, await self.get_payload_specs(meta), deferred=deferred)
 
     async def get_image_file(self, image_path: str | Path, max_size: int | None = None) -> tuple[str, bytes, str] | None:
         """Read an image unchanged and return it with a content type verified from its signature."""
@@ -715,7 +828,7 @@ class UNIT3D:
         return files
 
     async def upload(self, meta: Meta) -> bool:
-        data = await self.get_data(meta)
+        data = payload_preview.apply_payload_edits(meta, self.tracker, await self.get_data(meta))
         torrent_file_path = await self.common.get_base_torrent_path(meta, self.tracker, self.tracker_config)
         if torrent_file_path is None:
             raise FileNotFoundError("No selected base torrent is available")

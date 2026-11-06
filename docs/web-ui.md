@@ -117,7 +117,11 @@ The File Browser lists only content inside the configured browse roots. Use it t
 
 Normal browsing shows non-hidden files and folders inside the permitted roots so that video, disc, book, game, ISO, and other supported upload types remain available. The separate description-file picker is limited to `.txt`, `.nfo`, and `.md` files.
 
-Listings and searches omit dot-prefixed entries, Windows entries marked Hidden or System, and known system folders such as `$RECYCLE.BIN` and `System Volume Information`. Searches do not descend into those folders.
+Search normally includes every configured location. Enable **Search this folder** beside the search box to search recursively only beneath the folder most recently activated in the existing tree. Upload-selection checkboxes do not change this scope. The option defaults off and is not persisted. Collapse all clears the active search folder. While the option is on, changing mode or moving to another folder cancels pending results while keeping the query text; type again or press Enter to run a fresh search. Turning the option off also cancels pending results. Navigating the tree never clears an all-locations search. Enabling the option without a folder selected prompts you to select one, never scans all locations instead.
+
+Search results prioritize matching folders before filling the remaining places with files (100 by default), even when files are encountered in an earlier location. Once the results are full, search checks at most 500 more folders for matching folders and then stops, so a folder deep in a very large library can be left out in favor of files.
+
+Listings and searches omit dot-prefixed entries, Windows entries marked Hidden or System, and known system folders such as `$RECYCLE.BIN` and `System Volume Information`. Searches do not descend into those folders. Searches list symlinks and Windows junctions whose targets are inside the browse roots, as the tree does, but never descend into them. Searching inside a linked folder searches its target. These portable path checks do not protect against concurrent filesystem replacement; only configure trusted browse locations.
 
 You can also type or paste paths into **Upload paths** on desktop or mobile. Use server paths, one file or folder per line. Enter adds a line; use the execution button to start. One path runs individually, and multiple paths create a WebUI queue. Blank lines and duplicate paths are ignored, surrounding quotes are accepted, and each queue item can have its own arguments. The limit is 1,000 paths per upload.
 
@@ -159,7 +163,15 @@ Each option has its own control:
 
 Every control edits only its own part of **Additional Arguments**, so the rest of what you typed is kept, and edits typed into the field show up in the controls. Values that need quoting are quoted the way the server reads them. Below the field, the WebUI warns about unknown options (with a suggestion), missing or invalid values, options set twice, options that cannot be combined (such as `--nohash` and `--rehash`), stray values and unclosed quotes. Warnings never block an upload; the server still validates the command. The [CLI arguments reference](cli-args.md) explains each available flag.
 
-Choose **Check status** to run a lightweight website-reachability check for the configured trackers. The dot beside each tracker shows available, issue detected, unavailable, or not checked. An affected selected tracker also gets a compact warning with its check age and expandable details; on the Upload page it can be deselected directly from that warning. Results are cached for 15 minutes and reused between the Upload and Configuration pages. These checks do not use tracker credentials and cannot confirm that an account or upload endpoint is working, so warnings never prevent an upload.
+Choose **Check now** under **Tracker status** to run a lightweight website-reachability check for the configured trackers. Its last-check age appears beside the button. The dot beside each tracker shows available, issue detected, unavailable, or not checked. An affected selected tracker also gets a compact warning with its check age and expandable details; on the Upload page it can be deselected directly from that warning. Results are cached for 15 minutes and reused between the Upload and Configuration pages. These checks do not use tracker credentials and cannot confirm that an account or upload endpoint is working, so warnings never prevent an upload.
+
+#### Tracker layout
+
+Keep favourites in the standard **Pinned** group, or create custom groups for the way you work. In the normal tracker selector, each heading shows how many trackers are selected and one button: **Select all** when none or some are selected, or **Deselect all** when every tracker shown in the group is selected. Deselecting one tracker changes the button back to **Select all**. The button updates only the trackers currently shown in that group, including **Pinned** and **Ungrouped**; selections in other groups stay as they are. This action is disabled during a run.
+
+Under **Layout & view**, choose **Edit layout** to show the pin and options buttons beside each tracker. Use a pin to move a tracker into **Pinned** at the top of the selector; unpinning restores its previous group. In edit mode, add named groups, rename headings, and drag trackers between groups or into a new order. The **⋯** options button sits between the tracker name and its pin. It opens **Move to…**, **Move earlier**, and **Move later** actions, keeping these controls hidden until needed. **Move to…** lists **Pinned**, custom groups, and **Ungrouped**, excluding the current group. **Move earlier** and **Move later** reorder within the current group and are disabled at its boundaries. All actions work with touch or a keyboard. **Back** returns from the group choices to the options; **Close** or **Escape** closes the panel. Focus returns to the options button after moving, reordering, or closing. Use the drag handle beside a group name to reorder groups; the name field supports normal text selection and editing. Choose **Done** to hide the editing controls and return to upload selection. **Show all supported trackers** is a toggle button. Its indicator is outlined when off and filled with a checkmark when on. When enabled, unconfigured trackers are also shown. Click it again to show only configured or selected trackers.
+
+Pins, groups and ordering save automatically in the current browser; other browsers and devices have separate layouts. Organising trackers does not select them for upload or change the upload order. Removing a group returns its trackers to **Ungrouped**. **Reset layout** clears the saved organisation after confirmation. Under **Tracker selection**, **Reset to Defaults** restores the configured default tracker selection, and **Clear All** deselects all trackers for the upload. Tracker controls follow the WebUI's selected colour theme, light or dark mode, and square or rounded corner style.
 
 ### Start the upload
 
@@ -387,6 +399,17 @@ Use **Display** in the Stats toolbar to choose real activity or debug simulation
 
 The dashboard includes upload success and pioneering rates by destination, a route Sankey, media categories and technical profiles, a resolution×video/HDR matrix, torrents and NZBs created or reused, cache hit rates, logical external operations, known payload bytes sent through NNTP and successful image uploads, and CLI versus WebUI usage. **Successful media time** shows the total uploaded runtime and its Movie, TV, Sports, XXX, Audiobook, and Music distribution. Each successfully processed item is counted once globally even when it was uploaded to several destinations; selecting a tracker shows the runtime successfully uploaded to that destination. Unknown runtimes and content without a meaningful duration, such as ebooks and games, are excluded. The timeline switches between event counts, processed/uploaded volume, or both scales. Clicking a destination filters content metrics across the dashboard; cache and external-operation metrics remain global and are labeled accordingly. Dolby Vision profiles and compatible HDR layers are retained in combined buckets. The dashboard also shows unique uploaded volume, duplicate prevention, an estimate of hashing I/O avoided by reused base torrents, a 52-week activity heatmap, and comparisons with the previous equal-length period. WEB items are grouped by their identified streaming service, with unidentified WEB sources shown as **Unknown**. Personal releases are compared with standard releases and include aggregate results, success rate, category, and unique volume. Operations whose payload size is not measured display an em dash instead of a misleading zero. Distribution sections show local SVG donut charts with their exact sortable tables available in an expandable area directly below each chart. A logical external operation represents one adapter action; redirects and internal retries do not create additional hits.
 
+The dashboard also measures where time and effort go:
+
+- **Hashing throughput** is the volume hashed into new torrents divided by the hashing time (waiting for a free hashing slot is not counted). **Hashing I/O avoided** uses it to estimate how much hashing time reused base torrents saved. A base torrent counts as reused when it came from a torrent client, whichever stage found it.
+- **Time per stage** shows the average and total time of each run stage (preparation, confirmation, dupe checks, screenshots and image uploads, torrent creation, upload and request search), plus the average time of a whole item. Confirmation and dupe checks include the time spent waiting for your answers.
+- **Upload problems** groups failed and skipped routes by a short category, such as _Authentication_, _Rate limited_, _Timeout_, _Server error_, _Rejected by tracker_, _Duplicate_, _Banned group_, _Missing fields_ or _Too few trackers_. The category is derived from the tracker's response; the response text itself is never stored. The same categories appear in the **Uploads by destination** table.
+- **External operations** also counts requests to metadata providers (TMDB, IMDb, TVDB, TVmaze, IGDB, AniList, MusicBrainz, Discogs, Open Library, Google Books, Audible and similar). Each request keeps the provider name, outcome and duration, plus the day, count, source, mode and media category. No URL, query or media ID is kept. A provider's "not found" answer counts as a successful request.
+- **Image hosts** shows each host's success rate, average time per image and volume, and how often uploads moved on to the next configured host. Each image counts as one operation.
+- **After upload** counts cross-seeds added to a torrent client (once per tracker), exact and partial request matches, and trump reports sent.
+
+Hashing throughput, stage times and image hosts describe the whole installation, so they stay global when a tracker is selected.
+
 Open the **⋯** actions menu to download the current filtered response as JSON, export the daily timeline as CSV, or reset statistics. Export runs locally in the browser and does not add another server-side data store. Tracker reliability labels are derived from the displayed success rate: they summarize aggregate outcomes and are not an uptime monitor.
 
 Statistics are daily aggregates. Upload Assistant does not store release names, paths, release-group names or tags, external media IDs, URLs, or credentials in the statistics database. Personal releases are stored only as a `personal` or `standard` aggregate. Collection begins when the feature is installed; existing cache files and logs are not scanned or backfilled, though later accesses to an existing cache count as new hits or misses.
@@ -399,11 +422,13 @@ The database is stored at `data/stats.sqlite3` below the user-state directory. C
 
 Appearance is shared by the Upload, Configuration, sign-in, and recovery interfaces. Choose:
 
-- a color theme: Amethyst, Charcoal, Evergreen, Graphite, Midnight, or Obsidian;
-- Rounded or Square corners; and
+- a color theme: Amber (the default), Amethyst, Charcoal, Evergreen, Graphite, Midnight, or Obsidian;
+- Rounded (the default) or Square corners; and
 - Light or Dark mode.
 
-These preferences are stored in the browser, so another browser or device can use different choices.
+These preferences are stored in the browser, so another browser or device can use different choices. A browser that already saved a theme or corner style keeps it; choose **Amber** and **Rounded** to switch to the current default look.
+
+The interface uses the bundled Inter and JetBrains Mono typefaces, so it looks the same on every system and needs no font downloads.
 
 ### Help & Resources
 

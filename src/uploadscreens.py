@@ -86,7 +86,10 @@ class UploadScreensManager:
         attempts_before = int(return_dict.get("_stats_image_upload_attempts", 0) or 0)
         successes_before = int(return_dict.get("_stats_image_upload_successes", 0) or 0)
         bytes_before = int(return_dict.get("_stats_image_upload_bytes", 0) or 0)
+        hosts_before = _image_host_totals(return_dict)
+        fallbacks_before = len(return_dict.get("_stats_image_host_fallbacks") or [])
         outcome = "skipped"
+        attempted = uploaded = 0
         progress: dict[str, Any] = {"id": f"image-upload-{next(_upload_progress_ids)}"}
         try:
             result = await _upload_screens(
@@ -111,6 +114,8 @@ class UploadScreensManager:
             return result
         except Exception:
             outcome = "error"
+            attempted = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) - attempts_before
+            uploaded = int(return_dict.get("_stats_image_upload_successes", 0) or 0) - successes_before
             raise
         finally:
             # Only calls that actually started uploading published a card.
@@ -131,20 +136,62 @@ class UploadScreensManager:
                     complete_progress(
                         progress["id"], progress["label"], current=progress["current"], total=progress["total"], detail=progress["detail"], group="images", unit="images"
                     )
-            actual_attempts = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) - attempts_before
-            if outcome != "skipped" and actual_attempts > 0:
-                service = str(return_dict.get("_stats_last_network_image_host") or meta.imghost or self.config.get("DEFAULT", {}).get(f"img_host_{img_host_num}", "image_host"))
-                bytes_sent = int(return_dict.get("_stats_image_upload_bytes", 0) or 0) - bytes_before
-                fresh_successes = int(return_dict.get("_stats_image_upload_successes", 0) or 0) - successes_before
-                network_outcome = "success" if fresh_successes > 0 and outcome == "success" else "error"
-                await record_event_async(
-                    "api",
-                    service=service,
-                    operation="image_upload",
-                    outcome=network_outcome,
-                    duration_ms=(time.monotonic() - started) * 1000,
-                    bytes_count=max(0, bytes_sent),
-                )
+            if outcome != "skipped":
+                await self._record_image_upload_stats(meta, img_host_num, return_dict, started, hosts_before, fallbacks_before, attempted, uploaded, bytes_before)
+
+    async def _record_image_upload_stats(
+        self,
+        meta: Meta,
+        img_host_num: int,
+        return_dict: dict[str, Any],
+        started: float,
+        hosts_before: dict[str, tuple[int, int, int]],
+        fallbacks_before: int,
+        attempted: int,
+        uploaded: int,
+        bytes_before: int,
+    ) -> None:
+        """Record one API operation per image for each host tried, plus each host fallback."""
+        hosts_after = _image_host_totals(return_dict)
+        per_host: list[tuple[str, int, int, int]] = []
+        for host, (host_attempts, host_successes, host_bytes) in hosts_after.items():
+            previous = hosts_before.get(host, (0, 0, 0))
+            attempts_delta = host_attempts - previous[0]
+            if attempts_delta > 0:
+                successes_delta = max(0, host_successes - previous[1])
+                per_host.append((host, successes_delta, max(0, attempts_delta - successes_delta), max(0, host_bytes - previous[2])))
+        if not per_host:
+            # Results that did not come from a host upload pass (e.g. a reused list).
+            service = str(meta.imghost or self.config.get("DEFAULT", {}).get(f"img_host_{img_host_num}", "image_host"))
+            successes = max(0, uploaded)
+            failures = max(0, attempted - successes)
+            bytes_sent = max(0, int(return_dict.get("_stats_image_upload_bytes", 0) or 0) - bytes_before)
+            per_host = [(service, successes, failures, bytes_sent)]
+        # Spread the batch time over every image so durations are not double counted.
+        operations = sum(successes + failures for _host, successes, failures, _bytes in per_host) or 1
+        elapsed_ms = (time.monotonic() - started) * 1000
+        for host, successes, failures, bytes_sent in per_host:
+            for event_outcome, count in (("success", successes), ("error", failures)):
+                if count:
+                    await record_event_async(
+                        "api",
+                        service=host,
+                        operation="image_upload",
+                        outcome=event_outcome,
+                        count=count,
+                        duration_ms=elapsed_ms * count / operations,
+                        bytes_count=bytes_sent if event_outcome == "success" else 0,
+                    )
+        for from_host, to_host in list(return_dict.get("_stats_image_host_fallbacks") or [])[fallbacks_before:]:
+            await record_event_async("image_fallback", service=str(from_host), operation=str(to_host), outcome="success")
+
+
+def _image_host_totals(return_dict: dict[str, Any]) -> dict[str, tuple[int, int, int]]:
+    """Snapshot the per-host (attempts, successes, bytes) image upload counters."""
+    totals = return_dict.get("_stats_image_upload_hosts")
+    if not isinstance(totals, dict):
+        return {}
+    return {str(host): (int(values[0]), int(values[1]), int(values[2])) for host, values in totals.items() if isinstance(values, list) and len(values) == 3}
 
 
 async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
@@ -964,9 +1011,12 @@ async def _upload_screens(
             "web_url": upload["web_url"],
             "tags": image_tags(upload_meta),
         }
+        local_file_path = upload.get("local_file_path")
+        if local_file_path:
+            # Hosts rename uploads, so keep the screenshot name to skip it on a later run.
+            new_image["source_file"] = Path(local_file_path).name
         upload_image_list.append(new_image)
         known_raw_urls.add(raw_url)
-        local_file_path = upload.get("local_file_path")
         if local_file_path:
             upload_meta.image_sizes[raw_url] = Path(local_file_path).stat().st_size
 
@@ -992,6 +1042,8 @@ async def _upload_screens(
         existing_images = [img for img in image_list if img.get("img_url") and img.get("web_url")]
         existing_count = len(existing_images)
 
+        hosted_files = {source_file for img in existing_images if (source_file := img.get("source_file"))}
+        image_glob = [file for file in image_glob if Path(file).name not in hosted_files]
         uploaded_image_files = return_dict.get("_uploaded_image_files")
         if isinstance(uploaded_image_files, set):
             image_glob = [file for file in image_glob if str(Path(file).resolve()) not in uploaded_image_files]
@@ -1102,8 +1154,8 @@ async def _upload_screens(
                         running_tasks.discard(future)
 
                         if result.get("status") == "success":
-                            if journal and cache_key == journal.key(str(task_args[0]), img_host):
-                                await asyncio.to_thread(journal.put, cache_key, result)
+                            # Not every host branch reports its source, and reruns need it.
+                            result.setdefault("local_file_path", str(task_args[0]))
                             if not using_custom_img_list:
                                 uploaded_image_files = return_dict.setdefault("_uploaded_image_files", set())
                                 if isinstance(uploaded_image_files, set):
@@ -1198,6 +1250,13 @@ async def _upload_screens(
             with contextlib.suppress(OSError):
                 uploaded_bytes += Path(upload_tasks[index][1]).stat().st_size
         return_dict["_stats_image_upload_bytes"] = int(return_dict.get("_stats_image_upload_bytes", 0) or 0) + uploaded_bytes
+        # Per-host totals, so a fallback chain is attributed to each host it tried.
+        host_totals = return_dict.setdefault("_stats_image_upload_hosts", {})
+        if isinstance(host_totals, dict):
+            totals = host_totals.setdefault(img_host, [0, 0, 0])
+            totals[0] += len(upload_tasks)
+            totals[1] += len(successfully_uploaded)
+            totals[2] += uploaded_bytes
         logger.debug(f"[blue]Successfully uploaded {len(successfully_uploaded)} out of {len(upload_tasks)} attempted uploads.[/blue]")
 
         # Ensure we only switch hosts if necessary
@@ -1232,6 +1291,9 @@ async def _upload_screens(
 
                 meta.imghost = next_host
                 logger.info(f"[cyan]Switching to the next image host: {meta.imghost}[/cyan]")
+                host_fallbacks = return_dict.setdefault("_stats_image_host_fallbacks", [])
+                if isinstance(host_fallbacks, list):
+                    host_fallbacks.append((img_host, next_host))
 
                 gc.collect()
                 fallback_images, fallback_count = await _upload_screens(
