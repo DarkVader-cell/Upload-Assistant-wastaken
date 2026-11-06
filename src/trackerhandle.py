@@ -131,7 +131,7 @@ async def process_trackers(
     # Queue/WebUI reparsing can replace parser defaults on the per-item Meta.
     # Recover the explicit CLI values from item_args as well, so `ALL` is not
     # silently lost when retrying an existing queue.
-    raw_args = list(meta.item_args or [])
+    raw_args = [*sys.argv[1:], *(meta.item_args or [])]
     for index, argument in enumerate(raw_args):
         if argument == "--confirm-not-uploaded":
             raw_values = []
