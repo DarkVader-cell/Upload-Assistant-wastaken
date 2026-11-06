@@ -34,7 +34,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # The build stage retains the full image for native dependency compilation;
 # the runtime only needs the interpreter, copied virtualenv, and explicit
 # runtime packages below.
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 # ── Runtime dependencies ─────────────────────────────────────────────
 RUN apt-get update && \
