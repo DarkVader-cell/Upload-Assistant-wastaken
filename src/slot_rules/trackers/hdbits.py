@@ -12,10 +12,19 @@ from pathlib import Path
 from src.meta import Meta
 from src.slot_rules.base import SlotRules, add_context, edition_text
 from src.slot_rules.models import SlotDecision, Verdict
-from src.slot_rules.profile import DISC, ENCODE, H264, H265, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, codec_from_text, has_unrecognized_cut_claim, resolution_from_name
+from src.slot_rules.profile import DISC, DV, ENCODE, H264, H265, REMUX, SD, WEBDL, WEBRIP, ReleaseProfile, codec_from_text, has_unrecognized_cut_claim, resolution_from_name
 
 BANNED = {"cddhd", "eureka", "ddr", "evo", "dnl", "barc0de", "spirit"}
 CUTS = {"directors", "extended", "uncut", "unrated", "final_cut", "open_matte"}
+
+
+def hdb_dynamic_range(profile: ReleaseProfile) -> str | None:
+    """Keep Dolby Vision, non-DV HDR, and SDR in distinct HDB comparison slots."""
+    if profile.hdr is None:
+        return None
+    if DV in profile.hdr:
+        return "Dolby Vision"
+    return "HDR" if profile.hdr else "SDR"
 
 
 class HDBitsSlotRules(SlotRules):
@@ -117,6 +126,12 @@ class HDBitsSlotRules(SlotRules):
         if unknown:
             return self.review("Some potentially competing HDBits releases have unknown format/resolution traits; verify occupancy", unknown)
         competitors = [p for p in same if p.resolution == upload.resolution and p.kind == upload.kind]
+        if upload.kind in {WEBDL, WEBRIP, ENCODE, REMUX} and competitors:
+            incoming_range = hdb_dynamic_range(upload)
+            uncertain = [p for p in competitors if hdb_dynamic_range(p) is None]
+            if incoming_range is None or uncertain:
+                return self.review("Dynamic range is unknown for a potentially competing HDBits release; verify its SDR, HDR or Dolby Vision slot", competitors)
+            competitors = [p for p in competitors if hdb_dynamic_range(p) == incoming_range]
         web = [p for p in same if p.kind == WEBDL]
         encodes = [p for p in same if p.kind in {ENCODE, WEBRIP}]
         def dead(p):
@@ -144,7 +159,7 @@ class HDBitsSlotRules(SlotRules):
             return result
         if upload.kind == WEBDL:
             if competitors:
-                return self.review("An equivalent WEB-DL exists; verify a permitted quality/source replacement, not an assumed extra provider/HDR slot", competitors)
+                return self.review("An equivalent WEB-DL exists in the same dynamic-range slot; verify a permitted quality/source replacement, not an assumed extra provider slot", competitors)
             if encodes:
                 ma4k = upload.resolution == "2160p" and meta is not None and str(meta.service or "").upper() in {"MA", "MOVIES ANYWHERE", "MOVIESANYWHERE"}
                 if not ma4k and upload.resolution != "720p" and any(not dead(p) for p in encodes):

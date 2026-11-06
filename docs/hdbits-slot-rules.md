@@ -1,10 +1,12 @@
 # HDBits recommendations — operator rules, 2026-10-19
 
-This implements **HDBits**, not HD-Torrents. The supplied rules do not define a
-universal numbered SDR/HDR/provider slot matrix: UA does not invent those slots.
-It checks known prohibitions and asks for evidence for conditional coexistence,
-replacement, reservation and source requirements. Unknown inventory is not a
-vacant slot. `DEFAULT.slot_rules = False` is an explicit engine override.
+This implements **HDBits**, not HD-Torrents. Per operator instruction, SDR,
+non-Dolby-Vision HDR and Dolby Vision (including DV with HDR fallback) are
+separate dynamic-range comparison slots for WEB-DL, WEBRip, encodes and remuxes.
+Provider alone is not a separate slot. Unknown dynamic range requires review;
+exact duplicates and other prohibitions still apply. Rights, source and
+comparison requirements are not waived by a separate slot. Unknown inventory
+is not a vacant slot. `DEFAULT.slot_rules = False` is an explicit engine override.
 
 ## Rights and comparisons
 

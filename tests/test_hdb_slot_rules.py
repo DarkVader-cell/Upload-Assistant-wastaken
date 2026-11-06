@@ -124,9 +124,26 @@ def test_explicit_dead_release_exception_not_inferred_from_missing_seeders():
     assert decide(candidate,p('1080p.BluRay.x264-B',seeders=0)).verdict is REVIEW
 
 
-def test_no_assumed_provider_or_dynamic_range_extra_slots():
-    result=decide(p('2160p.MA.WEB-DL.H265-A'),p('2160p.AMZN.WEB-DL.DV.HDR10.H265-B'))
+@pytest.mark.parametrize('incoming,existing', [
+    ('H265', 'HDR10.H265'), ('HDR10.H265', 'H265'),
+    ('HDR10.H265', 'DV.HDR10.H265'), ('DV.HDR10.H265', 'HDR10.H265'),
+    ('H265', 'DV.HDR10.H265'), ('DV.HDR10.H265', 'H265'),
+])
+def test_sdr_hdr_and_dolby_vision_have_distinct_web_slots(incoming, existing):
+    result = decide(p(f'2160p.MA.WEB-DL.{incoming}-A'), p(f'2160p.AMZN.WEB-DL.{existing}-B'))
+    assert result.verdict is ALLOW
+    assert not result.trump_recommended
+
+
+def test_provider_alone_is_not_a_distinct_hdb_slot():
+    result = decide(p('2160p.MA.WEB-DL.HDR10.H265-A'), p('2160p.AMZN.WEB-DL.HDR10.H265-B'))
     assert result.verdict is REVIEW
+
+
+def test_unknown_dynamic_range_requires_review():
+    result = decide(p('2160p.WEB-DL.HDR10.H265-A'), replace(p('2160p.WEB-DL.H265-B'), hdr=None))
+    assert result.verdict is REVIEW
+    assert 'unknown' in result.reason.lower()
 
 
 def test_numeric_resolution_api_field_falls_back_to_release_name():
