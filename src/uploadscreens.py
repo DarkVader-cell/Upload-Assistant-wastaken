@@ -82,7 +82,6 @@ class UploadScreensManager:
     ) -> tuple[list[ImageDict], int]:
         """Upload the selected screenshots and return uploaded image metadata."""
         started = time.monotonic()
-        existing_image_count = len(meta.image_list or [])
         attempts_before = int(return_dict.get("_stats_image_upload_attempts", 0) or 0)
         successes_before = int(return_dict.get("_stats_image_upload_successes", 0) or 0)
         bytes_before = int(return_dict.get("_stats_image_upload_bytes", 0) or 0)
@@ -108,8 +107,8 @@ class UploadScreensManager:
             )
             attempted = int(return_dict.get("_stats_image_upload_attempts", 0) or 0) - attempts_before
             uploaded = int(return_dict.get("_stats_image_upload_successes", 0) or 0) - successes_before
-            if not custom_img_list:
-                uploaded = max(uploaded, len(meta.image_list or []) - existing_image_count)
+            # Restored journal entries expand image_list but are not network
+            # uploads and must not be counted as fresh API operations.
             outcome = "success" if uploaded > 0 else "error" if attempted > 0 else "skipped"
             return result
         except Exception:
@@ -1154,6 +1153,11 @@ async def _upload_screens(
                         running_tasks.discard(future)
 
                         if result.get("status") == "success":
+                            # Persist each acknowledgement before another task can
+                            # fail or this run is interrupted. Never replay a
+                            # successful image POST merely because a sibling failed.
+                            if journal is not None:
+                                await asyncio.to_thread(journal.put, cache_key, result)
                             # Not every host branch reports its source, and reruns need it.
                             result.setdefault("local_file_path", str(task_args[0]))
                             if not using_custom_img_list:

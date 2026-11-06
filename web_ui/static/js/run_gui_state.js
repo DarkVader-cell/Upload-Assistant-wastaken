@@ -315,6 +315,7 @@
                 .map(text)
                 .filter(Boolean),
               rules: text(data.rules),
+              rulesUrl: text(data.rules_url),
             },
           },
         };

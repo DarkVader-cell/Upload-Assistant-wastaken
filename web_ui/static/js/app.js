@@ -10940,6 +10940,11 @@ function AudionutsUAGUI() {
         </p>
       ))}
       {slot.rules && <p className="ua-run-gui-muted text-xs">{slot.rules}</p>}
+      {slot.rulesUrl && (
+        <p className="text-xs">
+          {renderRunGuiLink(slot.rulesUrl, `${slot.tracker} rules page`)}
+        </p>
+      )}
     </div>
   );
 

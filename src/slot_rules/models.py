@@ -38,3 +38,5 @@ class SlotDecision:
     comparisons: list[dict[str, Any]] = field(default_factory=list)
     related_releases: list[dict[str, Any]] = field(default_factory=list)
     requirements: list[str] = field(default_factory=list)
+    # The tracker's rules page, when known.
+    rules_url: str = ""

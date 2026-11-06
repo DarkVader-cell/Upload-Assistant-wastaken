@@ -1,5 +1,5 @@
 # Upload Assistant © 2026 Audionut & wastaken7 — Licensed under UAPL v1.0
-"""LST slots (Upload Rules, Slots & Trumping, transcribed 2026-10-15)."""
+"""LST slots (Upload Rules, Slots & Trumping)."""
 
 from collections.abc import Sequence
 from dataclasses import replace

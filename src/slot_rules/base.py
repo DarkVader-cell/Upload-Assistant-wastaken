@@ -3,16 +3,13 @@
 
 import re
 from collections.abc import Callable, Sequence
-from datetime import date
 from typing import Any, ClassVar
 
 from src.cogs.redaction import Redaction
 from src.slot_rules.links import public_detail_url
 from src.slot_rules.models import SlotDecision, Verdict
+from src.slot_rules.pages import RULES_PAGES, TRANSCRIBED
 from src.slot_rules.profile import DISC, DV, HDR10, HDR10P, HLG, PQ10, WEBDL, WEBRIP, ReleaseProfile
-
-# Rules transcribed from the tracker pages on this date.
-RULES_DATE_2026_10_15 = date(2026, 10, 15)
 
 type SlotKey = tuple[object, ...]
 # Returns a verdict and reason when the upload competes with an occupant of its slot.
@@ -204,7 +201,7 @@ class SlotRules:
     """Base class: subclasses set the class attributes and implement ``decide``."""
 
     TRACKER: ClassVar[str] = ""
-    RULES_DATE: ClassVar[date] = RULES_DATE_2026_10_15
+    RULES_DATE = TRANSCRIBED
 
     def __init__(self, meta: Any = None) -> None:
         # Upload metadata, for rules that use tracker data stored during the search.
@@ -224,16 +221,18 @@ class SlotRules:
         candidate = getattr(self, "_candidate", None)
         if isinstance(candidate, ReleaseProfile) and not any("incoming:" in note.casefold() for note in details):
             details.insert(0, f"Incoming: {incoming_traits(candidate)}.")
+        page = RULES_PAGES.get(self.TRACKER)
         return SlotDecision(
             verdict=verdict,
             reason=reason,
             tracker=self.TRACKER,
-            rules_date=self.RULES_DATE,
+            rules_date=page.updated if page else self.RULES_DATE,
             slot=slot,
             why=why,
             conflicts=[dict(conflict.entry) for conflict in conflicts],
             comparisons=describe_releases(conflicts, why or reason, role="competing"),
             notes=details,
+            rules_url=page.url if page else "",
         )
 
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision | None:
@@ -360,6 +359,10 @@ class SlotRules:
             return pair_reasons(
                 self.decision(Verdict.BLOCK, f"Another release already fills the {label} slot.", [profile for profile, _ in blocking], notes, slot=label, why=why), blocking
             )
+        # Replacing the competing releases must still leave room beside the ones that coexist.
+        coexisting = [profile for profile in occupants if coexists and coexists(upload, profile)]
+        if len(coexisting) >= capacity:
+            return self.decision(Verdict.BLOCK, f"All {capacity} places in this slot are already taken.", coexisting, notes, slot=label)
         reviewing = [(profile, reason) for profile, verdict, reason in results if verdict is Verdict.REVIEW]
         if reviewing:
             return pair_reasons(
