@@ -71,7 +71,7 @@ def test_true_hides_header_when_screenshots_are_the_only_content_section(tmp_pat
 
     assert HEADER not in result
     assert IMAGE["raw_url"] in result
-    assert SIGNATURE in result
+    assert SIGNATURE not in result
 
 
 def test_false_keeps_header_when_screenshots_are_the_only_content_section(tmp_path):
@@ -100,7 +100,7 @@ def test_logo_and_signatures_do_not_keep_lone_header(tmp_path):
     assert "https://example.test/logo.png" in result
     assert "https://example.test/signature.png" in result
     assert IMAGE["raw_url"] in result
-    assert SIGNATURE in result
+    assert SIGNATURE not in result
 
 
 @pytest.mark.parametrize(

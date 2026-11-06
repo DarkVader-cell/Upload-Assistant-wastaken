@@ -2020,15 +2020,19 @@ class DescriptionBuilder:
 
         description_str: str = "\n".join(part for part in desc_parts if part.strip())
 
+        # Tracker adapters historically supplied their own Upload Assistant
+        # footer. Do not emit it, even when cached metadata has a signature.
+        # Preserve unrelated, explicitly supplied custom signatures.
+        if re.search(r"https?://github\.com/wastaken7/Upload-Assistant\b", signature, re.IGNORECASE):
+            signature = ""
+        final_description = self.tracker_specific_formats(
+            self.tracker, "\n".join(part for part in (description_str, signature if ua_signature else "") if part.strip())
+        )
         if meta.debug:
             desc_file = f"{meta.base_dir}{'/' + 'tmp' + '/'}{meta.uuid}/[{self.tracker}]DESCRIPTION.txt"
             logger.debug(f"DEBUG: Saving final description to [yellow]{desc_file}[/yellow]")
             async with aiofiles.open(desc_file, "w", encoding="utf-8") as description_file:
-                await description_file.write(self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip())))  # fmt: off
-
-        # fmt: off
-        final_description = self.tracker_specific_formats(self.tracker, "\n".join(part for part in (description_str, ((signature or (f"[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]{meta.ua_signature}[/size][/url][/right]" if meta.ua_signature else "")) if ua_signature else "")) if part.strip()))  # ci: ua_signature v4.9
-        # fmt: on
+                await description_file.write(final_description)
         if str(meta.category or "").upper() in {"MOVIE", "TV"} and int(meta.screens or 0) >= 3:
             validate_description_screenshots(final_description, meta, self.tracker)
         return final_description

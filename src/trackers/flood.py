@@ -232,8 +232,6 @@ class Flood:
                     output.append(f"[url={web_url}][img width=350]{img_url}[/img][/url] ")
             output.append("[/align]")
 
-        output.append(f"\n[align=center][size=1][url=https://github.com/wastaken7/Upload-Assistant]{meta.ua_signature}[/url][/size][/align]")
-
         desc_out_file = Path(meta.base_dir) / "tmp" / meta.uuid / f"[{self.tracker}]DESCRIPTION.txt"
         async with aiofiles.open(desc_out_file, "w", encoding="utf-8") as f:
             await f.write("".join(output))

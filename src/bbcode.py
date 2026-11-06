@@ -615,7 +615,7 @@ class BBCODE:
             \[(?:right|center|align=(?:right|center))\][ \t]*(?:\n[ \t]*)?
             \[url=https:\/\/github\.com\/[^\]\/]+\/[^\]\/]*Upload-Assistant\][ \t]*(?:\n[ \t]*)?
             (?:\[size=\d+\][ \t]*(?:\n[ \t]*)?)?
-            (?:Shared\s+with|Compartilhado\s+com)\s+Upload[-\s]+Assistant
+            (?:Shared\s+with|Uploaded\s+using|Compartilhado\s+com)\s+Upload[-\s]+Assistant
             (?:[ \t]+v?\d+(?:[.+-]\d+)*)?
             (?:[ \t]+\(fork\))?
             [ \t]*(?:\n[ \t]*)?

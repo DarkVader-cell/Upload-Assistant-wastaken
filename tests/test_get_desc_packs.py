@@ -37,7 +37,7 @@ def pack(tmp_path, monkeypatch):
     return builder, meta
 
 
-def _render(builder, meta):
+def _render(builder, meta, *, ua_signature=False, signature=""):
     return asyncio.run(
         builder.general_description_generator(
             meta,
@@ -54,12 +54,23 @@ def _render(builder, meta):
             nfo=False,
             tonemapped_header=False,
             tv_info=False,
-            ua_signature=False,
+            ua_signature=ua_signature,
+            signature=signature,
             user_description=False,
             music=False,
             dynamic_hdr_plot=False,
         )
     )
+
+
+def test_auto_upload_assistant_signature_is_not_rendered(pack):
+    builder, meta = pack
+    meta.ua_signature = "Uploaded using Upload Assistant 4.9 (fork)"
+    default_result = _render(builder, meta, ua_signature=True)
+    explicit_result = _render(builder, meta, ua_signature=True, signature=f"[right][url=https://github.com/wastaken7/Upload-Assistant]{meta.ua_signature}[/url][/right]")
+    assert "Upload Assistant" not in default_result
+    assert "github.com/wastaken7/Upload-Assistant" not in explicit_result
+    assert "Custom signature" in _render(builder, meta, ua_signature=True, signature="Custom signature")
 
 
 @pytest.mark.parametrize("hide_header", [True, False])

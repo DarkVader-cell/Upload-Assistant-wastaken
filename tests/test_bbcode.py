@@ -191,6 +191,12 @@ Shared with Upload-Assistant v3.3 (fork)
     assert cleaned == "Release notes"
 
 
+def test_clean_unit3d_removes_uploaded_using_ua_attribution() -> None:
+    description = "Release notes\n[right][url=https://github.com/wastaken7/Upload-Assistant][size=4]Uploaded using Upload Assistant 4.9 (fork)[/size][/url][/right]"
+    cleaned, _ = BBCODE().clean_unit3d_description(description, "https://example.test")
+    assert cleaned == "Release notes"
+
+
 def test_clean_unit3d_description_preserves_non_version_suffix() -> None:
     description = "[right][url=https://github.com/wastaken7/Upload-Assistant]Shared with Upload Assistant release[/url][/right]"
 
