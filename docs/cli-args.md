@@ -155,6 +155,14 @@ If you pass a `.txt` file as the main positional input path (without specifying 
 ### Category / type / source / resolution
 
 - `-c`, `--category {movie,tv,sports,fanres,book,game,music,xxx}`: Override the category.
+  - Without `--category`, arguments that only make sense for one category set it:
+    - `GAME`: `--igdb`, `--steam`, `--platform`, `--game-title`, `--developer`, `--game-version`, `--game-subcategory`.
+    - `BOOK`: `--author`, `--book-title`, `--book-narrator`, `--book-translator`, `--book-language`, `--isbn`, `--asin`, `--audible-url`, `--openlibrary`, `--comic`, `--manga`, `--magazine`, `--newspaper`.
+    - `MUSIC`: every `--music-*` argument that describes the release, except `--music-check-log`, `--music-enrich`, `--no-music-enrich` and `--no-music-discogs`.
+    - `XXX`: `--tpdb`, `--blvckout`.
+    - `TV`: `--season`, `--episode`, `--manual-episode-title`, `--daily`, `--tvmaze`. These only choose TV over MOVIE: a release whose files are detected as a book, game, music or XXX keeps that category.
+    - `--tmdb movie/...` and `--tmdb tv/...` set `MOVIE` or `TV`.
+  - Arguments shared by several categories (`--imdb`, `--tvdb`, `--mal`, `--douban`, `--publisher`, `--cast`) do not set it. When arguments point to different categories, the category is detected automatically, or the `--tmdb` category is kept.
 - `-t`, `--type {disc,remux,encode,webdl,web-dl,webrip,hdtv,dvdrip}`: Override release type.
   - Stored as uppercase with `-` removed (e.g. `web-dl` → `WEBDL`).
 - `--source {Blu-ray,BluRay,DVD,DVD5,DVD9,HDDVD,WEB,HDTV,UHDTV,LaserDisc,DCP}`: Override the source string.
@@ -169,6 +177,9 @@ If you pass a `.txt` file as the main positional input path (without specifying 
 - `-mal`, `--mal MAL_ID`: MAL id.
 - `-tvmaze`, `--tvmaze TVMAZE_ID`: TVMaze id.
 - `-tvdb`, `--tvdb TVDB_ID`: TVDB id.
+- `--tpdb ID`: ThePornDB scene or movie for an XXX release: `scenes/ID`, `movies/ID`, a ThePornDB link, or a bare scene ID. See [XXX metadata lookup](xxx-upload.md#metadata-lookup-theporndb-and-blvckout).
+- `--blvckout ID`: BLVCKOUT release ID or link for an XXX movie.
+- `--no-saved-ids`: Do not reuse the IDs confirmed for this release in an earlier run, and search for them again. See [Saved IDs and answers](web-ui.md#saved-ids-and-answers).
 
 Note: if a manual TMDb or IMDb id is present in the incoming `meta` before parsing, the parser clears `tmdb_manual`, `tmdb_id`, `tmdb`, `imdb_id`, `imdb` in `meta` so CLI values take precedence cleanly.
 

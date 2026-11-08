@@ -22,6 +22,14 @@ from torf import Torrent
 from src.cogs.redaction import Redaction
 from src.console import logger
 from src.meta import Meta
+from src.torrent_clients.existing_content import (
+    ExistingContentMatch,
+    existing_content_mode,
+    join_client_path,
+    match_content_layout,
+    select_candidates,
+    torrent_file_entries,
+)
 from src.torrent_clients.link_paths import qbit_link_target
 from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_client_path_to_local, map_save_path, tracker_directory
 from src.torrentcreate import TorrentCreator

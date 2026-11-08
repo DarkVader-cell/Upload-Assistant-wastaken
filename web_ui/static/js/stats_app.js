@@ -241,6 +241,8 @@ const CACHE_PROVIDER_LABELS = {
   myanonamouse: "MyAnonamouse",
   musicbrainz: "MusicBrainz",
   discogs: "Discogs",
+  tpdb: "ThePornDB",
+  blvckout: "BLVCKOUT",
   audible: "Audible",
 };
 const formatCacheProvider = (value) => {
@@ -309,6 +311,7 @@ const REASON_LABELS = {
   search_error: "Search failed",
   missing_fields: "Missing fields",
   too_few_trackers: "Too few trackers",
+  not_configured: "Not configured",
   site_check: "Site check only",
   no_upload: "Not uploaded",
 };
@@ -387,6 +390,7 @@ function WorkspaceNav({
     ["upload", "Upload", "/"],
     ["config", "Config", "/config"],
     ["stats", "Stats", "/stats"],
+    ["history", "History", "/history"],
   ];
   useEffect(() => {
     if (!appearanceOpen) return undefined;

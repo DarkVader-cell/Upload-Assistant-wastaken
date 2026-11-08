@@ -344,6 +344,7 @@ class Args:
             parser.error(str(error))
 
     def parse(self, argv: Sequence[str], meta: Meta) -> tuple[Meta, CustomArgumentParser, list[str]]:
+        """Parse command-line arguments into ``meta``; return it with the parser and the arguments left over."""
         input = list(argv)
         parser = CustomArgumentParser(
             usage="upload.py [path...] [options]",
@@ -459,6 +460,7 @@ class Args:
                 "xone": "Xbox One",
                 "xsx": "Xbox Series X/S",
                 "switch": "Nintendo Switch",
+                "switch2": "Nintendo Switch 2",
                 "3ds": "Nintendo 3DS",
                 "nds": "Nintendo DS",
                 "wiiu": "Nintendo Wii U",
@@ -724,8 +726,24 @@ class Args:
         parser.add_argument("-tvdb", "--tvdb", nargs=1, required=False, help="TVDB ID", type=str, dest="tvdb_manual")
         parser.add_argument("-douban", "--douban", nargs=1, required=False, help="Douban ID (Number only)", dest="douban_manual", default=0)
         parser.add_argument("--no-metadata-cache", action="store_true", required=False, help="Do not read or write the persistent metadata cache", dest="no_metadata_cache")
+        parser.add_argument(
+            "--no-saved-ids",
+            action="store_true",
+            required=False,
+            help="Do not reuse the IDs confirmed for this release in an earlier run",
+            dest="no_saved_ids",
+        )
         parser.add_argument("-igdb", "--igdb", nargs=1, required=False, help="IGDB ID", type=str, dest="igdb_manual")
         parser.add_argument("-steam", "--steam", nargs=1, required=False, help="Steam App ID or URL", type=str, dest="steam_manual")
+        parser.add_argument(
+            "--tpdb",
+            nargs=1,
+            required=False,
+            help="ThePornDB scene or movie ID or link for an XXX release (e.g. scenes/ID or movies/ID)",
+            type=str,
+            dest="tpdb_manual",
+        )
+        parser.add_argument("--blvckout", nargs=1, required=False, help="BLVCKOUT release ID or link for an XXX movie", type=str, dest="blvckout_manual")
         parser.add_argument("-g", "--tag", nargs="*", required=False, help="Group Tag", type=str)
         parser.add_argument("-serv", "--service", nargs="*", required=False, help="Streaming Service", type=str)
         parser.add_argument("-dist", "--distributor", nargs="*", required=False, help="Disc Distributor e.g.(Criterion, BFI, etc.)", type=str)
@@ -852,9 +870,9 @@ class Args:
             "--platforms",
             nargs=1,
             required=False,
-            help="Game platform (PC, PS5, PS4, PS3, PS2, Xbox, X360, XOne, XSX, Switch, 3DS, NDS, WiiU, Wii, Mac, Linux)",
+            help="Game platform (PC, PS5, PS4, PS3, PS2, Xbox, X360, XOne, XSX, Switch, Switch2, 3DS, NDS, WiiU, Wii, Mac, Linux)",
             type=str.lower,
-            choices=["pc", "ps5", "ps4", "ps3", "ps2", "xbox", "x360", "xone", "xsx", "switch", "3ds", "nds", "wiiu", "wii", "mac", "linux"],
+            choices=["pc", "ps5", "ps4", "ps3", "ps2", "xbox", "x360", "xone", "xsx", "switch", "switch2", "ns2", "3ds", "nds", "wiiu", "wii", "mac", "linux"],
             dest="manual_platform",
         )
         action_plat.completer = platform_completer
@@ -1314,6 +1332,7 @@ class Args:
 
         if meta.tmdb_manual is not None or meta.imdb_manual is not None:
             meta.tmdb_manual = meta.tmdb_id = meta.tmdb = meta.imdb_id = meta.imdb = None
+            meta.tmdb_manual_category = ""
         # An ASIN correction replaces a carried product URL. Explicit URLs in
         # this invocation are still checked for conflicts below.
         if parsed_args.get("book_asin") and not parsed_args.get("audible_url") and meta.audible_url:
@@ -1379,7 +1398,10 @@ class Args:
                     elif key == "manual_date":
                         meta.manual_date = value2
                     elif key == "tmdb_manual":
-                        meta.category, meta.tmdb_manual = self.parse_tmdb_id(value2, meta.category)
+                        tmdb_category, meta.tmdb_manual = self.parse_tmdb_id(value2, None)
+                        meta.tmdb_manual_category = tmdb_category
+                        if tmdb_category:
+                            meta.category = tmdb_category
                     elif key == "tracker_id":
                         for tracker_id_value in value_list:
                             tracker_name, torrent_id = self.parse_tracker_id(tracker_id_value)
@@ -1735,6 +1757,8 @@ class Args:
                 "xone": "XONE",
                 "xsx": "XSX",
                 "switch": "SWITCH",
+                "switch2": "SWITCH2",
+                "ns2": "SWITCH2",
                 "3ds": "3DS",
                 "nds": "NDS",
                 "ds": "NDS",

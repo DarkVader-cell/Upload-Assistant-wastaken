@@ -12,7 +12,7 @@ import aiofiles
 import cli_ui
 from rich.markup import escape
 
-from src import confirm_options, payload_preview, webui_events
+from src import confirm_options, payload_preview, upload_history, webui_events
 from src.audible import resolve_audible_url
 from src.bdinfo_comparator import compare_bdinfo, has_bdinfo_content
 from src.cleanup import cleanup_manager
@@ -1061,6 +1061,21 @@ class UploadHelper:
                     lang_summary = str(languages)
                 lines.append(("Languages", lang_summary))
 
+        elif meta.category == "XXX":
+            source = ""
+            if meta.tpdb_id:
+                source = f"ThePornDB {meta.tpdb_id}"
+            elif meta.blvckout_id:
+                source = f"BLVCKOUT {meta.blvckout_id}"
+            lines.append(("Studio", meta.publisher or _optional_hint("Use --publisher.")))
+            lines.append(("Release date", meta.release_date or _optional_hint("Use --tpdb to match a scene.")))
+            lines.append(("Performers", ", ".join(meta.cast) if meta.cast else _optional_hint("Use --cast or --tpdb.")))
+            lines.append(("Tags", keywords or _optional_hint("Use --keywords or --tpdb.")))
+            has_cover = bool(meta.artwork_url or meta.artwork_path or meta.artwork_download_url)
+            lines.append(("Cover", "Found" if has_cover else _optional_hint("A frame from the video will be used. Use --poster.")))
+            lines.append(("Banner", "Found" if meta.artwork_banner_path or meta.artwork_banner_url else _optional_hint("Use --banner if applicable.")))
+            lines.append(("Metadata", f"{source} {meta.xxx_source_url}".strip() if source else _optional_hint("Use --tpdb or --blvckout to match the release.")))
+
         if meta.category == "MUSIC":
             lines.extend(_music_confirmation_lines(meta, missing_warning))
         else:
@@ -1260,6 +1275,8 @@ class UploadHelper:
                 logger.info(f"[green]Upload data changed in the Web UI:[/green] {escape(change)}", extra={"highlighter": None})
 
         if confirm:
+            meta.ids_confirmed = True
+            meta.confirmed_ids = upload_history.external_ids(meta)
             if (
                 meta.original_imdb == meta.imdb_id
                 and meta.original_tmdb == meta.tmdb_id
