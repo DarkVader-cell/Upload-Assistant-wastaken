@@ -74,6 +74,12 @@ def test_true_hides_header_when_screenshots_are_the_only_content_section(tmp_pat
     assert SIGNATURE not in result
 
 
+def test_separate_screenshot_upload_does_not_require_description_images(tmp_path):
+    result = _render(tmp_path, hide_header=True, sections={"screenshots": False}, metadata={"screens": 3})
+
+    assert IMAGE["raw_url"] not in result
+
+
 def test_false_keeps_header_when_screenshots_are_the_only_content_section(tmp_path):
     result = _render(tmp_path, hide_header=False)
 
