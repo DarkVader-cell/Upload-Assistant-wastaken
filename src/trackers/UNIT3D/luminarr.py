@@ -3,7 +3,6 @@ import re
 from typing import Any
 
 from src.console import logger
-from src.manual_input import confirm_override
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
@@ -83,11 +82,11 @@ class Luminarr(UNIT3D):
         }
 
     async def get_additional_checks(self, meta: Meta) -> bool:
+        passed = True
         accepted_encode, reason = self._accepted_encode(meta)
         if not accepted_encode:
             logger.info(f"{self.tracker}: [bold red]{reason}.[/bold red]")
-            return False
-
+            passed = False
         if meta.is_disc not in ["BDMV", "DVD"] and not await self.common.check_language_requirements(
             meta, self.tracker, languages_to_check=["english"], check_audio=True, check_subtitle=True, original_language=True
         ):
@@ -95,8 +94,7 @@ class Luminarr(UNIT3D):
 
         if meta.is_disc not in ["BDMV", "DVD"] and meta.resolution not in ["8640p", "4320p", "2160p", "1440p", "1080p", "1080i", "720p"]:
             logger.info(f"{self.tracker}: [bold red]only allows SD releases when the content does not have a higher resolution release.[/bold red]")
-            if not await confirm_override(meta):
-                return False
+            passed = False
 
         if not meta.is_disc and meta.container != "mkv":
             logger.info(f"{self.tracker}: [bold red]only allows MKV containers for non-disc uploads.[/bold red]")
@@ -106,4 +104,4 @@ class Luminarr(UNIT3D):
             logger.info(f"{self.tracker}: [bold red]No encoding settings in mediainfo, skipping {self.tracker} upload.[/bold red]")
             return False
 
-        return await self.common.check_and_confirm_adult_media_upload(meta, self.tracker)
+        return await self.common.check_adult_media_allowed(meta, self.tracker) and passed
