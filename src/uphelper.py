@@ -805,11 +805,11 @@ class UploadHelper:
                         else:
                             upload = await self.prompt_yes_no(f"Upload to {tracker_name} anyway?", default=False)
                             meta.we_asked = True
-                        except EOFError:
-                            logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
-                            await cleanup_manager.cleanup()
-                            cleanup_manager.reset_terminal()
-                            sys.exit(1)
+                    except EOFError:
+                        logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
+                        await cleanup_manager.cleanup()
+                        cleanup_manager.reset_terminal()
+                        sys.exit(1)
                 elif dupes_list:
                     # Rebuild dupe_text in case dupes was filtered after trump decline
                     dupe_text = _format_dupes_list(dupes_list)
