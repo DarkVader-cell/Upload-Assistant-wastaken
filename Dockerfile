@@ -1,4 +1,4 @@
-FROM python:3.15 AS python-deps
+FROM python:3.15 AS builder
 
 # Build-only dependencies are deliberately isolated from the final image.
 # A few Python packages compile native/Rust extensions on architectures where
@@ -13,11 +13,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ── Python environment ──────────────────────────────────────────────
-# Ensure Python output is sent straight to the container logs (no buffering)
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-
-COPY --from=builder /venv /venv
+RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
 RUN --mount=type=cache,target=/root/.cache/pip \
@@ -50,7 +48,7 @@ RUN apt-get update && \
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/venv/bin:$PATH"
-COPY --from=python-deps /venv /venv
+COPY --from=builder /venv /venv
 
 # ── Application setup ────────────────────────────────────────────────
 WORKDIR /Upload-Assistant
