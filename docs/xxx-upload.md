@@ -51,7 +51,7 @@ The lookup tries, in this order:
 2. a JAV product code (`ABC-123`) on ThePornDB's JAV catalogue;
 3. the file hash (OSHASH) of a single-video release on ThePornDB, which identifies the exact scene;
 4. for dated scenes (`Studio.YY.MM.DD.…`, `Studio YY.MM.DD …` or `[Site.com] YY.MM.DD …`, as BitPorn uploads are named): the full name, then every scene of that site and day, then the first words of the title;
-5. for other names: the site and title of `[Site.com] Performer - Title 2026` names, movies and scenes by title (movie-like names, such as `DVDRip`, `Vol. 3` or a year in brackets, search movies first), and the part after ` - ` in `Studio - Title` names;
+5. for other names: the site and title of `[Site.com] Performer - Title 2026` names, movies and scenes by title (movie-like names, such as `DVDRip`, `Vol. 3` or a year in brackets, search movies first), and the part after `-` in `Studio - Title` names;
 6. a BLVCKOUT movie search, when ThePornDB found nothing plausible.
 
 A result is used without asking only when it is clearly the release, with nothing that contradicts it (another date, another studio, a very different runtime):
@@ -75,15 +75,15 @@ Values given on the command line (`--publisher`, `--year`, `--overview`, `--cast
 
 Use these arguments when automatic metadata needs correction:
 
-| Argument                       | Purpose                                                |
-| ------------------------------ | ------------------------------------------------------ |
-| `--tpdb scenes/ID`             | Use this ThePornDB scene (`movies/ID` for a movie).    |
-| `--blvckout ID`                | Use this BLVCKOUT movie.                               |
-| `--name "RELEASE_NAME"`        | Override the generated upload name or title.           |
-| `--cast "Name One,Name Two"`   | Supply a comma-separated performer list.               |
-| `--publisher "Studio"`         | Override the detected studio/publisher.                |
-| `--year YYYY`                  | Override the detected year.                            |
-| `--keywords "tag one,tag two"` | Add keywords to those detected from the name.          |
+| Argument                       | Purpose                                             |
+| ------------------------------ | --------------------------------------------------- |
+| `--tpdb scenes/ID`             | Use this ThePornDB scene (`movies/ID` for a movie). |
+| `--blvckout ID`                | Use this BLVCKOUT movie.                            |
+| `--name "RELEASE_NAME"`        | Override the generated upload name or title.        |
+| `--cast "Name One,Name Two"`   | Supply a comma-separated performer list.            |
+| `--publisher "Studio"`         | Override the detected studio/publisher.             |
+| `--year YYYY`                  | Override the detected year.                         |
+| `--keywords "tag one,tag two"` | Add keywords to those detected from the name.       |
 
 ## Contact sheets and artwork
 
@@ -98,7 +98,11 @@ XXX releases generate one evenly sampled contact sheet per video instead of the 
 "xxx_single_file_screens": "0",
 ```
 
-Set `xxx_contact_sheet_animated_webp` to create animated WebP sheets. For a release containing one video, `xxx_single_file_screens` adds that many normal screenshots alongside its contact sheet; BJShare expects at least two screenshots for single-file XXX uploads.
+Set `xxx_contact_sheet_animated_webp` to create animated WebP sheets. Image hosts such as imgbox and pixhost, and BitPorn, reject images over 10 MB, so an animated sheet is re-encoded at lower quality until it fits. If it still does not fit, a static PNG sheet is used instead and a warning is shown; fewer rows, columns or animation seconds keep it animated. A default 12 × 5 sheet from a 1080p video is close to that limit.
+
+Sheets are cached per video. Changing any of the settings above makes the next run regenerate them. In the Web UI screenshot review, replacing a contact sheet renders a new sheet of the same video at different times.
+
+For a release containing one video, `xxx_single_file_screens` adds that many normal screenshots alongside its contact sheet; BJShare expects at least two screenshots for single-file XXX uploads.
 
 If no artwork is available, Upload Assistant creates a fallback poster from a source-video frame. `--poster` and `--banner` accept either an existing local image or a public HTTP(S) URL and take precedence over generated artwork:
 
@@ -117,6 +121,7 @@ The current XXX upload destinations are:
 
 - **BitPorn (`BITPORN`)**: XXX-only UNIT3D tracker. The category follows the release format first (packs → Collection, VR, ThePornDB movies → Movie, JAV and Japanese sites → Asian, creator platforms → Fansite), then genre words in the name, then ThePornDB tags that describe who is in the scene (gay, trans, lesbian, Asian, interracial, ebony, BBW, mature). Tags for acts are not used; without a signal the category is Uncategorized. Frames between the listed resolutions use the closest one (VR 2880p → 6K, 4096p → 8K). Uploads the cover, banner and contact sheets directly.
 - **DirtyBytes (`DIRTYBYTES`)**: XXX-only tracker; picks the Scene, Movies, VR180 or Packs category and resolution from the release name and video height, sends studio, performers, keywords, year, runtime and MediaInfo, and attaches the cover and contact sheets directly.
+- **HappyFappy (`HAPPYFAPPY`)** and **Kufirc (`KUFIRC`)**: Luminance trackers that log in with cookies. The title follows the order the sites ask for, `[Studio] Performer - Title (YYYY-MM-DD) [1080p]`, with VR labelled by width (`[6K VR]`); Kufirc uses the scene release name instead when there is one (a verified scene name, or a file name already in scene style). Tags (performers, studio, ThePornDB tags, resolution, file type and year) are joined with dots and separated by spaces. The category follows the format (games, picture sets, packs, VR), then who is in the release (gay, trans, JAV/Asian, lesbian, interracial). The cover and contact sheets are posted as direct images from an approved host: pixhost, imgbox or imagebam for HappyFappy, and only luminapix.eu for Kufirc (set `luminapix` as an `img_host_N` and fill in `luminapix_api`). HappyFappy gets MediaInfo in its own field and asks for at least five tags and an English text description; Kufirc gets MediaInfo in a spoiler. Both sites run their own size-based dupe check when the upload is submitted.
 - **BJShare (`BJSHARE`)**: accepts XXX video uploads and uses the supplied or detected title, year, studio, performers, media details, artwork, and screenshots.
 - **LST (`LST`)**: maps XXX to its adult category using the standard UNIT3D upload fields.
 - **SUIO (`SUIO`)**: accepts XXX Usenet posts and maps HD/UHD and other resolutions to its adult categories.

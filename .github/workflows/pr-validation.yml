@@ -7,7 +7,36 @@ on:
 permissions:
   contents: read
 
+# A new push to the same pull request supersedes the previous run.
+concurrency:
+  group: pr-validation-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
+  changes:
+    name: Detect Docker-relevant changes
+    runs-on: ubuntu-24.04
+    permissions:
+      pull-requests: read
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - name: Check changed files
+        id: filter
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          # Build the image only when files that shape it change. If the file list
+          # cannot be read, build anyway rather than skip the validation.
+          docker=true
+          if files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" --jq '.[].filename'); then
+            if ! grep -qE '^(Dockerfile|\.dockerignore|requirements\.txt|uv\.lock|pyproject\.toml|bin/|scripts/docker-entrypoint\.sh|\.github/workflows/pr-validation\.yml)' <<<"$files"; then
+              docker=false
+            fi
+          fi
+          echo "docker=$docker" >> "$GITHUB_OUTPUT"
+
   python-compatibility:
     name: Python ${{ matrix.python }} compatibility
     runs-on: ubuntu-24.04
@@ -108,7 +137,8 @@ jobs:
 
   docker-build:
     name: Docker build validation (${{ matrix.arch }})
-    needs: python-compatibility
+    needs: [changes, python-compatibility]
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false

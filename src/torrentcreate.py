@@ -77,6 +77,8 @@ def calculate_piece_size(
 class CustomTorrent(torf.Torrent):
     def __init__(self, meta: Meta, *args: Any, **kwargs: Any) -> None:
         self._meta = meta
+        self._webui_progress_id: str | None = None
+        self._webui_progress_label: str | None = None
 
         # Extract and store the precalculated piece size
         self._precalculated_piece_size: int | None = kwargs.pop("piece_size", None)
@@ -263,7 +265,7 @@ class TorrentCreator:
         tracker_url: str | None = None,
         piece_size: int = 0,
         make_default: bool = False,
-    ) -> str | Torrent:
+    ) -> str | Path | Torrent:
         # Ensure only one torrent creation runs at a time
         wait_started: float | None = None
         if cls._create_torrent_semaphore.locked():
@@ -281,7 +283,7 @@ class TorrentCreator:
 
             try:
                 if not piece_size:
-                    piece_size = meta.max_piece_size
+                    piece_size = meta.max_piece_size or 0
                 tracker_url = tracker_url or None
                 include: list[str] = []
                 exclude: list[str] = []
@@ -676,7 +678,7 @@ class TorrentCreator:
             record_event("artifact", service="torrent", operation="created", outcome="success", category="randomized")
 
     @staticmethod
-    async def create_base_from_existing_torrent(torrentpath: str, base_dir: str, uuid: str) -> str | None:
+    async def create_base_from_existing_torrent(torrentpath: str | Path, base_dir: str, uuid: str) -> str | None:
         # Reuse statistics are recorded when the item completes, from the
         # manifest, because client searches can also register reusable bases.
         if Path(torrentpath).exists():
@@ -778,7 +780,7 @@ async def create_torrent(
     tracker_url: str | None = None,
     piece_size: int = 0,
     make_default: bool = False,
-) -> str | Torrent:
+) -> str | Path | Torrent:
     return await TorrentCreator.create_torrent(
         meta=meta,
         path=path,
@@ -797,7 +799,7 @@ def create_random_torrents(base_dir: str, uuid: str, num: int | str, path: str) 
     TorrentCreator.create_random_torrents(base_dir, uuid, num, path)
 
 
-async def create_base_from_existing_torrent(torrentpath: str, base_dir: str, uuid: str) -> str | None:
+async def create_base_from_existing_torrent(torrentpath: str | Path, base_dir: str, uuid: str) -> str | None:
     return await TorrentCreator.create_base_from_existing_torrent(torrentpath, base_dir, uuid)
 
 

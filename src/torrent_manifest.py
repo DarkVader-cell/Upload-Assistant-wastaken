@@ -4,16 +4,21 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any, Literal, TypeIs, cast
 
 from torf import TorfError, Torrent
 
 from src.temp_paths import release_temp_dir
-from src.torrent_policy import TorrentPolicy, TorrentStats
+from src.torrent_policy import PIECE_SIZE_MAX, TorrentPolicy, TorrentStats
 
 TorrentLayout = Literal["base", "base_subs"]
+
+
+def _is_str_dict(val: object) -> TypeIs[dict[str, Any]]:
+    return isinstance(val, dict)
 
 
 @dataclass(frozen=True)
@@ -57,13 +62,13 @@ class TorrentManifest:
 
     def _load(self) -> dict[str, Any]:
         try:
-            value = json.loads(self.path.read_text(encoding="utf-8"))
+            value: object = json.loads(self.path.read_text(encoding="utf-8"))
         except OSError, json.JSONDecodeError:
             return self._empty()
-        if not isinstance(value, dict) or value.get("version") != self.VERSION:
+        if not _is_str_dict(value) or value.get("version") != self.VERSION:
             return self._empty()
         for key in ("torrents", "defaults", "selections"):
-            if not isinstance(value.get(key), dict):
+            if not _is_str_dict(value.get(key)):
                 value[key] = {}
         return value
 
@@ -125,10 +130,11 @@ class TorrentManifest:
             torrents = cast(dict[str, Any], manifest["torrents"])
             # Re-registering a managed base must retain its original client
             # identity, rather than treating the normalized hash as a client hash.
-            previous = torrents.get(entry_id)
-            if Path(source).resolve() == output and isinstance(previous, dict):
+            previous: object = torrents.get(entry_id)
+            if Path(source).resolve() == output and _is_str_dict(previous):
                 origin = str(previous.get("origin", origin))
-                client_infohash = previous.get("client_infohash")
+                prev_hash = previous.get("client_infohash")
+                client_infohash = prev_hash if isinstance(prev_hash, str) else None
             output.parent.mkdir(parents=True, exist_ok=True)
             temporary = output.with_suffix(".tmp")
             Torrent.copy(torrent).write(temporary, overwrite=True)
@@ -148,7 +154,8 @@ class TorrentManifest:
             )
             torrents[entry_id] = asdict(entry)
             defaults = cast(dict[str, Any], manifest["defaults"])
-            if make_default or layout not in defaults:
+            # A default that no client can load gives way to the first usable variant.
+            if make_default or layout not in defaults or (stats.piece_size <= PIECE_SIZE_MAX and self._is_oversized(torrents.get(defaults[layout]))):
                 defaults[layout] = entry_id
             self._save(manifest)
             return entry
@@ -157,7 +164,7 @@ class TorrentManifest:
         manifest = self._load()
         result: list[TorrentEntry] = []
         for value in cast(dict[str, Any], manifest["torrents"]).values():
-            if not isinstance(value, dict):
+            if not _is_str_dict(value):
                 continue
             try:
                 entry = TorrentEntry(**value)
@@ -189,12 +196,36 @@ class TorrentManifest:
         resolved = Path(path).resolve()
         return next((entry for entry in self.entries() if self.entry_path(entry).resolve() == resolved), None)
 
-    def select(self, tracker: str, layout: TorrentLayout, policy: TorrentPolicy | None = None) -> TorrentEntry | None:
-        candidates = [entry for entry in self.entries(layout) if policy is None or policy.accepts(entry.stats)]
+    def select(
+        self,
+        tracker: str,
+        layout: TorrentLayout,
+        policy: TorrentPolicy | None = None,
+        *,
+        preferred: Sequence[str | Path | None] = (),
+    ) -> TorrentEntry | None:
+        """Record and return the variant a tracker uploads.
+
+        The first ``preferred`` path that is an acceptable variant wins, so a
+        tracker keeps the torrent already chosen for the run. Only when none
+        qualifies, such as a tracker policy rejecting it, is the smallest
+        acceptable variant used.
+
+        Without a tracker policy the largest supported piece size still
+        applies, so a variant libtorrent 1.x clients cannot load is never selected.
+        """
+        candidates = [entry for entry in self.entries(layout) if (policy.accepts(entry.stats) if policy is not None else entry.piece_size <= PIECE_SIZE_MAX)]
         if not candidates:
+            # Drop a selection recorded by an earlier run, so a variant that is
+            # no longer acceptable cannot be picked up through selected_path().
+            with self._lock:
+                manifest = self._load()
+                if cast(dict[str, Any], manifest["selections"]).pop(tracker.upper(), None) is not None:
+                    self._save(manifest)
             return None
         candidates.sort(key=lambda entry: (entry.piece_size, entry.metainfo_size, entry.id))
-        entry = candidates[0]
+        by_path = {self.entry_path(entry).resolve(): entry for entry in candidates}
+        entry = next((by_path[path] for item in preferred if item and (path := Path(item).resolve()) in by_path), candidates[0])
         with self._lock:
             manifest = self._load()
             cast(dict[str, Any], manifest["selections"])[tracker.upper()] = entry.id
@@ -204,8 +235,10 @@ class TorrentManifest:
     def selected_path(self, tracker: str) -> Path | None:
         manifest = self._load()
         entry_id = cast(dict[str, Any], manifest["selections"]).get(tracker.upper())
-        value = cast(dict[str, Any], manifest["torrents"]).get(entry_id)
-        if not isinstance(value, dict):
+        if not isinstance(entry_id, str):
+            return None
+        value: object = cast(dict[str, Any], manifest["torrents"]).get(entry_id)
+        if not _is_str_dict(value):
             return None
         try:
             entry = TorrentEntry(**value)
@@ -217,11 +250,38 @@ class TorrentManifest:
     def default_path(self, layout: TorrentLayout = "base") -> Path | None:
         manifest = self._load()
         entry_id = cast(dict[str, Any], manifest["defaults"]).get(layout)
-        value = cast(dict[str, Any], manifest["torrents"]).get(entry_id)
-        if not isinstance(value, dict):
+        if not isinstance(entry_id, str):
             return None
+        value: object = cast(dict[str, Any], manifest["torrents"]).get(entry_id)
+        if not _is_str_dict(value):
+            return None
+        if self._is_oversized(value):
+            # Left by a run from before the piece-size bound: every step that
+            # copies the default, such as randomized torrents, must get a
+            # variant a client can load, or none at all.
+            replacement = self._promote_usable_default(layout)
+            if replacement is None:
+                return None
+            value = asdict(replacement)
         try:
             path = self.entry_path(TorrentEntry(**value))
         except TypeError, ValueError:
             return None
         return path if path.is_file() else None
+
+    @staticmethod
+    def _is_oversized(value: object) -> bool:
+        piece_size = value.get("piece_size") if _is_str_dict(value) else None
+        return isinstance(piece_size, int) and piece_size > PIECE_SIZE_MAX
+
+    def _promote_usable_default(self, layout: TorrentLayout) -> TorrentEntry | None:
+        """Make the largest variant within the piece-size bound the default."""
+        with self._lock:
+            usable = [entry for entry in self.entries(layout) if entry.piece_size <= PIECE_SIZE_MAX]
+            if not usable:
+                return None
+            chosen = max(usable, key=lambda entry: (entry.piece_size, -entry.metainfo_size, entry.id))
+            manifest = self._load()
+            cast(dict[str, Any], manifest["defaults"])[layout] = chosen.id
+            self._save(manifest)
+            return chosen

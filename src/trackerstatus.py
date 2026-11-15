@@ -342,6 +342,9 @@ class TrackerStatusManager:
                         if "initial_dupes" not in meta:
                             meta.initial_dupes = {}
                         meta.initial_dupes[tracker_name] = copy.deepcopy(dupes)
+                        title_releases = local_meta.get(f"{tracker_name}_title_releases")
+                        if isinstance(title_releases, list):
+                            meta.initial_title_releases[tracker_name] = copy.deepcopy(title_releases)
 
                     if tracker_name == "AMIGOSSHARE" and (meta.anon if meta.anon is not None else "false"):
                         logger.info(
@@ -385,10 +388,9 @@ class TrackerStatusManager:
                             else:
                                 local_tracker_status["dupe"] = True
 
-                        matched_episode_ids = local_meta.get(f"{tracker_name}_matched_episode_ids", [])
-                        trumpable_id = local_meta.get("trumpable_id")
                         cross_seed_key = f"{tracker_name}_cross_seed"
                         cross_seed_value = local_meta.get(cross_seed_key) if cross_seed_key in local_meta else None
+                        trump_plan = local_meta.trump_plans.get(tracker_name)
 
                         # Only shared-state writes go under the lock
                         async with meta_lock:

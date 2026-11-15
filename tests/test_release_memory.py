@@ -61,6 +61,23 @@ def test_confirmed_ids_and_answers_are_reused_after_a_rename(tmp_path, caplog):
     assert applied == ["IMDb tt1234567", "TMDb movie/42"]
 
 
+def test_cover_frame_picked_in_the_web_ui_is_saved_and_reloaded(tmp_path):
+    from src.artwork import COVER_FRAME_ANSWER, remember_cover_frame, save_cover_frame, saved_cover_frame
+    from src.temp_paths import artwork_dir
+
+    release = _release(tmp_path, "Fictional.Scene.XXX")
+    meta = Meta(path=str(release), category="XXX", base_dir=str(tmp_path / "ua"), uuid="release")
+    artwork_dir(meta.base_dir, meta.uuid).mkdir(parents=True, exist_ok=True)
+    save_cover_frame(meta.base_dir, meta.uuid, 33.25)
+    remember_cover_frame(meta)
+
+    assert upload_history.remember_release(meta) is True
+    loaded = _load(release, category="XXX")
+
+    assert loaded.manual_answers[COVER_FRAME_ANSWER] == 33.25
+    assert saved_cover_frame(loaded) == 33.25
+
+
 def test_unconfirmed_ids_are_not_remembered_but_answers_are(tmp_path):
     release = _release(tmp_path)
     meta = _confirmed_meta(release, debug=True)
@@ -376,7 +393,6 @@ def test_confirmed_xxx_metadata_ids_are_reused(tmp_path):
     assert applied == ["ThePornDB scenes/00000000-0000-4000-8000-000000000001", "BLVCKOUT 4242"]
 
 
-
 def test_a_confirmed_xxx_category_is_restored_before_preparation(tmp_path):
     release = _release(tmp_path, "clip_0001")
     meta = _confirm(Meta(path=str(release), category="XXX", tpdb_id="scenes/1"))
@@ -394,7 +410,6 @@ def test_a_confirmed_xxx_category_is_restored_before_preparation(tmp_path):
     skipped = _load(release, no_saved_ids=True)
     upload_history.apply_saved_ids(skipped)
     assert skipped.category == ""
-
 
 
 def test_a_given_id_keeps_the_saved_xxx_category_from_being_restored(tmp_path):

@@ -54,9 +54,12 @@ class DigitalCore:
         self.common = Common(config)
         tracker_config = self.config["TRACKERS"][self.tracker]
         force_rehost = str(tracker_config.get("force_rehost_images", False)).strip().lower() in {"1", "true", "yes"}
-        image_config = config
+        image_config: Config = config
         if force_rehost:
-            image_config = {**config, "DEFAULT": {**config.get("DEFAULT", {}), "img_host_1": "sharex"}}
+            image_config = config.copy()
+            default_config: dict[str, Any] = dict(config.get("DEFAULT", {}))
+            default_config["img_host_1"] = "sharex"
+            image_config["DEFAULT"] = default_config
             self.image_host_policy = ImageHostPolicy(self.image_host_policy.url_host_mapping, ("sharex",))
         self.rehost_images_manager = RehostImagesManager(image_config)
         self.api_key = tracker_config.get("api_key")

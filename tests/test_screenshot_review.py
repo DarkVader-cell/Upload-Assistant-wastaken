@@ -17,6 +17,7 @@ from src.screenshot_review import (
     apply_staged_remote_uploads,
     delete_screenshot,
     discard_remote_images,
+    group_target_count,
     image_version,
     list_review_items,
     list_screenshots,
@@ -82,6 +83,18 @@ def test_delete_disc_screenshot_preserves_main_target_and_other_groups(release_d
     assert [item.path for item in remaining] == [main]
     assert target_count(release_dir, 6) == 6
     assert manifest_files(release_dir.parent.parent, release_dir.name, "PLAYLIST_1") == []
+    assert group_target_count(release_dir, "PLAYLIST_1", 4) == 0
+    assert group_target_count(release_dir, "FILE_1", 4) == 4
+
+
+def test_delete_extra_disc_screenshot_records_the_group_count(release_dir):
+    _register_images(release_dir, ["main.png"])
+    extras = _register_images(release_dir, ["one.png", "two.png"], "FILE_1")
+    target = next(item for item in list_screenshots(release_dir, {}) if item.path == extras[0])
+
+    delete_screenshot(release_dir, {"is_disc": "DVD"}, target.id)
+
+    assert group_target_count(release_dir, "FILE_1", 4) == 1
 
 
 def test_list_screenshots_only_includes_registered_frames_with_stable_ids(release_dir):
@@ -105,6 +118,36 @@ def test_list_screenshots_includes_registered_webp_contact_sheets(release_dir):
     items = list_screenshots(release_dir, {"category": "XXX"})
 
     assert [item.path for item in items] == [webp]
+
+
+def test_replacing_a_contact_sheet_renders_a_new_sheet_of_its_video(release_dir, monkeypatch):
+    video = release_dir.parent.parent / "Studio.Scene.2.mp4"
+    video.write_bytes(b"video")
+    details = {"kind": "xxx_contact_sheet", "source": str(video), "settings": {"rows": 1, "columns": 2, "animated": True, "animation_seconds": 5.0}}
+    sheet_path = release_dir / "screenshots" / "sheet.webp"
+    sheet_path.write_bytes(b"old sheet")
+    (sheet,) = register(release_dir.parent.parent, release_dir.name, [sheet_path], "main", details={str(sheet_path): details})
+    calls = []
+
+    async def fake_regenerate(base_dir, folder_id, path, _meta):
+        calls.append(path)
+        path.write_bytes(b"new sheet")
+        return path
+
+    async def fail_frame_capture(*_args, **_kwargs):
+        raise AssertionError("a contact sheet must not become a single frame")
+
+    monkeypatch.setattr("src.screenshot_review.regenerate_xxx_contact_sheet", fake_regenerate)
+    monkeypatch.setattr("src.screenshot_review._capture_fresh_frame", fail_frame_capture)
+    item = next(item for item in list_screenshots(release_dir, {}) if item.path == sheet)
+    meta_data = {"category": "XXX", "base_dir": str(release_dir.parent.parent), "uuid": release_dir.name, "filelist": [str(video)]}
+
+    replaced = asyncio.run(replace_screenshot(release_dir, meta_data, item.id))
+
+    assert calls == [sheet]
+    assert replaced.path == sheet
+    assert sheet.read_bytes() == b"new sheet"
+    assert image_version(release_dir, item.id, 0) == 1
 
 
 def test_list_screenshots_uses_manifest_order_for_jpeg_and_webp_frames(release_dir):
@@ -388,9 +431,7 @@ def test_discarding_remote_images_keeps_ids_stable_in_any_order(tmp_path: Path) 
 
 def test_discarding_replaced_remote_image_drops_pending_replacement(release_dir):
     replacement = _register_images(release_dir, ["replacement.png"])[0]
-    (release_dir / "screenshot_review.json").write_text(
-        json.dumps({"remote_replacements": {"remote-0": replacement.name}, "generations": {"remote-0": 1}}), encoding="utf-8"
-    )
+    (release_dir / "screenshot_review.json").write_text(json.dumps({"remote_replacements": {"remote-0": replacement.name}, "generations": {"remote-0": 1}}), encoding="utf-8")
     meta_data = {"image_list": _hosted("one", "two")}
 
     remaining = delete_screenshot(release_dir, meta_data, "remote-0")
@@ -457,3 +498,37 @@ def test_bdmv_frames_staged_for_hosted_images_stay_out_of_main_upload(tmp_path: 
     assert manifest_files(tmp_path, release_id, "main") == []
     _kept, pending = discard_remote_images(release_dir, meta_data["image_list"])
     assert [path for _index, path in pending] == [staged.path]
+
+
+@pytest.mark.parametrize(("reviewed", "expected_total"), [(None, 2), (3, 3), (1, 1)])
+def test_description_hosts_the_reviewed_extra_disc_frames(release_dir, reviewed, expected_total):
+    from src.get_desc import DescriptionBuilder
+
+    _register_images(release_dir, ["one.png", "two.png", "three.png"], "FILE_1")
+    if reviewed is not None:
+        (release_dir / "screenshot_review.json").write_text(json.dumps({"group_targets": {"FILE_1": reviewed}}), encoding="utf-8")
+    disc = {"type": "DVD", "name": "FICTIONAL_SHOW_D0", "vob": "/media/D0/VTS_01_1.VOB", "ifo": "/media/D0/VTS_01_0.IFO", "vob_mi": "General", "ifo_mi": "General"}
+    meta = Meta(
+        base_dir=str(release_dir.parent.parent),
+        uuid=release_dir.name,
+        category="TV",
+        screens=1,
+        image_list=[{"web_url": "https://example.com/main", "raw_url": "https://example.com/main.png"}],
+        discs=[disc, {**disc, "name": "FICTIONAL_SHOW_D1"}],
+    )
+    builder = DescriptionBuilder("BLUTOPIA", {"DEFAULT": {"multiScreens": 2}, "TRACKERS": {"BLUTOPIA": {}}})
+    totals: list[int] = []
+
+    async def upload_screens(_meta, _screens, _host, _index, total_screens, images, _return_dict, **_kwargs):
+        totals.append(total_screens)
+        return [{"img_url": f"https://example.com/{n}.png", "raw_url": f"https://example.com/{n}.png", "web_url": f"https://example.com/{n}"} for n in range(min(total_screens, len(images)))], 0
+
+    async def save_image_links(*_args, **_kwargs):
+        return None
+
+    builder.uploadscreens_manager.upload_screens = upload_screens
+    builder.common.save_image_links = save_image_links
+
+    asyncio.run(builder._handle_discs_and_screenshots(meta, [], meta.image_list, 2))
+
+    assert totals == [expected_total]

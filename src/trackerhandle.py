@@ -5,7 +5,7 @@ import sys
 import time
 import traceback
 from collections.abc import Mapping, Sequence
-from typing import Any, cast
+from typing import Any, TypeIs, cast
 
 import cli_ui
 from rich.markup import escape
@@ -267,12 +267,12 @@ async def process_trackers(
             tracker_label = f"{tracker.ljust(tracker_label_width)}:"
             message: str | None = None
             if is_success:
-                result_parts = []
+                result_parts: list[str] = []
                 status_message = str(status.get("status_message", ""))
                 has_status_message = bool(status_message) and "data error" not in status_message
-                link_url = ""
+                link_url = str(status.get("torrent_link") or "")
 
-                if "torrent_id" in status:
+                if not link_url and "torrent_id" in status:
                     torrent_url = str(getattr(tracker_class, "torrent_url", ""))
                     link_url = f"{torrent_url}{status['torrent_id']}"
 
@@ -352,6 +352,7 @@ async def process_trackers(
         async def check_bandwidth_and_dupes(tracker_name: str, t_class: Any) -> bool:
             if t_class and getattr(t_class, "is_usenet", False):
                 return True
+            waited_for_bandwidth = False
             if bandwidth_control:
                 logger.info(f"\n[yellow]{tracker_name}: Checking bandwidth...[/yellow]")
                 waiter = Wait(config)
@@ -435,7 +436,7 @@ async def process_trackers(
                     try:
                         if not await check_bandwidth_and_dupes(tracker, tracker_class):
                             status = meta.tracker_status.setdefault(tracker_class.tracker, {})
-                            status["status_message"] = "Skipped due to new dupe found after bandwidth wait"
+                            status["status_message"] = "Skipped due to new dupe found after waiting to upload"
                             print_tracker_result(tracker, tracker_class, status, False)
                             return
                         await check_tracker_image_hosts(meta, tracker_class)
@@ -460,7 +461,8 @@ async def process_trackers(
                 status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
-                    if not getattr(tracker_class, "is_usenet", False):
+                    # A tracker sets skip_client_injection when the local .torrent may not match the site's.
+                    if not getattr(tracker_class, "is_usenet", False) and not status.get("skip_client_injection"):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
@@ -477,7 +479,7 @@ async def process_trackers(
                     try:
                         if not await check_bandwidth_and_dupes(tracker, tracker_class):
                             status = meta.tracker_status.setdefault(tracker_class.tracker, {})
-                            status["status_message"] = "Skipped due to new dupe found after bandwidth wait"
+                            status["status_message"] = "Skipped due to new dupe found after waiting to upload"
                             print_tracker_result(tracker, tracker_class, status, False)
                             return
                         await check_tracker_image_hosts(meta, tracker_class)
@@ -502,7 +504,8 @@ async def process_trackers(
                 status = meta.tracker_status.setdefault(tracker_class.tracker, {})
                 if is_uploaded and "data error" not in str(status.get("status_message", "")):
                     status["upload_success"] = True
-                    if not getattr(tracker_class, "is_usenet", False):
+                    # A tracker sets skip_client_injection when the local .torrent may not match the site's.
+                    if not getattr(tracker_class, "is_usenet", False) and not status.get("skip_client_injection"):
                         await client.add_to_client(meta, tracker_class.tracker)
                     print_tracker_result(tracker, tracker_class, status, True)
                 else:
@@ -564,6 +567,11 @@ async def process_trackers(
                         print_tracker_result(tracker, ptp, status, False)
                         return
                     group_id = meta.ptp_groupid
+                    if meta.upload_waited and not await recheck_dupes_after_wait(meta, config, tracker, ptp, "scheduled"):
+                        status = meta.tracker_status.setdefault(ptp.tracker, {})
+                        status["status_message"] = "Skipped due to new dupe found after waiting to upload"
+                        print_tracker_result(tracker, ptp, status, False)
+                        return
                     await check_tracker_image_hosts(meta, ptp)
                     ptp_url, ptp_data = await ptp.fill_upload_form(group_id, meta)
                     is_uploaded = False

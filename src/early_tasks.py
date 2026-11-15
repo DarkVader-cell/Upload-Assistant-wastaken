@@ -5,7 +5,7 @@ import os
 import time
 from collections.abc import Awaitable, Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeIs, cast
 
 from src.clients import Clients
 from src.console import CliProgressGate, logger, suppress_cli_progress
@@ -130,6 +130,10 @@ def needs_usenet_archive(meta: Meta) -> bool:
         for tracker in trackers
         if str(tracker).strip()
     )
+
+
+def _is_str_mapping(value: object) -> TypeIs[Mapping[str, Any]]:
+    return isinstance(value, Mapping)
 
 
 async def prepare_usenet_archive_early(meta: Meta, config: Mapping[str, Any]) -> None:
