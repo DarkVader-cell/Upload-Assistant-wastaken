@@ -2717,22 +2717,26 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
 
             # --- Execute with retry/fallback if libplacebo fails ---
             async def run_cmd(info_command: Any, timeout_sec: float) -> tuple[int | None, bytes, bytes]:
-                try:
-                    return await asyncio.wait_for(run_ffmpeg(info_command), timeout=timeout_sec)
-                except TimeoutError:
-                    return -1, b"", b"Timeout"
+                for attempt in range(2):
+                    try:
+                        return await asyncio.wait_for(run_ffmpeg(info_command), timeout=timeout_sec)
+                    except TimeoutError:
+                        logger.warning(f"Screenshot capture timed out after {timeout_sec:g}s (attempt {attempt + 1}/2).")
+                        if attempt == 0:
+                            await asyncio.sleep(2)
+                return -1, b"", b"Screenshot capture timed out after two attempts"
 
             info_cmd = build_cmd(use_libplacebo=True)
             if loglevel == "verbose" or (meta and meta.debug):
                 logger.info(f"[cyan]FFmpeg command: {' '.join(compile_ffmpeg_command(info_cmd))}[/cyan]")
 
-            returncode, stdout, stderr = await run_cmd(info_cmd, 140)  # a bit longer for first pass
+            returncode, stdout, stderr = await run_cmd(info_cmd, 600)  # Allow slow seeks on busy disks.
             if returncode != 0 and hdr_tonemap and meta.libplacebo:
                 # Retry once (shader compile might have delayed first invocation)
                 if loglevel == "verbose" or meta.debug:
                     logger.info("[yellow]First libplacebo attempt failed; retrying once...[/yellow]")
                 await asyncio.sleep(1.0)
-                returncode, stdout, stderr = await run_cmd(info_cmd, 160)
+                returncode, stdout, stderr = await run_cmd(info_cmd, 600)
 
             if returncode != 0 and hdr_tonemap and meta.libplacebo:
                 # Fallback: switch to zscale tonemap chain
@@ -2748,7 +2752,7 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
                 info_cmd = build_cmd(use_libplacebo=False)
                 if loglevel == "verbose" or meta.debug:
                     logger.info(f"[cyan]Fallback FFmpeg command: {' '.join(compile_ffmpeg_command(info_cmd))}[/cyan]")
-                returncode, stdout, stderr = await run_cmd(info_cmd, 140)
+                returncode, stdout, stderr = await run_cmd(info_cmd, 600)
                 cmd = info_cmd  # for logging below
 
             if returncode == 0 and Path(image_path).exists():
