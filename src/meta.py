@@ -703,6 +703,7 @@ class Meta:
     trump_plans: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
     trump_reason: str | None = None
     trumpable_id: int | str | None = None
+    trumping_trackers: list[str] = field(default_factory=list[str])
     were_trumping: bool = False
     tv_movie: bool = False
     tv_pack: bool = False

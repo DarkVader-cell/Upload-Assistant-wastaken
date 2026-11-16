@@ -23,5 +23,22 @@ def test_legacy_tracker_metadata_defaults_are_independent():
     assert first.season_pack_contains_episode is None
     assert first.screenshots_reported_torrent is None
     assert first.screenshots_trumping_torrent is None
+    assert first.trumping_trackers == []
+    first.trumping_trackers.append("AITHER")
+    assert second.trumping_trackers == []
     first.skip_upload_trackers.append("AITHER")
     assert second.skip_upload_trackers == []
+
+
+def test_all_direct_meta_reads_have_defaults():
+    """Late upload/report branches must not depend on an uninitialized field."""
+    meta = Meta()
+    missing = []
+    for path in [ROOT / "upload.py", *(ROOT / "src").rglob("*.py")]:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Attribute) and isinstance(node.ctx, ast.Load)
+                    and isinstance(node.value, ast.Name) and node.value.id == "meta"
+                    and not hasattr(meta, node.attr)):
+                missing.append(f"{path.relative_to(ROOT)}:{node.lineno}: meta.{node.attr}")
+    assert not missing, "Missing Meta defaults: " + ", ".join(missing)
