@@ -193,10 +193,11 @@ class TrackerStatusManager:
         async def process_single_tracker(tracker_name: str, shared_meta: Meta) -> tuple[str, dict[str, Any], str | None, Any]:
             """Check one isolated metadata copy and return its authoritative tracker result."""
             local_meta = copy.deepcopy(shared_meta)  # Ensure each task gets its own copy of meta
-            # ``skipping`` is legacy tracker-local state.  A failed tracker can
-            # leave it populated on the shared metadata, which must not prevent
-            # other trackers from running their duplicate checks.
+            # Keep tracker-local skip state and report plans isolated between checks.
             local_meta.skipping = None
+            async with meta_lock:
+                meta.trump_plans.pop(tracker_name, None)
+            local_meta.trump_plans.pop(tracker_name, None)
             local_tracker_status: dict[str, Any] = {"banned": False, "skipped": False, "dupe": False, "upload": False, "other": False, "skip_reason": ""}
             display_name = None
             tracker_class = None
@@ -342,6 +343,9 @@ class TrackerStatusManager:
                         if "initial_dupes" not in meta:
                             meta.initial_dupes = {}
                         meta.initial_dupes[tracker_name] = copy.deepcopy(dupes)
+                        title_releases = local_meta.get(f"{tracker_name}_title_releases")
+                        if isinstance(title_releases, list):
+                            meta.initial_title_releases[tracker_name] = copy.deepcopy(title_releases)
 
                     if tracker_name == "AMIGOSSHARE" and (meta.anon if meta.anon is not None else "false"):
                         logger.info(
@@ -389,6 +393,7 @@ class TrackerStatusManager:
                         trumpable_id = local_meta.get("trumpable_id")
                         cross_seed_key = f"{tracker_name}_cross_seed"
                         cross_seed_value = local_meta.get(cross_seed_key) if cross_seed_key in local_meta else None
+                        trump_plan = local_meta.trump_plans.get(tracker_name)
 
                         # Only shared-state writes go under the lock
                         async with meta_lock:
@@ -414,6 +419,9 @@ class TrackerStatusManager:
                                     meta[f"{tracker_name}_trump_reason"] = trump_reason
                                 if trumpable_id_after_dupe_check:
                                     meta[f"{tracker_name}_trumpable_id"] = trumpable_id_after_dupe_check
+                        if trump_plan and not is_dupe:
+                            async with meta_lock:
+                                meta.trump_plans[tracker_name] = trump_plan
 
                 # Determine name change for display during interactive prompt
                 if not local_tracker_status["banned"] and not local_tracker_status["skipped"] and not local_tracker_status["dupe"]:

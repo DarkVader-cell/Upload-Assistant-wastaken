@@ -281,7 +281,7 @@ config: dict[str, Any] = {
         "prowlarr_api_key": "",
         # --- IMAGE HOSTING ---
         # Order of image hosts, with the primary host first and backups after it.
-        # Available image hosts: catbox, dalexni, imgbb, imgbox, lensdump, lostimg, midnightscene, onlyimage, passtheimage, pixhost, ptscreens, seedpool_cdn, sharex, thrimg, utppm, zipline
+        # Available image hosts: catbox, dalexni, imgbb, imgbox, lensdump, lostimg, luminapix, midnightscene, onlyimage, passtheimage, pixhost, ptscreens, seedpool_cdn, sharex, thrimg, utppm, zipline
         "img_host_1": "",
         "img_host_2": "",
         "img_host_3": "",
@@ -307,6 +307,8 @@ config: dict[str, Any] = {
         "imgbb_api": "",
         "lensdump_api": "",
         "lostimg_api": "",
+        # LuminaPix (luminapix.eu) API key, the only image host Kufirc accepts.
+        "luminapix_api": "",
         "onlyimage_api": "",
         "passtheima_ge_api": "",
         "ptscreens_api": "",
@@ -578,6 +580,10 @@ config: dict[str, Any] = {
         "qbit_bandwidth_threshold": 0,
         # Number of seconds over which the upload speed is averaged.
         "qbit_bandwidth_time": 0,
+        # Minimum time between uploads when processing several releases in one run, such as a --queue.
+        # Use seconds or a value such as "90s", "30m" or "1h30m". 0 disables it. --upload-interval overrides it.
+        # The next release is prepared during the wait, and each tracker repeats its duplicate check before uploading.
+        "upload_interval": 0,
         # Number of retry attempts after network or server errors, such as HTTP 500 responses or timeouts.
         # Can be overridden per tracker by adding the same setting to its configuration.
         "max_retries": 3,
@@ -625,11 +631,11 @@ config: dict[str, Any] = {
         # Available trackers:
         #   1PTBA, AITHER, ALPHARATIO, AMIGOSSHARE, ANTHELION, ASIANCINEMA, AVISTAZ, BEYONDHD, BITHDTV, BITPORN, BJSHARE, BLUTOPIA,
         #   BRASILTRACKER, BROADCASTHENET, CAPYBARABR, CATHODERAYTUBE, CINEMATIK, CINEMAZ, CURUPIRA, CZTEAM, DARKPEERS, DESITORRENTS,
-        #   DIGITALCORE, DIRTYBYTES, DREADVAULT, DRUNKENSLUG, EMUWAREZ, EXOTICAZ, FILEIPLAY, FILELIST, FLOOD, FUNFILE, GREATPOSTERWALL, HAWKEUNO, HDBITS, HDSPACE, HDTORRENTS, HOMIEHELPDESK,
-        #   IMMORTALSEED, INFINITYHD, IPTORRENTS, ITATORRENTS, LAJIDUI, LASTDIGITALUNDERGROUND, LATTEAM, LEMONHD, LOCADORA, LONGPT, LST,
+        #   DIGITALCORE, DIRTYBYTES, DREADVAULT, DRUNKENSLUG, EMUWAREZ, EXOTICAZ, FILEIPLAY, FILELIST, FLOOD, FUNFILE, GREATPOSTERWALL, HAPPYFAPPY, HAWKEUNO, HDBITS, HDSPACE, HDTORRENTS, HOMIEHELPDESK,
+        #   IMMORTALSEED, INFINITYHD, IPTORRENTS, ITATORRENTS, KUFIRC, LAJIDUI, LASTDIGITALUNDERGROUND, LATTEAM, LEMONHD, LOCADORA, LONGPT, LST,
         #   LUMINARR, MAKINGOFF, MIDNIGHTSCENE, MTEAM, NEBULANCE, NORDICQUALITY, NZBGEEK, NZBNEST, OLDTOONSWORLD, ONLYENCODES, ORPHEUS, PASSTHEPOPCORN,
         #   PEERGARDEN, POLISHTORRENT, PORTUGAS, PRIVATEHD, PTCAFE, PTERCLUB, PTFANS, PTGTK, PTSKIT, PTZONE, QINGWA, RACING4EVERYONE, RAILGUNPT,
-        #   RASTASTUGAN, REELFLIX, RETROFLIX, RETROMOVIESCLUB, ROCKETHD, SAMARITANO, SEEDPOOL, SHAREISLAND, SKIPTHECOMMERCIALS, SPEEDAPP,
+        #   RASTASTUGAN, REELFLIX, RETROFLIX, RETROMOVIESCLUB, ROCKETHD, SAMARITANO, SEEDPOOL, SHAREISLAND, SIMURG, SKIPTHECOMMERCIALS, SPEEDAPP,
         #   SUIO, SWARMAZON, THELEACHZONE, THEOLDSCHOOL, TORRENTEROS, TORRENTHAVEN, TORRENTHR, TORRENTLEECH, TOTHEGLORY, TVCHAOSUK, ULCX, UTOPIA,
         #   VULTU, XINGYUNGEPT, YUSCENE, ZENITH, ZMPT
         # This list is validated against the tracker blocks below by the test suite.
@@ -838,6 +844,8 @@ config: dict[str, Any] = {
             "link_dir_name": "",
             "use_for_search": False,
             "api_key": "",
+            # Optional. When set, replaces the announce URL in the torrent downloaded from BTN
+            # after upload (e.g. https://landof.tv/<passkey>/announce). Leave empty to keep BTN's.
             "announce_url": "",
             # Optional override for BTN's JSON-RPC endpoint.
             "api_url": "https://api.broadcasthe.net/",
@@ -1109,6 +1117,15 @@ config: dict[str, Any] = {
             "exclusive": False,
             # The configurations below override the DEFAULT configuration
         },
+        "HAPPYFAPPY": {
+            "cli_alias": "HF",
+            # Cookies required (export from https://www.happyfappy.net/ to data/cookies/HAPPYFAPPY.txt).
+            # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
+            # Your personal announce URL is shown at https://www.happyfappy.net/upload.php
+            # Images must be on pixhost, imgbox or imagebam; set one of them as an img_host_N.
+            "announce_url": "",
+            "anon": True,
+        },
         "HAWKEUNO": {
             "anon": False,
             "cli_alias": "HUNO",
@@ -1253,6 +1270,15 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
+        },
+        "KUFIRC": {
+            "cli_alias": "KUF",
+            # Cookies required (export from https://kufirc.com/ to data/cookies/KUFIRC.txt).
+            # See: https://github.com/wastaken7/Upload-Assistant/blob/development/docs/example-config.md#how-to-export-cookies
+            # Your personal announce URL is shown at https://kufirc.com/upload.php
+            # Kufirc only accepts images on luminapix.eu: set "luminapix" as an img_host_N and fill in "luminapix_api".
+            "announce_url": "",
+            "anon": True,
         },
         "LAJIDUI": {
             "cli_alias": "LAJIDUI",
@@ -1877,6 +1903,15 @@ config: dict[str, Any] = {
             "sticky": False,
             # The configurations below override the DEFAULT configuration
         },
+        "SIMURG": {
+            "cli_alias": "SMG",
+            # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
+            "link_dir_name": "",
+            # Simurg API token: Settings > API > API Keys. Do not commit a real token.
+            "api_key": "",
+            # Obtain from https://simurg.world/upload.php
+            "announce_url": "",
+        },
         "SKIPTHECOMMERCIALS": {
             "anon": False,
             "cli_alias": "STC",
@@ -2170,6 +2205,7 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
+            # Zenith ignores extra per-episode and per-disc pack screenshots.
         },
         "ZMPT": {
             "cli_alias": "ZMPT",

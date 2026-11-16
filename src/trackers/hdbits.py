@@ -799,7 +799,7 @@ class HDBits:
                     for filename in sorted_files:
                         file_path = Path(comparison_path) / filename
                         if Path(file_path).exists():
-                            group_images[group_idx].append(file_path)
+                            group_images[group_idx].append(str(file_path))
 
                     max_images_per_group = max(max_images_per_group, len(group_images[group_idx]))
             else:
@@ -812,7 +812,7 @@ class HDBits:
                     if match:
                         first, second, _ = match.groups()
                         file_path = Path(comparison_path) / file_name
-                        unsorted_groups.setdefault(second, []).append((int(first), file_path))
+                        unsorted_groups.setdefault(second, []).append((int(first), str(file_path)))
 
                 for group_idx, entries in unsorted_groups.items():
                     sorted_entries = sorted(entries, key=lambda x: x[0])
@@ -1003,7 +1003,7 @@ class HDBits:
     async def get_info_from_torrent_id(self, hdb_id: int) -> tuple[int | None, int | None, str | None, str | None, str | None]:
         hdb_imdb = hdb_tvdb = hdb_name = hdb_torrenthash = hdb_description = None
         url = f"{self.base_url}/api/torrents"
-        data = {"username": self.username, "passkey": self.passkey, "id": hdb_id}
+        data: dict[str, Any] = {"username": self.username, "passkey": self.passkey, "id": hdb_id}
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1057,7 +1057,7 @@ class HDBits:
                     bd_summary = meta.basename_no_ext
 
                 if bd_summary:
-                    data = {
+                    data: dict[str, Any] = {
                         "username": self.username,
                         "passkey": self.passkey,
                         "limit": 100,
@@ -1073,7 +1073,7 @@ class HDBits:
                 return hdb_imdb, hdb_tvdb, hdb_name, hdb_torrenthash, hdb_description, hdb_id
 
         else:  # Handling non-disc case
-            data = {"username": self.username, "passkey": self.passkey, "limit": 100, "file_in_torrent": Path(search_term).name}
+            data: dict[str, Any] = {"username": self.username, "passkey": self.passkey, "limit": 100, "file_in_torrent": Path(search_term).name}
             logger.info(f"{self.tracker}: [green]Searching {self.tracker} for file: [bold yellow]{escape(str(Path(search_term).name))}[/bold yellow]")
             # console.print(f"[yellow]Using this data: {data}")
 

@@ -630,7 +630,8 @@ class HawkeUno(UNIT3D):
                 error_json = e.response.json()
                 details = error_json.get("data") or ""
                 if isinstance(details, list):
-                    details = "; ".join(str(detail) for detail in cast(list[Any], details))
+                    details_list: list[object] = list(details)
+                    details = "; ".join(str(detail) for detail in details_list)
                 detail_text = f"{error_json.get('message') or ''} {details}".strip()
                 if detail_text:
                     msg = f"HTTP {e.response.status_code} - {detail_text}"

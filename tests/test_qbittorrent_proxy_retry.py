@@ -147,6 +147,18 @@ async def test_native_qui_duplicate_check_uses_instance_api(monkeypatch):
             {"headers": {"X-API-Key": "secret"}, "json": {"hashes": ["abc123"]}},
         )
     ]  # noqa: S101
+@pytest.mark.asyncio
+async def test_qui_duplicate_check_ignores_other_hashes_and_handles_errors(monkeypatch):
+    config = {"qui_api_url": "https://qui.example", "qui_api_key": "secret", "qui_instance_id": 2, "qui_native_duplicate_check": True}
+    session = FakeQuiSession(httpx.Response(200, json={"duplicates": [{"hash": "different"}]}))
+    monkeypatch.setattr("src.torrent_clients.qbittorrent.httpx.AsyncClient", lambda **_kwargs: session)
+    client = QbittorrentClientMixin()
+    assert await client._qui_has_duplicate(config, "abc123") is False
+    session.response = httpx.Response(503)
+    assert await client._qui_has_duplicate(config, "abc123") is None
+    assert not await client._qui_instance_health_check({"qui_health_check": True})
+
+
 class FakeDirectClient:
     def __init__(self, add_side_effects=None, info_responses=None):
         self.add_side_effects = list(add_side_effects or [])

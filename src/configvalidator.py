@@ -6,9 +6,10 @@ Validates the user's config.py against expected structure and types.
 
 import math
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeIs, cast
 
 from src.app_paths import STATE_DIR
+from src.upload_schedule import parse_duration
 
 # Required top-level sections
 REQUIRED_SECTIONS = ["DEFAULT", "TRACKERS"]
@@ -160,6 +161,7 @@ DEFAULT_KEY_TYPES: dict[str, tuple[type, ...]] = {
     "qbit_bandwidth_control_after_usenet": (bool,),
     "qbit_bandwidth_threshold": (str, int),
     "qbit_bandwidth_time": (str, int),
+    "upload_interval": (str, int),
     "music_enrichment_enabled": (bool,),
     "music_discogs_token": (str,),
     "stats_enabled": (bool,),
@@ -188,6 +190,7 @@ VALID_IMAGE_HOSTS = [
     "dalexni",
     "zipline",
     "midnightscene",
+    "luminapix",
     "passtheimage",
     "seedpool_cdn",
     "sharex",
@@ -205,6 +208,7 @@ IMAGE_HOST_API_KEYS: dict[str, str] = {
     "ptscreens": "ptscreens_api",
     "onlyimage": "onlyimage_api",
     "dalexni": "dalexni_api",
+    "luminapix": "luminapix_api",
     "passtheimage": "passtheima_ge_api",
     "seedpool_cdn": "seedpool_cdn_api",
     "sharex": "sharex_api_key",
@@ -299,6 +303,14 @@ class ConfigValidationWarning:
         return f"{location} {self.message}" if location else self.message
 
 
+def _is_obj_seq(value: object) -> TypeIs[list[object] | tuple[object, ...]]:
+    return isinstance(value, (list, tuple))
+
+
+def _is_obj_list(value: object) -> TypeIs[list[object]]:
+    return isinstance(value, list)
+
+
 def _as_dict(value: Any) -> dict[str, Any]:
     """Return value as a typed dictionary, or an empty dictionary."""
     return cast(dict[str, Any], value) if isinstance(value, dict) else {}
@@ -309,7 +321,7 @@ def _inactive_hook_files(default: dict[str, Any]) -> list[str]:
     configured: set[str] = set()
     for key in ("post_upload_hooks", "post_upload_inprocess_hooks"):
         names = default.get(key, [])
-        if isinstance(names, (list, tuple)):
+        if _is_obj_seq(names):
             configured.update(Path(name.strip()).as_posix() for name in names if isinstance(name, str) and name.strip())
     try:
         return sorted(path.relative_to(HOOKS_DIR).as_posix() for path in HOOKS_DIR.rglob("*.py") if path.relative_to(HOOKS_DIR).as_posix() not in configured)
@@ -377,7 +389,7 @@ def validate_config(config: Any, active_trackers: list[str] | None = None, activ
         default_trackers_val = trackers_section.get("default_trackers", "")
         if isinstance(default_trackers_val, str) and default_trackers_val.strip():
             active_trackers = [t.strip().upper() for t in default_trackers_val.split(",") if t.strip()]
-        elif isinstance(default_trackers_val, list):
+        elif _is_obj_list(default_trackers_val):
             active_trackers = [t.strip().upper() for t in default_trackers_val if isinstance(t, str) and t.strip()]
         else:
             active_trackers = []
@@ -433,7 +445,7 @@ def validate_config(config: Any, active_trackers: list[str] | None = None, activ
                 # String is valid - gets converted to single-item list at runtime
                 if injecting_list.strip():
                     injecting_clients = [injecting_list.strip()]
-            elif isinstance(injecting_list, list):
+            elif _is_obj_list(injecting_list):
                 # List is valid - validate each item
                 for i, item in enumerate(injecting_list):
                     if item and isinstance(item, str) and item.strip():
@@ -457,7 +469,7 @@ def validate_config(config: Any, active_trackers: list[str] | None = None, activ
         searching_list = default_section.get("searching_client_list")
         searching_clients: list[str] = []
         if searching_list is not None:
-            if isinstance(searching_list, list):
+            if _is_obj_list(searching_list):
                 for i, item in enumerate(searching_list):
                     if item and isinstance(item, str) and item.strip():
                         searching_clients.append(item.strip())
@@ -584,6 +596,12 @@ def _validate_default_section(default: dict[str, Any]) -> tuple[list[str], list[
                     f"Invalid value '{upload_order}' for upload_order. Must be one of: 'concurrent', 'usenet', 'tracker'", key="upload_order", section="DEFAULT"
                 )
             )
+
+    if default.get("upload_interval") is not None:
+        try:
+            parse_duration(default["upload_interval"])
+        except ValueError as error:
+            errors.append(f"DEFAULT['upload_interval'] is invalid: {error}")
 
     retention = default.get("history_retention_days")
     if retention is not None:
@@ -790,7 +808,7 @@ def _validate_trackers_section(trackers: dict[str, Any], active_trackers: list[s
         for field in list_fields:
             if field in tracker_config_dict:
                 value = tracker_config_dict[field]
-                if not isinstance(value, list) or any(not isinstance(tag, str) or not tag.strip() for tag in value):
+                if not _is_obj_list(value) or any(not isinstance(tag, str) or not tag.strip() for tag in value):
                     warnings.append(
                         ConfigValidationWarning(
                             f"'{field}' must be a list of non-empty strings, got {type(value).__name__}: {value!r}",
@@ -845,7 +863,7 @@ def _validate_torrent_clients_section(clients: dict[str, Any]) -> tuple[list[str
         # Check path mappings have matching lengths
         local_paths = client_config_dict.get("local_path", [])
         remote_paths = client_config_dict.get("remote_path", [])
-        if isinstance(local_paths, list) and isinstance(remote_paths, list):
+        if _is_obj_list(local_paths) and _is_obj_list(remote_paths):
             local_paths_list = local_paths
             remote_paths_list = remote_paths
             if len(local_paths_list) != len(remote_paths_list) and local_paths_list and remote_paths_list:

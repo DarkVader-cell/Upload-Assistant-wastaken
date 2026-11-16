@@ -102,8 +102,8 @@ class LstSlotRules(_LstSlotLayout):
     RULES_DATE = date(2026, 10, 19)
     CUTS = frozenset({"directors", "extended", "uncut", "unrated", "final_cut"})
 
-    def decision(self, verdict, reason, conflicts=(), notes=(), *, slot="", why=""):
-        result = super().decision(verdict, reason, conflicts, notes, slot=slot, why=why)
+    def decision(self, verdict, reason, conflicts=(), notes=(), *, slot="", why="", trump=False):
+        result = super().decision(verdict, reason, conflicts, notes, slot=slot, why=why, trump=trump)
         result.requires_evidence = verdict is Verdict.REVIEW
         return result
 

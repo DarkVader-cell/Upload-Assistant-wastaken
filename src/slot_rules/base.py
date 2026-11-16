@@ -216,6 +216,7 @@ class SlotRules:
         *,
         slot: str = "",
         why: str = "",
+        trump: bool = False,
     ) -> SlotDecision:
         details = list(notes)
         candidate = getattr(self, "_candidate", None)
@@ -233,6 +234,7 @@ class SlotRules:
             comparisons=describe_releases(conflicts, why or reason, role="competing"),
             notes=details,
             rules_url=page.url if page else "",
+            trump=trump,
         )
 
     def evaluate(self, upload: ReleaseProfile, existing: Sequence[ReleaseProfile]) -> SlotDecision | None:
@@ -384,6 +386,7 @@ class SlotRules:
             notes,
             slot=label,
             why=reasons,
+            trump=True,
         )
         decision.trump_recommended = True
         return uncertain_allow(pair_reasons(decision, [(profile, reason) for profile, _verdict, reason in results]))

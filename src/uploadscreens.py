@@ -8,7 +8,7 @@ import math
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeIs, cast
 from urllib.parse import urlparse
 
 import aiofiles
@@ -26,6 +26,19 @@ from src.tracker_images import deduplicate_images, image_tags
 from src.webui_progress import complete_progress, publish_progress
 
 type ImageDict = dict[str, Any]
+
+
+def _is_str_dict(val: object) -> TypeIs[dict[str, Any]]:
+    return isinstance(val, dict)
+
+
+def _is_any_list(val: object) -> TypeIs[list[Any]]:
+    return isinstance(val, list)
+
+
+def _is_str_set(val: object) -> TypeIs[set[str]]:
+    return isinstance(val, set)
+
 
 # Uploads can run concurrently (tracker rehosts, menus, spectrograms), so each
 # top-level call gets its own Web UI progress card.
@@ -74,7 +87,7 @@ class UploadScreensManager:
         img_host_num: int,
         i: int,
         total_screens: int,
-        custom_img_list: list[str],
+        custom_img_list: Sequence[str | Path],
         return_dict: dict[str, Any],
         retry_mode: bool = False,
         max_retries: int = 3,
@@ -187,10 +200,44 @@ class UploadScreensManager:
 
 def _image_host_totals(return_dict: dict[str, Any]) -> dict[str, tuple[int, int, int]]:
     """Snapshot the per-host (attempts, successes, bytes) image upload counters."""
-    totals = return_dict.get("_stats_image_upload_hosts")
-    if not isinstance(totals, dict):
+    totals: object = return_dict.get("_stats_image_upload_hosts")
+    if not _is_str_dict(totals):
         return {}
-    return {str(host): (int(values[0]), int(values[1]), int(values[2])) for host, values in totals.items() if isinstance(values, list) and len(values) == 3}
+    return {str(host): (int(values[0]), int(values[1]), int(values[2])) for host, values in totals.items() if _is_any_list(values) and len(values) == 3}
+
+
+async def upload_luminapix(image: str, config: dict[str, Any], request_timeout: float) -> dict[str, Any]:
+    """Upload one image to LuminaPix, the Chevereto 4 host Kufirc requires (https://luminapix.eu/api-v1)."""
+    api_key = str(config.get("DEFAULT", {}).get("luminapix_api") or "").strip()
+    if not api_key:
+        logger.info("[red]LuminaPix API key not found in config.")
+        return {"status": "failed", "reason": "Missing LuminaPix API key"}
+    try:
+        async with httpx.AsyncClient() as client, aiofiles.open(image, "rb") as img_file:
+            files = {"source": (Path(image).name, await img_file.read())}
+            response = await client.post("https://luminapix.eu/api/1/upload", headers={"X-API-Key": api_key}, data={"format": "json"}, files=files, timeout=request_timeout)
+    except httpx.TimeoutException:
+        logger.info("[red]Request to LuminaPix timed out")
+        return {"status": "failed", "reason": "Request timed out"}
+    except httpx.RequestError as e:
+        logger.info(f"[red]Request to LuminaPix failed with error: {e}")
+        return {"status": "failed", "reason": str(e)}
+    try:
+        data: object = response.json()
+    except ValueError:
+        return {"status": "failed", "reason": f"Invalid JSON response from LuminaPix (HTTP {response.status_code})"}
+
+    image_data: object = data.get("image") if _is_str_dict(data) else None
+    if response.status_code != 200 or not _is_str_dict(image_data):
+        error: object = data.get("error") if _is_str_dict(data) else None
+        message = error.get("message") if _is_str_dict(error) else ""
+        return {"status": "failed", "reason": f"LuminaPix upload failed: HTTP {response.status_code} {message or response.text[:200]}"}
+    url = image_data.get("url")
+    viewer = image_data.get("url_viewer")
+    if not isinstance(url, str) or not url:
+        return {"status": "failed", "reason": "LuminaPix response was missing the image URL"}
+    web_url = viewer if isinstance(viewer, str) and viewer else url
+    return {"status": "success", "img_url": url, "raw_url": url, "web_url": web_url, "local_file_path": image}
 
 
 async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
@@ -576,8 +623,8 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
                     response.raise_for_status()
                     response_data = response.json()
 
-                    img_data = response_data.get("image") if isinstance(response_data, dict) else None
-                    image_url = img_data.get("url") if isinstance(img_data, dict) else None
+                    img_data: object = response_data.get("image") if _is_str_dict(response_data) else None
+                    image_url = img_data.get("url") if _is_str_dict(img_data) else None
                     if not isinstance(image_url, str) or not image_url.strip():
                         return {"status": "failed", "reason": f"THR img response was missing a valid image URL for {Path(image).name}"}
                     img_url = image_url.strip()
@@ -602,6 +649,9 @@ async def upload_image_task(args: Sequence[Any]) -> dict[str, Any]:
                 if response is not None:
                     logger.info(response.text)
                 return {"status": "failed", "reason": f"Failed to parse THR img response for {Path(image).name}"}
+
+        elif img_host == "luminapix":
+            return await upload_luminapix(image, config, timeout)
 
         elif img_host == "passtheimage":
             url = "https://passtheima.ge/api/1/upload"
@@ -906,7 +956,7 @@ async def _upload_screens(
     img_host_num: int,
     i: int,
     total_screens: int,
-    custom_img_list: list[str],
+    custom_img_list: Sequence[str | Path],
     return_dict: dict[str, Any],
     retry_mode: bool = False,
     max_retries: int = 3,
@@ -1043,8 +1093,8 @@ async def _upload_screens(
 
         hosted_files = {source_file for img in existing_images if (source_file := img.get("source_file"))}
         image_glob = [file for file in image_glob if Path(file).name not in hosted_files]
-        uploaded_image_files = return_dict.get("_uploaded_image_files")
-        if isinstance(uploaded_image_files, set):
+        uploaded_image_files: object = return_dict.get("_uploaded_image_files")
+        if _is_str_set(uploaded_image_files):
             image_glob = [file for file in image_glob if str(Path(file).resolve()) not in uploaded_image_files]
 
     # Determine images needed
@@ -1161,9 +1211,9 @@ async def _upload_screens(
                             # Not every host branch reports its source, and reruns need it.
                             result.setdefault("local_file_path", str(task_args[0]))
                             if not using_custom_img_list:
-                                uploaded_image_files = return_dict.setdefault("_uploaded_image_files", set())
-                                if isinstance(uploaded_image_files, set):
-                                    uploaded_image_files.add(str(Path(str(task_args[0])).resolve()))
+                                uploaded_image_files_set: object = return_dict.setdefault("_uploaded_image_files", set())
+                                if _is_str_set(uploaded_image_files_set):
+                                    uploaded_image_files_set.add(str(Path(str(task_args[0])).resolve()))
                             completed_uploads += 1
                             report_upload_progress()
                             return (index, result)
@@ -1255,9 +1305,9 @@ async def _upload_screens(
                 uploaded_bytes += Path(upload_tasks[index][1]).stat().st_size
         return_dict["_stats_image_upload_bytes"] = int(return_dict.get("_stats_image_upload_bytes", 0) or 0) + uploaded_bytes
         # Per-host totals, so a fallback chain is attributed to each host it tried.
-        host_totals = return_dict.setdefault("_stats_image_upload_hosts", {})
-        if isinstance(host_totals, dict):
-            totals = host_totals.setdefault(img_host, [0, 0, 0])
+        host_totals: object = return_dict.setdefault("_stats_image_upload_hosts", {})
+        if _is_str_dict(host_totals):
+            totals = cast(list[int], host_totals.setdefault(img_host, [0, 0, 0]))
             totals[0] += len(upload_tasks)
             totals[1] += len(successfully_uploaded)
             totals[2] += uploaded_bytes
@@ -1295,8 +1345,8 @@ async def _upload_screens(
 
                 meta.imghost = next_host
                 logger.info(f"[cyan]Switching to the next image host: {meta.imghost}[/cyan]")
-                host_fallbacks = return_dict.setdefault("_stats_image_host_fallbacks", [])
-                if isinstance(host_fallbacks, list):
+                host_fallbacks: object = return_dict.setdefault("_stats_image_host_fallbacks", [])
+                if _is_any_list(host_fallbacks):
                     host_fallbacks.append((img_host, next_host))
 
                 gc.collect()
@@ -1367,7 +1417,7 @@ async def _upload_screens(
 
 
 async def imgbox_upload(
-    chdir: str,
+    chdir: str | Path,
     image_glob: list[str],
     return_dict: dict[str, Any],
 ) -> list[dict[str, str]]:

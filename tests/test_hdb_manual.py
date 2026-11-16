@@ -51,7 +51,8 @@ def forbidden_hdb(monkeypatch):
     monkeypatch.setattr("src.cookie_auth.CookieValidator.load_session_cookies", forbidden)
     monkeypatch.setattr(Clients, "add_to_client", forbidden)
     monkeypatch.setattr(Clients, "init_qbittorrent_client", forbidden)
-    monkeypatch.setattr(Clients, "_qui_instance_health_check", forbidden)
+    # Some client versions have no standalone QUI health hook; block it if present.
+    monkeypatch.setattr(Clients, "_qui_instance_health_check", forbidden, raising=False)
     monkeypatch.setattr("httpx.AsyncClient", Mock(side_effect=AssertionError("network forbidden")))
     return forbidden
 

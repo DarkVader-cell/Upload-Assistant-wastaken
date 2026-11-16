@@ -1,4 +1,4 @@
-FROM python:3.15 AS python-deps
+FROM python:3.15 AS builder
 
 # Build-only dependencies are deliberately isolated from the final image.
 # A few Python packages compile native/Rust extensions on architectures where
@@ -13,10 +13,8 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # ── Python environment ──────────────────────────────────────────────
-# Ensure Python output is sent straight to the container logs (no buffering)
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
-
 RUN python -m venv /venv
 ENV PATH="/venv/bin:$PATH"
 
@@ -50,7 +48,7 @@ RUN apt-get update && \
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PATH="/venv/bin:$PATH"
-COPY --from=python-deps /venv /venv
+COPY --from=builder /venv /venv
 
 # ── Application setup ────────────────────────────────────────────────
 WORKDIR /Upload-Assistant
@@ -71,20 +69,18 @@ RUN rm -rf /Upload-Assistant/defaults \
     && find /Upload-Assistant/defaults/ -type d -name "__pycache__" -exec rm -rf {} + \
     && chmod -R a+rX /Upload-Assistant/data /Upload-Assistant/defaults
 
-# Download only the required mkbrr binary (requires full repo for src imports)
-RUN python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()"
-
-# Download bdinfo binary for the container architecture using the docker helper
-RUN python3 bin/get_bdinfo_docker.py
-
-# Ensure downloaded binaries are executable
-RUN find bin/mkbrr -name "mkbrr" -print0 | xargs -0 chmod +x && \
-    find bin/bdinfo -name "bdinfo" -print0 | xargs -0 chmod +x
-
-# ── Permissions ──────────────────────────────────────────────────────
-# Give UID 1000 ownership (runtime binary updates need chmod) and let
-# any other UID (e.g. Unraid 99:100) read/execute.
-RUN mkdir -p /Upload-Assistant/bin/MI \
+# ── Bundled binaries and permissions ─────────────────────────────────
+# Download the pinned MediaInfo CLI, the mkbrr binary (requires the full repo
+# for src imports) and bdinfo for the container architecture, then fix their
+# permissions in the same layer so each binary is stored in the image once.
+# UID 1000 owns them (runtime binary updates need chmod) and any other UID
+# (e.g. Unraid 99:100) can read/execute.
+RUN python3 -c "import asyncio; from bin.get_mediainfo import MediaInfoBinaryManager; asyncio.run(MediaInfoBinaryManager.ensure_mediainfo_binary('/Upload-Assistant'))" \
+    && python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()" \
+    && python3 bin/get_bdinfo_docker.py \
+    && find bin/mkbrr -name "mkbrr" -print0 | xargs -0 chmod +x \
+    && find bin/bdinfo -name "bdinfo" -print0 | xargs -0 chmod +x \
+    && mkdir -p /Upload-Assistant/bin/MI \
     && chown -R 1000:1000 /Upload-Assistant/bin/mkbrr \
     && chown -R 1000:1000 /Upload-Assistant/bin/MI \
     && chown -R 1000:1000 /Upload-Assistant/bin/bdinfo \

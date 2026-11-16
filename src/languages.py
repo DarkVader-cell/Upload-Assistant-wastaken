@@ -295,7 +295,7 @@ class LanguagesManager:
             # Older failed detections could persist a checked marker with no
             # audio and no skip decision. Re-read MediaInfo instead of trusting it.
             meta.language_checked = False
-        status_dict = meta.tracker_status.setdefault(tracker, {}) if tracker else {}
+        status_dict: dict[str, Any] = meta.tracker_status.setdefault(tracker, {}) if tracker else {}
         if "unattended_audio_skip" not in meta:
             meta.unattended_audio_skip = False
         if "unattended_subtitle_skip" not in meta:

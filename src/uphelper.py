@@ -6,13 +6,13 @@ import sys
 from collections.abc import Callable, Mapping
 from difflib import SequenceMatcher
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeIs, cast
 
 import aiofiles
 import cli_ui
 from rich.markup import escape
 
-from src import confirm_options, payload_preview, upload_history, webui_events
+from src import confirm_options, payload_preview, trump_reports, upload_history, webui_events
 from src.audible import resolve_audible_url
 from src.bdinfo_comparator import compare_bdinfo, has_bdinfo_content
 from src.cleanup import cleanup_manager
@@ -24,8 +24,17 @@ from src.meta import Meta
 from src.prompt_sound import play_prompt_sound
 from src.slot_rules.models import SlotDecision, Verdict
 from src.trackersetup import tracker_class_map
+from src.trump_reports import ReviewOutcome, TrumpCandidate
 
 DupeEntry = dict[str, Any]
+
+
+def _is_str_dict(val: object) -> TypeIs[dict[str, object]]:
+    return isinstance(val, dict)
+
+
+def _is_obj_list(val: object) -> TypeIs[list[object]]:
+    return isinstance(val, list)
 
 
 def _missing_with_hint(missing_warning: str, hint: str) -> str:
@@ -44,22 +53,27 @@ def _music_confirmation_lines(meta: Meta, missing_warning: str) -> list[tuple[st
     should expose the important parts of that analysis without printing local
     paths, complete tags, or an unbounded list of warnings.
     """
-    release = meta.music_release if isinstance(meta.music_release, dict) else {}
-    fields = release.get("fields", {}) if isinstance(release.get("fields"), dict) else {}
-    tracks = release.get("tracks", []) if isinstance(release.get("tracks"), list) else []
-    auxiliary = release.get("auxiliary", {}) if isinstance(release.get("auxiliary"), dict) else {}
-    warnings = release.get("warnings", []) if isinstance(release.get("warnings"), list) else []
-    conflicts = release.get("conflicts", {}) if isinstance(release.get("conflicts"), dict) else {}
+    release = meta.music_release if _is_str_dict(meta.music_release) else {}
+    raw_fields = release.get("fields")
+    fields: dict[str, object] = raw_fields if _is_str_dict(raw_fields) else {}
+    raw_tracks = release.get("tracks")
+    tracks: list[object] = raw_tracks if _is_obj_list(raw_tracks) else []
+    raw_aux = release.get("auxiliary")
+    auxiliary: dict[str, object] = raw_aux if _is_str_dict(raw_aux) else {}
+    raw_warn = release.get("warnings")
+    warnings: list[object] = raw_warn if _is_obj_list(raw_warn) else []
+    raw_conflicts = release.get("conflicts")
+    conflicts: dict[str, object] = raw_conflicts if _is_str_dict(raw_conflicts) else {}
 
-    def value(name: str, fallback: Any = "") -> Any:
-        entry = fields.get(name, {})
-        if isinstance(entry, dict) and entry.get("value") not in (None, "", [], {}):
+    def value(name: str, fallback: object = "") -> object:
+        entry = fields.get(name) if _is_str_dict(fields) else None
+        if _is_str_dict(entry) and entry.get("value") not in (None, "", [], {}):
             return entry["value"]
         return fallback
 
     def source(name: str) -> str:
-        entry = fields.get(name, {})
-        source_name = entry.get("source", "") if isinstance(entry, dict) else ""
+        entry = fields.get(name) if _is_str_dict(fields) else None
+        source_name = entry.get("source", "") if _is_str_dict(entry) else ""
         return {
             "file_tag": "tags",
             "auxiliary": "auxiliary files",
@@ -70,18 +84,24 @@ def _music_confirmation_lines(meta: Meta, missing_warning: str) -> list[tuple[st
             "inferred": "inferred",
         }.get(str(source_name), "")
 
-    def display(name: str, fallback: Any = "") -> str:
+    def display(name: str, fallback: object = "") -> str:
         item = value(name, fallback)
         if item is None:
             item = ""
-        if isinstance(item, list):
+        if _is_obj_list(item):
             item = " & ".join(str(part) for part in item)
         text = str(item).strip()
         provenance = source(name)
         return escape(text) + (f" [dim]({provenance})[/dim]" if text and provenance else "")
 
-    def technical_values(key: str, formatter: Callable[[Any], str]) -> str:
-        values = sorted({track.get(key) for track in tracks if isinstance(track, dict) and track.get(key) not in (None, "")})
+    def technical_values(key: str, formatter: Callable[[object], str]) -> str:
+        unique_vals: set[str] = set()
+        for track in tracks:
+            if _is_str_dict(track):
+                val = track.get(key)
+                if val not in (None, ""):
+                    unique_vals.add(str(val))
+        values = sorted(unique_vals)
         if not values:
             return ""
         rendered = [formatter(item) for item in values]
@@ -96,9 +116,9 @@ def _music_confirmation_lines(meta: Meta, missing_warning: str) -> list[tuple[st
     formats = technical_values("format", str)
     codecs = technical_values("codec", str)
     bit_depth = technical_values("bit_depth", lambda item: f"{item}-bit")
-    sample_rate = technical_values("sample_rate", lambda item: f"{int(item) / 1000:g} kHz")
-    channels = technical_values("channels", lambda item: {1: "Mono", 2: "Stereo"}.get(int(item), f"{item} channels"))
-    bitrate = technical_values("bitrate", lambda item: f"{round(int(item) / 1000)} kbps")
+    sample_rate = technical_values("sample_rate", lambda item: f"{int(str(item)) / 1000:g} kHz")
+    channels = technical_values("channels", lambda item: {1: "Mono", 2: "Stereo"}.get(int(str(item)), f"{item} channels"))
+    bitrate = technical_values("bitrate", lambda item: f"{round(int(str(item)) / 1000)} kbps")
     # Container and codec are commonly both "FLAC"; repeating them adds no
     # review value, while different values (for example M4A / AAC) stay clear.
     if formats.casefold() == codecs.casefold():
@@ -142,20 +162,21 @@ def _music_confirmation_lines(meta: Meta, missing_warning: str) -> list[tuple[st
         artwork = "not found (optional for Orpheus)"
     lines.append(("Artwork", artwork))
 
-    sidecars = []
+    sidecars: list[str] = []
     for label, key in (("log", "logs"), ("cue", "cues"), ("NFO", "nfos"), ("playlist", "playlists"), ("SFV", "sfvs"), ("artwork", "artwork"), ("scan", "scans")):
-        count = len(auxiliary.get(key, [])) if isinstance(auxiliary.get(key, []), list) else 0
+        aux_val = auxiliary.get(key) if _is_str_dict(auxiliary) else None
+        count = len(aux_val) if isinstance(aux_val, list) else 0
         if count:
             sidecars.append(f"{count} {label}{'' if count == 1 else 's'}")
     if sidecars:
         lines.append(("Auxiliary", ", ".join(sidecars)))
 
     if conflicts:
-        names = ", ".join(str(name).replace("_", " ") for name in sorted(conflicts)[:5])
+        names = ", ".join(str(name).replace("_", " ") for name in sorted(conflicts.keys())[:5])
         extra = f" (+{len(conflicts) - 5})" if len(conflicts) > 5 else ""
         lines.append(("Metadata conflicts", f"[yellow]{escape(names)}{extra}[/yellow]"))
     if warnings:
-        preview = "; ".join(str(item) for item in warnings[:3])
+        preview = "; ".join(str(item_obj) for item_obj in warnings[:3])
         extra = f" (+{len(warnings) - 3} more)" if len(warnings) > 3 else ""
         lines.append(("Music validation", f"[yellow]{escape(preview)}{extra}[/yellow]"))
     return lines
@@ -344,6 +365,11 @@ class UploadHelper:
             needs_review = bool(dupes) and not season_pack_skip and (meta.dupe is False or (meta.filename_match and meta.file_count_match))
             if not dupes and slot_decision is not None:
                 needs_review = meta.dupe is False and (slot_decision.verdict is Verdict.BLOCK or (slot_decision.verdict is Verdict.REVIEW and bool(slot_decision.conflicts)))
+                if not needs_review and meta.dupe is False and trump_reports.slot_trumps(slot_decision):
+                    # Slot rules found a release the upload replaces: the trump question is a review.
+                    if prepared_tracker is None:
+                        prepared_tracker = cast(Callable[..., Any], self.tracker_class_map[tracker_name])(config=self.config)
+                    needs_review = trump_reports.support(prepared_tracker) is not None and bool(trump_reports.find_candidates(meta, tracker_name, [], slot_decision))
             webui_events.dupe_review_ready(tracker_name, needs_review=bool(interactive and needs_review))
         async with prompt_session():
             with webui_events.prompt_context(kind="dupes", tracker=tracker_name):
@@ -391,7 +417,7 @@ class UploadHelper:
             rules_url=decision.rules_url,
             source_size=meta.source_size,
         )
-        gui_off = {"highlighter": None, "ua_gui": False}
+        gui_off: dict[str, object] = {"highlighter": None, "ua_gui": False}
 
         def line(markup: str = "") -> None:
             logger.info(f"{bar} {markup}" if markup else bar, extra=gui_off)
@@ -537,19 +563,21 @@ class UploadHelper:
 
         def _format_dupes_list(entries: list[Any]) -> str:
             seen: set[str] = set()
-            formatted = []
+            formatted: list[str] = []
             for entry in entries:
-                if isinstance(entry, dict) and entry.get("link"):
+                if _is_str_dict(entry):
                     link = entry.get("link")
-                    if link in seen:
-                        continue
-                    seen.add(link)
+                    if isinstance(link, str) and link:
+                        if link in seen:
+                            continue
+                        seen.add(link)
                 formatted.append(_format_dupe(entry))
             return "\n".join(formatted)
 
         dupes_list: list[DupeEntry | str] = dupes
         upload: bool = False
-        meta.were_trumping = False
+        # A trump plan only comes from this review.
+        meta.trump_plans.pop(tracker_name, None)
         slot_verdict = slot_decision.verdict if slot_decision is not None else None
         protected_ids = set(slot_decision.protected_ids) if slot_decision is not None else set()
         report_ids = {str(entry.get("id")) for entry in slot_decision.conflicts} if slot_decision is not None else None
@@ -570,6 +598,20 @@ class UploadHelper:
                         protected_ids.add(str(entry["id"]))
             meta["LST_protected_ids"] = sorted(protected_ids)
         interactive = (not meta.unattended or (meta.unattended and meta.unattended_confirm)) and not meta.ask_dupe
+        def get_tracker() -> Any:
+            nonlocal tracker_class
+            if tracker_class is None:
+                tracker_class_factory = cast(Callable[..., Any], self.tracker_class_map[tracker_name])
+                tracker_class = tracker_class_factory(config=self.config)
+            return tracker_class
+
+        def trump_candidates(entries: list[DupeEntry | str]) -> list[TrumpCandidate]:
+            if not interactive or trump_reports.support(get_tracker()) is None:
+                return []
+            candidates = trump_reports.find_candidates(meta, tracker_name, entries, slot_decision)
+            candidates = [candidate for candidate in candidates if candidate.torrent_id not in protected_ids and (report_ids is None or candidate.torrent_id in report_ids)]
+            return candidates if meta.dupe is False else [candidate for candidate in candidates if candidate.reason == trump_reports.EXACT_MATCH]
+
         if tracker_name in {"LST", "BLUTOPIA"} and slot_decision is not None and slot_decision.constraint_violation:
             self._show_slot_decision(slot_decision, meta)
             meta[f"{tracker_name}_cross_seed"] = False
@@ -604,7 +646,8 @@ class UploadHelper:
         # Slot recommendations can retain a replacement that the basic dupe
         # filter removed, or recommend a trump before the API marks it trumpable.
         if (tracker_name in {"AITHER", "LST"} and interactive and meta.dupe is False
-                and (slot_decision is None or bool(slot_decision.conflicts))):
+                and (slot_decision is None or bool(slot_decision.conflicts))
+                and not trump_reports.find_candidates(meta, tracker_name, dupes_list, slot_decision)):
             recommended = bool(slot_decision and slot_verdict is Verdict.ALLOW and slot_decision.trump_recommended)
             # A manual report is an explicit user choice, not an assertion that
             # every duplicate/conflict is eligible or already flagged by staff.
@@ -665,11 +708,13 @@ class UploadHelper:
                 return (not upload), meta
             if slot_decision is not None and not evidence_shown and (slot_decision.conflicts or tracker_name == "PASSTHEPOPCORN"):
                 self._show_slot_decision(slot_decision, meta)
+            # Slot rules may find a release the upload replaces even when the basic check finds no dupes.
+            slot_candidates = trump_candidates([]) if trump_reports.slot_trumps(slot_decision) else []
+            if slot_candidates and await self._review_trump(meta, tracker_name, get_tracker(), slot_candidates, _format_dupe) is ReviewOutcome.SKIP_UPLOAD:
+                return True, meta
             logger.debug(f"[green]No dupes found at[/green] [yellow]{tracker_name}[/yellow]")
             return False, meta
-        if tracker_class is None:
-            tracker_class_factory = cast(Callable[..., Any], self.tracker_class_map[tracker_name])
-            tracker_class = tracker_class_factory(config=self.config)
+        tracker_class = get_tracker()
         try:
             tracker_rename = await tracker_class.get_name(meta)
         except Exception:
@@ -738,67 +783,38 @@ class UploadHelper:
 
         if interactive:
             dupe_text = _format_dupes_list(dupes_list)
+            candidates = trump_candidates(dupes_list)
+            trump_outcome = ReviewOutcome.DECLINED
+            if candidates:
+                trump_outcome = await self._review_trump(meta, tracker_name, tracker_class, candidates, _format_dupe)
+                if trump_outcome is ReviewOutcome.DECLINED and meta.tv_pack:
+                    # Episodes inside the season pack are only listed for trumping; they never match the pack itself.
+                    episodes = [cast(DupeEntry, episode) for episode in cast(list[Any], meta.get(f"{tracker_name}_matched_episode_ids") or []) if isinstance(episode, dict)]
+                    matched_ids: set[Any] = {episode.get("id") for episode in episodes if episode.get("id")}
+                    dupes_list = [d for d in dupes_list if not (isinstance(d, dict) and d.get("id") in matched_ids)]
+                    meta[f"{tracker_name}_matched_episode_ids"] = []
 
-            if trumpable_text and (meta.trumpable_id or (meta.season_pack_contains_episode and meta.get(f"{tracker_name}_matched_episode_ids", []))):
-                logger.info(f"[bold cyan]{trumpable_text}[/bold cyan]")
-                logger.info("[yellow]Please check the trumpable entries above to see if you want to upload[/yellow]")
-                logger.info("[yellow]You will have the option to report the trumpable torrent if you upload.[/yellow]")
-                if meta.dupe is False:
-                    try:
-                        upload = await self.prompt_yes_no(f"Are you trumping this release on {tracker_name}?", default=False)
-                        if upload:
-                            meta.we_asked = True
-                            meta.were_trumping = True
-                            if not meta.get(f"{tracker_name}_trumpable_id"):
-                                meta[f"{tracker_name}_trumpable_id"] = meta.get(f"{tracker_name}_matched_id", None)
-                            if meta.filename_match and meta.file_count_match:
-                                meta.trump_reason = "exact_match"
-                            else:
-                                meta.trump_reason = "trumpable_release"
-                            logger.debug(f"[bold green]Trump reason: {meta.trump_reason} on {tracker_name}[/bold green]")
-                        else:
-                            # For season packs: individual episodes are only in dupes for trumping purposes.
-                            # If user declines to trump, filter them out so they aren't shown as "potential dupes"
-                            # (they wouldn't match season/episode anyway).
-                            if meta.tv_pack and meta.season_pack_contains_episode and meta.get(f"{tracker_name}_matched_episode_ids", []):
-                                matched_ids = {ep.get("id") for ep in meta.get(f"{tracker_name}_matched_episode_ids", []) if ep.get("id")}
-                                dupes_list = [d for d in dupes_list if not (isinstance(d, dict) and d.get("id") in matched_ids)]
-                                # Clear tracker-specific matched_episode_ids since we're not trumping
-                                meta[f"{tracker_name}_matched_episode_ids"] = []
-                    except EOFError:
-                        logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
-                        await cleanup_manager.cleanup()
-                        cleanup_manager.reset_terminal()
-                        sys.exit(1)
-
-            if not meta.were_trumping:
+            if trump_outcome is not ReviewOutcome.DECLINED:
+                upload = trump_outcome is ReviewOutcome.PLANNED
+                meta.we_asked = True
+            else:
                 if meta.filename_match and meta.file_count_match:
                     logger.info(f"[bold red]Exact match found! - {meta.filename_match}[/bold red]", extra={"ua_gui": False})
                     exact_dupes = [entry for entry in dupes_list if isinstance(entry, dict) and f"{entry.get('name')} = {entry.get('link', None)}" == meta.filename_match]
-                    exact_note = "Exact match: this release is already on the site."
-                    if tracker_name in ["AITHER", "LST"]:
-                        exact_note += f" {tracker_name} supports automatic trumping of exact matches, if the file is allowed to be trumped."
-                    webui_events.dupes(tracker_name, exact_dupes or dupes_list, source_size=meta.source_size, note=exact_note)
-                    try:
-                        if (tracker_name in ["AITHER", "LST"]
-                                and str(meta.get(f"{tracker_name}_matched_id") or meta.get(f"{tracker_name}_trumpable_id") or meta.trumpable_id) not in protected_ids
-                                and (report_ids is None or str(meta.get(f"{tracker_name}_matched_id") or meta.get(f"{tracker_name}_trumpable_id") or meta.trumpable_id) in report_ids)):
-                            logger.info(f"[yellow]{tracker_name} supports automatic trumping of exact matches, if the file is allowed to be trumped.[/yellow]")
-                            upload = await self.prompt_yes_no(f"Are you trumping this exact match on {tracker_name}?", default=False)
-                            if upload:
-                                meta.we_asked = True
-                                meta.were_trumping = True
-                                meta.trump_reason = "exact_match"
-                                if not meta.get(f"{tracker_name}_trumpable_id"):
-                                    meta[f"{tracker_name}_trumpable_id"] = meta.get(f"{tracker_name}_matched_id", None)
-                        else:
+                    webui_events.dupes(tracker_name, exact_dupes or dupes_list, source_size=meta.source_size, note="Exact match: this release is already on the site.")
+                    if any(candidate.reason == trump_reports.EXACT_MATCH for candidate in candidates):
+                        # A declined exact-match trump must not become an ordinary upload.
+                        logger.info(f"[bold red]{tracker_name}: not uploading the exact match without a trump report.[/bold red]")
+                        upload = False
+                    else:
+                        try:
                             upload = await self.prompt_yes_no(f"Upload to {tracker_name} anyway?", default=False)
                             meta.we_asked = True
-                    except EOFError:
-                        logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
-                        await cleanup_manager.cleanup()
-                        cleanup_manager.reset_terminal()
-                        sys.exit(1)
+                        except EOFError:
+                            logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
+                            await cleanup_manager.cleanup()
+                            cleanup_manager.reset_terminal()
+                            sys.exit(1)
                 elif dupes_list:
                     # Rebuild dupe_text in case dupes was filtered after trump decline
                     dupe_text = _format_dupes_list(dupes_list)
@@ -903,6 +919,23 @@ class UploadHelper:
 
         return False, meta
 
+    @staticmethod
+    async def _review_trump(
+        meta: Meta,
+        tracker_name: str,
+        tracker_class: Any,
+        candidates: list[TrumpCandidate],
+        describe: Callable[[DupeEntry], str],
+    ) -> ReviewOutcome:
+        """Ask the trump report questions; Ctrl+C exits like the other review questions."""
+        try:
+            return await trump_reports.review(meta, tracker_name, tracker_class, candidates, lambda entry: describe(dict(entry)))
+        except EOFError:
+            logger.info("\n[red]Exiting on user request (Ctrl+C)[/red]")
+            await cleanup_manager.cleanup()
+            cleanup_manager.reset_terminal()
+            sys.exit(1)
+
     async def ask_bdinfo_comparison(self, meta: Meta, dupes: list[DupeEntry | str], tracker_name: str) -> None:
         """
         Check if any duplicate has BDInfo content and ask the user
@@ -946,7 +979,7 @@ class UploadHelper:
         """Publish resolved release flags and review metadata before continuing."""
         # Changes from an earlier answer would no longer match this release's previews.
         meta.payload_edits = {}
-        webui_events.update_item(personal_release=meta.personalrelease is True, run_options=meta, artwork=meta)
+        webui_events.update_item(personal_release=meta.personalrelease is True, run_options=dict(meta), artwork=dict(meta))
         confirm: bool = False
         lines: list[str | tuple[str, str]] = []
         missing_warning = "[bold red]⚠️ Missing[/bold red]"
@@ -1038,8 +1071,6 @@ class UploadHelper:
             poster = "Found" if bool(meta.artwork_url or meta.artwork_path) else _missing_with_hint(missing_warning, "Use --poster.")
             igdb_id = meta.igdb_id or "0"
             steam_url = meta.steam_url
-            languages = len(meta.languages) if meta.languages else _missing_with_hint(missing_warning, "Check game metadata or use --igdb.")
-
             lines.append(("Subcategory", game_subcategory))
             lines.append(("Version", version))
             if notes:
@@ -1052,14 +1083,19 @@ class UploadHelper:
                 lines.append(("IGDB", str(igdb_id)))
             if steam_url:
                 lines.append(("Steam", steam_url))
-            if languages:
-                if isinstance(languages, dict):
-                    lang_summary = ", ".join(f"{lang} ({'/'.join(supports)})" for lang, supports in languages.items())
-                elif isinstance(languages, list):
-                    lang_summary = ", ".join(languages)
+            if meta.languages:
+                if isinstance(meta.languages, dict):
+                    lang_items: list[str] = []
+                    for lang, supports in meta.languages.items():
+                        lang_items.append(f"{lang} ({'/'.join(supports)})")
+                    lang_summary = ", ".join(lang_items)
+                elif isinstance(meta.languages, list):
+                    lang_summary = ", ".join(meta.languages)
                 else:
-                    lang_summary = str(languages)
+                    lang_summary = str(meta.languages)
                 lines.append(("Languages", lang_summary))
+            else:
+                lines.append(("Languages", _missing_with_hint(missing_warning, "Check game metadata or use --igdb.")))
 
         elif meta.category == "XXX":
             source = ""
@@ -1083,7 +1119,14 @@ class UploadHelper:
                 "BOOK": "Use --overview.",
                 "GAME": "Use --overview.",
             }.get(meta.category, "Add text with --description or --descfile.")
-            lines.append(("Overview", f"{meta.overview[:60]}...." if meta.overview else _missing_with_hint(missing_warning, overview_hint)))
+            if meta.overview:
+                overview_line = f"{meta.overview[:60]}...."
+            elif meta.category == "XXX":
+                # The synopsis comes from ThePornDB or --overview; trackers that need text check it themselves.
+                overview_line = _optional_hint("Use --overview or --tpdb.")
+            else:
+                overview_line = _missing_with_hint(missing_warning, overview_hint)
+            lines.append(("Overview", overview_line))
             if meta.category == "TV" and not meta.tv_pack and meta.auto_episode_title:
                 lines.append(("Episode Title", (meta.auto_episode_title)))
             if meta.category == "TV" and not meta.tv_pack and meta.overview_meta:
@@ -1121,7 +1164,9 @@ class UploadHelper:
             lines.append(("Edition", edition or _optional_hint("Use --edition if applicable.")))
             is_video = meta.category in ("TV", "MOVIE", "XXX")
             lines.append(("Resolution", resolution or (_missing_with_hint(missing_warning, "Use --resolution.") if is_video else "")))
-            lines.append(("Source", str(source) if source else (_missing_with_hint(missing_warning, "Use --source.") if is_video else "")))
+            # XXX files rarely name a source and nothing built for XXX uses it.
+            source_hint = _optional_hint("Use --source if applicable.") if meta.category == "XXX" else _missing_with_hint(missing_warning, "Use --source.")
+            lines.append(("Source", str(source) if source else (source_hint if is_video else "")))
             lines.append(("Type", type_ or (_missing_with_hint(missing_warning, "Use --type.") if is_video else "")))
             lines.append(("Group Tag", tag or ("" if meta.no_tag else _optional_hint("Use --tag if applicable."))))
 
@@ -1268,7 +1313,7 @@ class UploadHelper:
             changed = confirm_options.apply(meta, run_options, option_values)
             if changed:
                 logger.info(f"[green]Options changed in the Web UI:[/green] {escape(', '.join(changed))}")
-                webui_events.update_item(personal_release=meta.personalrelease is True, run_options=meta)
+                webui_events.update_item(personal_release=meta.personalrelease is True, run_options=dict(meta))
         if confirm and payload_edits:
             # Applied at upload time, after the options above, so they win for that tracker.
             for change in payload_preview.accept_edits(meta, payload_previews, payload_edits):

@@ -181,6 +181,7 @@ def test_download_artifact_requires_valid_hash(manager, tmp_path):
     value, root, file = manager
     archive = root / "media-release.pyz"
     archive.write_bytes(b"fixture archive")
+    archive.chmod(0o600)  # The download rejects group/world-writable artifacts.
     (root / "VALIDATION.json").write_text(json.dumps({"sha256": hashlib.sha256(archive.read_bytes()).hexdigest()}))
     config = value.dashboard.config()
     config["media_tool_archive"] = str(archive)

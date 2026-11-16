@@ -14,7 +14,7 @@ import urllib.parse
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict, TypeIs, cast
 
 import httpx
 import qbittorrentapi
@@ -33,6 +33,15 @@ from src.torrent_clients.existing_content import (
 )
 from src.torrent_clients.path_utils import coerce_str_list, is_path_under, map_save_path, tracker_directory
 from src.torrentcreate import TorrentCreator
+
+
+def _is_str_dict(val: object) -> TypeIs[dict[str, Any]]:
+    return isinstance(val, dict)
+
+
+def _is_obj_list(val: object) -> TypeIs[list[object]]:
+    return isinstance(val, list)
+
 
 # These have to be global variables to be shared across all instances since a new instance is made every time
 qbittorrent_cached_clients: dict[tuple[str, int, str], qbittorrentapi.Client] = {}  # Cache for qbittorrent clients that have been successfully logged into
@@ -107,6 +116,50 @@ async def qui_request(request: Awaitable[httpx.Response]) -> httpx.Response | st
 class QbittorrentClientMixin:
     config: dict[str, Any]
 
+    @staticmethod
+    def _qui_api_settings(client: dict[str, Any]) -> tuple[str, str, str] | None:
+        """Return native Qui settings only when all required values are supplied."""
+        url = str(client.get("qui_api_url") or "").strip().rstrip("/")
+        key = str(client.get("qui_api_key") or "").strip()
+        instance = str(client.get("qui_instance_id") or "").strip()
+        return (url, key, instance) if url and key and instance.isdecimal() else None
+
+    async def _qui_instance_health_check(self, client: dict[str, Any]) -> bool:
+        """Enforce the optional native Qui health gate before injection."""
+        if not client.get("qui_health_check", False):
+            return True
+        settings = self._qui_api_settings(client)
+        if settings is None:
+            logger.warning("Qui health check enabled without complete native API settings.")
+            return False
+        url, key, instance = settings
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as session:
+                status = await session.get(f"{url}/api/instances/{instance}/status", headers={"X-API-Key": key})
+                capabilities = await session.get(f"{url}/api/instances/{instance}/capabilities", headers={"X-API-Key": key})
+            return status.is_success and capabilities.is_success
+        except httpx.HTTPError:
+            logger.warning("Qui native health check failed.")
+            return False
+
+    async def _qui_has_duplicate(self, client: dict[str, Any], infohash: str) -> bool | None:
+        """Optionally ask Qui; unknown responses fall back to normal qBittorrent checks."""
+        settings = self._qui_api_settings(client)
+        if settings is None or not client.get("qui_native_duplicate_check", False):
+            return None
+        url, key, instance = settings
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as session:
+                response = await session.post(f"{url}/api/instances/{instance}/torrents/check-duplicates", headers={"X-API-Key": key}, json={"hashes": [infohash]})
+            if response.is_success:
+                payload = response.json()
+                if isinstance(payload, dict) and isinstance(payload.get("duplicates"), list):
+                    return any(isinstance(item, dict) and str(item.get("hash", "")).casefold() == infohash.casefold() for item in payload["duplicates"])
+        except (httpx.HTTPError, ValueError):
+            pass
+        logger.warning("Qui native duplicate check unavailable; continuing with normal qBittorrent checks.")
+        return None
+
     def _extract_tracker_ids_from_comment(self, comment: str) -> dict[str, str]:
         raise NotImplementedError
 
@@ -118,7 +171,15 @@ class QbittorrentClientMixin:
             return True
         return self._torrent_name_matches(str(getattr(torrent, "name", "") or ""), meta)
 
-    async def is_valid_torrent(self, meta: Meta, torrent_path: str, torrenthash: str, torrent_client: str, client: dict[str, Any]) -> tuple[bool, str]:
+    async def is_valid_torrent(self, meta: Meta, torrent_path: str | Path, torrenthash: str, torrent_client: str, client: dict[str, Any]) -> tuple[bool, str]:
+        raise NotImplementedError
+
+    @staticmethod
+    def _torrent_includes_all_local_subtitles(torrent_path: str, meta: Meta) -> bool:
+        raise NotImplementedError
+
+    @staticmethod
+    def _torrent_has_no_subtitles(torrent_path: str) -> bool:
         raise NotImplementedError
 
     async def get_ptp_from_hash_qbit(self, meta: Meta, client: dict[str, Any], pathed: bool = False) -> Meta:
@@ -147,7 +208,7 @@ class QbittorrentClientMixin:
 
         class TorrentInfo:
             def __init__(self, properties_data: dict[str, Any]) -> None:
-                self.hash = properties_data.get("hash", info_hash_v1)
+                self.hash = properties_data.get("hash", "")
                 self.infohash_v1 = properties_data.get("infohash_v1", info_hash_v1)
                 self.name = properties_data.get("name", "")
                 self.comment = properties_data.get("comment", "")
@@ -215,7 +276,7 @@ class QbittorrentClientMixin:
 
         for torrent in torrents:
             try:
-                if getattr(torrent, "infohash_v1", "") == info_hash_v1:
+                if info_hash_v1.casefold() in {str(getattr(torrent, "infohash_v1", "")).casefold(), str(getattr(torrent, "hash", "")).casefold()}:
                     comment = getattr(torrent, "comment", "")
 
                     torrent_comments = meta.torrent_comments
@@ -524,7 +585,7 @@ class QbittorrentClientMixin:
             return None
         result = await self.retry_qbt_operation(lambda: asyncio.to_thread(direct, qbt_client), operation.capitalize(), initial_timeout=14.0)
         # qbittorrentapi lists are UserLists; return the same plain list qui's JSON gives.
-        return list(result) if isinstance(result, collections.UserList) else result
+        return list(cast(list[Any], result)) if isinstance(result, collections.UserList) else result
 
     async def _find_existing_content(self, access: QbitAccess, torrent: Torrent) -> ExistingContentMatch | None:
         """Find a complete torrent in this client whose files hold all of `torrent`'s files."""
@@ -735,10 +796,10 @@ class QbittorrentClientMixin:
                 primary_tracker = str(getattr(torrent, "tracker", "") or "")
                 if primary_tracker:
                     tracker_urls.append(primary_tracker)
-                raw_trackers = getattr(torrent, "trackers", []) or []
-                if isinstance(raw_trackers, list):
+                raw_trackers: object = getattr(torrent, "trackers", []) or []
+                if _is_obj_list(raw_trackers):
                     for tracker in raw_trackers:
-                        if isinstance(tracker, dict):
+                        if _is_str_dict(tracker):
                             url = tracker.get("url")
                             if url:
                                 tracker_urls.append(str(url))
@@ -914,6 +975,12 @@ class QbittorrentClientMixin:
         client_name: str = "",
     ) -> bool | None:
         """Add `torrent` in seed mode; False on failure, None when skipped by `match_existing_content`."""
+        if not await self._qui_instance_health_check(client):
+            logger.warning("Qui health check failed; refusing torrent injection.")
+            return False
+        if await self._qui_has_duplicate(client, torrent.infohash):
+            logger.info("[yellow]Torrent already exists in Qui; skipping duplicate injection.[/yellow]")
+            return True
         qbt_proxy_url = ""
         label = client_name or "qBittorrent"
         access: QbitAccess | None = None
@@ -1050,7 +1117,7 @@ class QbittorrentClientMixin:
                 if len(folder_parts) >= 2 and len(src_drive_parts) >= 2 and folder_parts[1] == src_drive_parts[1]:
                     potential_match = Path(src_drive) / folder_parts[-1]
                     if Path(potential_match).exists():
-                        link_target = potential_match
+                        link_target = str(potential_match)
                         logger.debug(f"[cyan]Found sibling mount point linked folder: {link_target}")
                         break
 
@@ -1096,7 +1163,13 @@ class QbittorrentClientMixin:
         elif cross and not existing_match:
             logger.info("[cyan]Using original content path for cross-seed (no linking required).[/cyan]")
 
-        if not existing_match and multi_file and not (use_symlink or use_hardlink) and content_layout != "NoSubfolder" and content_path.parent / torrent.name != content_path:
+        if (
+            not existing_match
+            and multi_file
+            and not (use_symlink or use_hardlink)
+            and content_layout != "NoSubfolder"
+            and content_path.parent / (torrent.name or "") != content_path
+        ):
             raise ValueError(f"Torrent root {torrent.name!r} does not match source directory {content_path.name!r}; linking is required")
 
         if access is None:
@@ -1116,7 +1189,7 @@ class QbittorrentClientMixin:
             if use_symlink or use_hardlink:
                 if tracker_dir is None:
                     raise ValueError("Linking enabled but tracker_dir was not set")
-                save_path = str(Path(tracker_dir) / torrent.name if multi_file and content_layout == "NoSubfolder" else tracker_dir)
+                save_path = str(Path(tracker_dir) / (torrent.name or "") if multi_file and content_layout == "NoSubfolder" else tracker_dir)
             else:
                 save_path = str(path)  # Default to the original path
 
@@ -1143,16 +1216,16 @@ class QbittorrentClientMixin:
         else:
             skip_checking = True
             paused_on_add = False
-        tag = None
+        tag: str | None = None
         if cross and client.get("qbit_cross_tag"):
-            tag = client["qbit_cross_tag"]
+            tag = str(client["qbit_cross_tag"])
         else:
             if meta.qbit_tag:
-                tag = meta.qbit_tag
+                tag = str(meta.qbit_tag)
             elif client.get("use_tracker_as_tag", False) and tracker:
-                tag = tracker
+                tag = str(tracker)
             elif client.get("qbit_tag"):
-                tag = client["qbit_tag"]
+                tag = str(client["qbit_tag"])
 
         try:
             if access.proxy_url:
@@ -1160,7 +1233,7 @@ class QbittorrentClientMixin:
                     raise RuntimeError("qbt_session cannot be None")
                 # Create files and data for multipart/form-data request
                 files = {"torrents": ("torrent.torrent", torrent.dump(), "application/x-bittorrent")}
-                data = {
+                data: dict[str, str] = {
                     "savepath": save_path,
                     "autoTMM": str(auto_management).lower(),
                     # qBittorrent 5.3 renamed skip_checking to seedMode.
@@ -1189,7 +1262,7 @@ class QbittorrentClientMixin:
                 qbt_client = access.qbt_client
                 if qbt_client is None:
                     raise RuntimeError("qbt_client cannot be None")
-                add_kwargs = {
+                add_kwargs: dict[str, Any] = {
                     "torrent_files": torrent.dump(),
                     "save_path": save_path,
                     "use_auto_torrent_management": auto_management,
@@ -1562,7 +1635,7 @@ class QbittorrentClientMixin:
     def _setup_tracker_patterns(self) -> tuple[dict[str, dict[str, str]], list[str]]:
         from src.trackersetup import tracker_class_map
 
-        tracker_patterns = {}
+        tracker_patterns: dict[str, dict[str, str]] = {}
         for name in set(tracker_class_map.keys()) | {"PASSTHEPOPCORN", "BEYONDHD", "BROADCASTHENET", "HDBITS"}:
             # Determine URL
             url = ""
@@ -1617,7 +1690,7 @@ class QbittorrentClientMixin:
                 if access.session is None:
                     return []
                 # Build qui's enhanced filter options with expression support
-                qui_filters = {
+                qui_filters: dict[str, Any] = {
                     "status": [],  # Empty = all statuses, or specify like ["downloading","seeding"]
                     # Reuse is determined by the local file layout and piece
                     # hashes, not by the health of the torrent's old tracker.
@@ -1711,7 +1784,7 @@ class QbittorrentClientMixin:
                     logger.debug("[yellow]Skipping torrent with missing name attribute")
                     continue
 
-                if not self._torrent_name_matches(torrent_name, meta):
+                if not self._matches_qbit_content_path(torrent, meta):
                     continue
 
                 torrent_properties: dict[str, Any] = {}
@@ -1798,7 +1871,7 @@ class QbittorrentClientMixin:
                     "hash": torrent.hash,
                     "name": torrent.name,
                     "save_path": torrent.save_path,
-                    "content_path": os.path.normpath(Path(str(torrent.save_path)) / str(torrent.name)),
+                    "content_path": os.path.normpath(str(getattr(torrent, "content_path", "") or Path(str(torrent.save_path)) / str(torrent.name))),
                     "size": torrent.size,
                     "category": torrent.category,
                     "seeders": torrent.num_complete,
@@ -2172,7 +2245,7 @@ async def _link_torrent_files(torrent: Torrent, source_root: Path, tracker_dir: 
     for file in torrent.files:
         relative_path = Path(str(file))
         try:
-            source = source_root / relative_path.relative_to(torrent.name)
+            source = source_root / relative_path.relative_to(torrent.name or "")
         except ValueError:
             return False
         destination = tracker_dir / relative_path
@@ -2193,7 +2266,7 @@ async def _link_torrent_files(torrent: Torrent, source_root: Path, tracker_dir: 
     return bool(links)
 
 
-async def create_cross_seed_links(meta: Meta, torrent: Torrent, tracker_dir: str, use_hardlink: bool) -> bool:
+async def create_cross_seed_links(meta: Meta, torrent: Torrent, tracker_dir: str | Path, use_hardlink: bool) -> bool:
     metainfo_raw = getattr(torrent, "metainfo", {})
     metainfo: dict[str, Any] = cast(dict[str, Any], metainfo_raw) if isinstance(metainfo_raw, dict) else cast(dict[str, Any], {})
     info_raw = metainfo.get("info")
@@ -2245,7 +2318,7 @@ async def create_cross_seed_links(meta: Meta, torrent: Torrent, tracker_dir: str
     candidate_paths: list[str] = []
     if release_root and Path(release_root).is_dir():
         for root, _, files in os.walk(release_root):
-            candidate_paths.extend([Path(root) / file for file in files])
+            candidate_paths.extend([str(Path(root) / file) for file in files])
     else:
         filelist_value = meta.filelist
         if isinstance(filelist_value, list):
@@ -2262,7 +2335,7 @@ async def create_cross_seed_links(meta: Meta, torrent: Torrent, tracker_dir: str
             parent_guess = str(Path(release_root or "").parent)
         if parent_guess and Path(parent_guess).is_dir():
             for root, _, files in os.walk(parent_guess):
-                candidate_paths.extend([Path(root) / file for file in files])
+                candidate_paths.extend([str(Path(root) / file) for file in files])
 
     unique_candidates: list[_CandidateEntry] = []
     seen: set[str] = set()
@@ -2363,7 +2436,7 @@ async def create_cross_seed_links(meta: Meta, torrent: Torrent, tracker_dir: str
     return True
 
 
-async def async_link_directory(src: str, dst: str, use_hardlink: bool = True) -> bool:
+async def async_link_directory(src: str | Path, dst: str | Path, use_hardlink: bool = True) -> bool:
     try:
         # Create destination directory
         await asyncio.to_thread(os.makedirs, str(Path(dst).parent), exist_ok=True)
@@ -2403,13 +2476,13 @@ async def async_link_directory(src: str, dst: str, use_hardlink: bool = True) ->
                 await asyncio.to_thread(os.makedirs, dst, exist_ok=True)
 
                 # Get all files in the source directory
-                def _collect_files(src: str, dst: str) -> list[tuple[str, str, str]]:
+                def _collect_files(src: str | Path, dst: str | Path) -> list[tuple[str, str, str]]:
                     items: list[tuple[str, str, str]] = []
                     for root, _dirs, files in os.walk(src):
                         for file in files:
                             src_path = Path(root) / file
                             rel_path = os.path.relpath(src_path, src)
-                            items.append((src_path, Path(dst) / rel_path, rel_path))
+                            items.append((str(src_path), str(Path(dst) / rel_path), rel_path))
                     return items
 
                 all_items = await asyncio.to_thread(_collect_files, src, dst)

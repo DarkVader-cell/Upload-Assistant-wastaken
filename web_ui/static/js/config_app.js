@@ -974,6 +974,7 @@ const DISPLAY_LABEL_OVERRIDES = {
   imgbb_api: "ImgBB API Key",
   lensdump_api: "LensDump API Key",
   lostimg_api: "LostImg API Key",
+  luminapix_api: "LuminaPix API Key",
   midnightscene_api_key: "MidnightScene API Key",
   onlyimage_api: "OnlyImage API Key",
   passtheima_ge_api: "PassTheImage API Key",
@@ -1210,7 +1211,8 @@ const INLINE_FIELD_HELP = {
     linkOnNewLine: true,
   },
   blvckout_api_key: {
-    description: "A BLVCKOUT API key with read permission, for XXX movie metadata.",
+    description:
+      "A BLVCKOUT API key with read permission, for XXX movie metadata.",
   },
   twitch_client_id: {
     description:
@@ -1253,6 +1255,7 @@ const imageHostApiKeys = {
   imgbb: ["imgbb_api"],
   lensdump: ["lensdump_api"],
   lostimg: ["lostimg_api"],
+  luminapix: ["luminapix_api"],
   ptscreens: ["ptscreens_api"],
   onlyimage: ["onlyimage_api"],
   dalexni: ["dalexni_api"],
@@ -1284,6 +1287,7 @@ const IMAGE_HOST_LABELS = {
   imgbox: "Imgbox",
   lensdump: "LensDump",
   lostimg: "LostImg",
+  luminapix: "LuminaPix",
   midnightscene: "MidnightScene",
   onlyimage: "OnlyImage",
   passtheimage: "PassTheImage",
@@ -1369,6 +1373,7 @@ const trackerNameMap = {
   FLOOD: "Flood",
   FUNFILE: "FunFile",
   GREATPOSTERWALL: "Great Poster Wall",
+  HAPPYFAPPY: "HappyFappy",
   HAWKEUNO: "hawke-uno",
   HDBITS: "HDBits",
   HDSPACE: "HD-Space",
@@ -1379,6 +1384,7 @@ const trackerNameMap = {
   ITATORRENTS: "ItaTorrents",
   IPTORRENTS: "IPTorrents",
   LASTDIGITALUNDERGROUND: "LastDigitalUnderground",
+  KUFIRC: "Kufirc",
   LAJIDUI: "lajidui",
   LEMONHD: "LemonHD",
   LATTEAM: "Lat-Team",
@@ -1416,6 +1422,7 @@ const trackerNameMap = {
   SAMARITANO: "Samaritano",
   SEEDPOOL: "seedpool",
   SHAREISLAND: "ShareIsland",
+  SIMURG: "Simurg",
   SKIPTHECOMMERCIALS: "SkipTheCommercials",
   SPEEDAPP: "SpeedApp",
   SWARMAZON: "Swarmazon",
@@ -3596,18 +3603,57 @@ function ConfigLeafEditor({
       normalizeClients(item.value),
     );
     const [isOpen, setIsOpen] = useState(false);
+    const [menuPosition, setMenuPosition] = useState(null);
     const dropdownRef = useRef(null);
+    const triggerRef = useRef(null);
+    const menuRef = useRef(null);
     const dropdownId = `${fieldId}--options`;
 
     useEffect(() => {
       setSelected(normalizeClients(item.value));
     }, [item.value]);
 
+    // The menu is portaled with fixed positioning so section/accordion
+    // containers with overflow-hidden cannot clip it.
+    React.useLayoutEffect(() => {
+      if (!isOpen) {
+        setMenuPosition(null);
+        return undefined;
+      }
+      const positionMenu = () => {
+        if (!triggerRef.current) return;
+        const bounds = triggerRef.current.getBoundingClientRect();
+        const viewportHeight = document.documentElement.clientHeight;
+        const spaceBelow = viewportHeight - bounds.bottom - 8;
+        const spaceAbove = bounds.top - 8;
+        const above = spaceBelow < Math.min(240, spaceAbove);
+        setMenuPosition({
+          left: bounds.left,
+          width: bounds.width,
+          maxHeight: Math.min(
+            240,
+            Math.max(0, above ? spaceAbove : spaceBelow),
+          ),
+          ...(above
+            ? { bottom: viewportHeight - bounds.top + 4 }
+            : { top: bounds.bottom + 4 }),
+        });
+      };
+      positionMenu();
+      window.addEventListener("resize", positionMenu);
+      document.addEventListener("scroll", positionMenu, true);
+      return () => {
+        window.removeEventListener("resize", positionMenu);
+        document.removeEventListener("scroll", positionMenu, true);
+      };
+    }, [isOpen, selected.length]);
+
     useEffect(() => {
       const handleClickOutside = (event) => {
         if (
           dropdownRef.current &&
-          !dropdownRef.current.contains(event.target)
+          !dropdownRef.current.contains(event.target) &&
+          !(menuRef.current && menuRef.current.contains(event.target))
         ) {
           setIsOpen(false);
         }
@@ -3659,6 +3705,7 @@ function ConfigLeafEditor({
         </div>
         <div className={`relative ${isOpen ? "z-30" : ""}`} ref={dropdownRef}>
           <div
+            ref={triggerRef}
             role="combobox"
             tabIndex={0}
             aria-controls={dropdownId}
@@ -3706,40 +3753,47 @@ function ConfigLeafEditor({
               className={`ua-config-accordion-chevron h-4 w-4 shrink-0 transition-transform ${isOpen ? "rotate-180" : "rotate-0"}`}
             />
           </div>
-          {isOpen && (
-            <div
-              id={dropdownId}
-              role="listbox"
-              aria-multiselectable="true"
-              className="ua-config-multiselect-menu absolute z-40 mt-1 max-h-60 w-full overflow-auto rounded-lg border shadow-lg"
-            >
-              {torrentClients.length === 0 ? (
-                <div className="ua-config-service-description px-3 py-2 text-sm">
-                  No torrent clients configured
-                </div>
-              ) : (
-                torrentClients.map((client) => (
-                  <div
-                    key={client}
-                    role="option"
-                    aria-selected={selected.includes(client)}
-                    data-selected={selected.includes(client) ? "true" : "false"}
-                    className="ua-config-multiselect-option cursor-pointer px-3 py-2"
-                  >
-                    <label className="flex w-full cursor-pointer items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={selected.includes(client)}
-                        onChange={() => toggleClient(client)}
-                        className="ua-theme-checkbox h-4 w-4"
-                      />
-                      {client}
-                    </label>
+          {isOpen &&
+            menuPosition &&
+            ReactDOM.createPortal(
+              <div
+                ref={menuRef}
+                id={dropdownId}
+                role="listbox"
+                aria-multiselectable="true"
+                style={menuPosition}
+                className="ua-config-multiselect-menu fixed z-50 overflow-auto rounded-lg border shadow-lg"
+              >
+                {torrentClients.length === 0 ? (
+                  <div className="ua-config-service-description px-3 py-2 text-sm">
+                    No torrent clients configured
                   </div>
-                ))
-              )}
-            </div>
-          )}
+                ) : (
+                  torrentClients.map((client) => (
+                    <div
+                      key={client}
+                      role="option"
+                      aria-selected={selected.includes(client)}
+                      data-selected={
+                        selected.includes(client) ? "true" : "false"
+                      }
+                      className="ua-config-multiselect-option cursor-pointer px-3 py-2"
+                    >
+                      <label className="flex w-full cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(client)}
+                          onChange={() => toggleClient(client)}
+                          className="ua-theme-checkbox h-4 w-4"
+                        />
+                        {client}
+                      </label>
+                    </div>
+                  ))
+                )}
+              </div>,
+              triggerRef.current?.closest(".ua-config-page") || document.body,
+            )}
         </div>
       </div>
     );

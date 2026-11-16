@@ -86,7 +86,7 @@ from rich.markup import escape
 
 from bin.get_ffmpeg import FfmpegBinaryManager
 from bin.get_mkbrr import MkbrrBinaryManager
-from src import upload_history, webui_events
+from src import trump_reports, upload_history, webui_events
 from src.add_comparison import ComparisonManager
 from src.app_paths import CODE_DIR, STATE_DIR
 from src.args import Args, cli_argument_catalog, cli_option_choices, read_paths_from_stdin
@@ -127,6 +127,7 @@ from src.trackersetup import TrackerSetup, api_trackers, http_trackers, other_ap
 from src.trackerstatus import TrackerStatusManager, run_tracker_checks
 from src.tvdb import close_tvdb
 from src.uphelper import UploadHelper
+from src.upload_schedule import UploadPacer, wait_before_upload
 from src.uploadorder import run_upload_order
 from src.uploadscreens import UploadScreensManager
 from src.webui_paths import is_generated_queue_path, subprocess_roots, validate_argument_paths, validate_subprocess_path, validate_subprocess_queue
@@ -281,7 +282,7 @@ _config_path = Path(_data_dir) / "config.py"
 from src.book_prep import sanitize_book_author, sanitize_book_language
 from src.meta import Meta, canonicalize_tracker_config
 from src.post_upload_hooks import run_post_upload_hooks
-from src.prep import Prep
+from src.prep import Prep, capture_extra_disc_screenshots
 
 # Enable ANSI colors on Windows
 _use_colors = True
@@ -1360,7 +1361,9 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
     prep = Prep(screens=meta.screens, img_host=meta.imghost, config=config, publish_preview=_publish_webui_preview_target)
     webui_events.stage("prep", "start")
     try:
-        meta = await prep.gather_prep(meta=meta, mode="cli")
+        from src.runtime.prepared_stage import gather_with_resume
+
+        meta = await gather_with_resume(prep, meta, mode="cli", config=config)
     except UnsupportedSiteCheckError as e:
         skip_unsupported_release(meta, e)
         return False
@@ -1839,6 +1842,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                             0,
                             cleanup_after_capture=False,
                         )
+                        await capture_extra_disc_screenshots(meta, config, takescreens_manager)
                     except asyncio.CancelledError as e:
                         await cleanup_screenshot_temp_files(meta)
                         await asyncio.sleep(0.1)
@@ -1863,6 +1867,7 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                             retry_cap=False,
                             cleanup_after_capture=False,
                         )
+                        await capture_extra_disc_screenshots(meta, config, takescreens_manager)
                     except asyncio.CancelledError as e:
                         await cleanup_screenshot_temp_files(meta)
                         await asyncio.sleep(0.1)
@@ -2325,7 +2330,10 @@ async def process_meta(meta: Meta, base_dir: str) -> bool:
                 base_piece_mb = None
 
     if meta.randomized >= 1 and not meta.mkbrr and not is_usenet_only:
-        TORRENT_CREATOR.create_random_torrents(meta.base_dir, meta.uuid, meta.randomized, cast(str, meta.path))
+        if _randomized_torrents_possible(meta, torrent_path):
+            TORRENT_CREATOR.create_random_torrents(meta.base_dir, meta.uuid, meta.randomized, cast(str, meta.path))
+        else:
+            logger.warning("[yellow]Skipping randomized torrents: no base torrent is available and --nohash is set.")
     webui_events.stage("torrent", "done")
 
     await write_meta_file(meta)
@@ -2876,6 +2884,7 @@ async def do_the_thing(base_dir: str) -> None:
 
         processed_files_count = 0
         skipped_files_count = 0
+        upload_pacer = UploadPacer()
         base_meta = meta.copy()
 
         for item_number, queue_item in enumerate(queue_list, start=1):
@@ -3397,6 +3406,14 @@ async def do_the_thing(base_dir: str) -> None:
                     ) -> None:
                         await upload_torrent_flow(meta, torrent_trackers, bandwidth_control)
 
+                    has_torrent_upload = any(
+                        cast(Mapping[str, Any], meta.tracker_status.get(tracker.replace(" ", "").upper().strip(), {})).get("upload", False)
+                        for tracker in torrent_trackers
+                        if tracker.replace(" ", "").upper().strip() != "MANUAL"
+                    )
+                    if (has_torrent_upload or need_usenet_post) and await wait_before_upload(meta, config, upload_pacer):
+                        meta.upload_waited = True
+
                     await run_upload_order(
                         upload_order,
                         run_usenet_flow,
@@ -3407,6 +3424,7 @@ async def do_the_thing(base_dir: str) -> None:
                         has_usenet_upload=need_usenet_post,
                         has_torrent_trackers=bool(torrent_trackers),
                     )
+                    upload_pacer.record(meta)
                     webui_events.stage("upload", "done")
                     if config["DEFAULT"].get("cross_seeding", True):
                         await process_cross_seeds(meta)
@@ -3444,6 +3462,19 @@ async def do_the_thing(base_dir: str) -> None:
             for tracker in meta.trumping_trackers:
                 logger.info(f"[yellow]Submitting trumpable report to {tracker}.....")
                 reported = await tracker_setup.make_trumpable_report(meta, tracker)
+                await record_event_async(
+                    "post_upload",
+                    service="trump_report",
+                    operation="submitted",
+                    outcome="success" if reported else "error",
+                    destination=str(tracker).replace(" ", "").upper(),
+                )
+
+            # Fork-managed reports were submitted above; exclude those trackers
+            # from upstream plans so one upload cannot create two reports.
+            legacy_reporters = {str(tracker).upper() for tracker in meta.trumping_trackers}
+            planned_trackers = {tracker: tracker_class_map[tracker] for tracker in meta.trump_plans if tracker not in legacy_reporters and tracker in tracker_class_map}
+            for tracker, reported in (await trump_reports.submit_reports(meta, config, planned_trackers)).items():
                 await record_event_async(
                     "post_upload",
                     service="trump_report",
@@ -3542,6 +3573,11 @@ async def do_the_thing(base_dir: str) -> None:
         current_release_log_path.set(None)
         if not sys.stdin.closed:
             cleanup_manager.reset_terminal()
+
+
+def _randomized_torrents_possible(meta: Meta, base_torrent: Path | None) -> bool:
+    """A no-hash run cannot randomize a missing base torrent."""
+    return base_torrent is not None or not meta.nohash
 
 
 async def process_cross_seeds(meta: Meta) -> None:
@@ -3652,6 +3688,8 @@ async def process_cross_seeds(meta: Meta) -> None:
 
     # Filter to only trackers with cross-seed data
     valid_trackers = [tracker for tracker in all_trackers if meta.get(f"{tracker}_cross_seed", None) is not None]
+    tracker_status = cast(dict[str, dict[str, Any]], meta.tracker_status or {})
+    valid_trackers = [tracker for tracker in valid_trackers if tracker_status.get(tracker, {}).get("upload_success") is not True]
 
     if not valid_trackers:
         logger.debug("[yellow]No trackers found with cross-seed data[/yellow]")

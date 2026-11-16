@@ -236,8 +236,13 @@ class InfinityHD(TmdbTvNaming, UNIT3D):
         if len(lang_str) == 2:
             return lang_str
         try:
-            lang_obj = pycountry.languages.get(name=lang_str.title()) or pycountry.languages.get(alpha_2=lang_str) or pycountry.languages.get(alpha_3=lang_str)
-            return lang_obj.alpha_2.lower() if lang_obj else lang_str
+            lang_obj: object = (  # pyright: ignore[reportUnknownVariableType]
+                pycountry.languages.get(name=lang_str.title())  # pyright: ignore[reportUnknownMemberType]
+                or pycountry.languages.get(alpha_2=lang_str)  # pyright: ignore[reportUnknownMemberType]
+                or pycountry.languages.get(alpha_3=lang_str)  # pyright: ignore[reportUnknownMemberType]
+            )
+            alpha_2: object = getattr(lang_obj, "alpha_2", None) if lang_obj else None
+            return alpha_2.lower() if isinstance(alpha_2, str) else lang_str
         except AttributeError, KeyError, LookupError:
             return lang_str
 
@@ -279,14 +284,20 @@ class InfinityHD(TmdbTvNaming, UNIT3D):
             ihd_name = await self._rebuild_tv_name(meta, ihd_name) or " ".join(ihd_name.split())
 
         components = build_name_components(meta)
-        if components.title and components.alt_title and components.year:
+        if components.year and not meta.no_aka and ((components.title and components.alt_title) or (meta.title and meta.aka)):
             # Normalize the exact metadata prefix when TV rebuilding cannot do so.
             old_prefix = " ".join(f"{components.title} {components.year} {components.alt_title}".split())
+            raw_prefix = " ".join(f"{meta.title} {components.year} {meta.aka}".split())
+            if meta.title and meta.aka and (ihd_name == raw_prefix or ihd_name.startswith(raw_prefix + " ")):
+                old_prefix = raw_prefix
+                title, alt_title = str(meta.title), str(meta.aka)
+            else:
+                title, alt_title = components.title, components.alt_title
             if ihd_name == old_prefix or ihd_name.startswith(old_prefix + " ") or (components.tag and ihd_name == old_prefix + components.tag):
                 year = components.year
                 if meta.category == "TV" and not await self._tv_title_needs_year(meta):
                     year = ""
-                new_prefix = " ".join(f"{components.title} {components.alt_title} {year}".split())
+                new_prefix = " ".join(f"{title} {alt_title} {year}".split())
                 ihd_name = new_prefix + ihd_name[len(old_prefix) :]
 
         if not meta.language_checked:
