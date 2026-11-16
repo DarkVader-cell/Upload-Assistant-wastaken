@@ -40,6 +40,8 @@ def test_events_are_silent_outside_the_web_ui(monkeypatch, capsys) -> None:
 
 def test_payload_helpers_do_no_work_outside_the_web_ui(monkeypatch) -> None:
     monkeypatch.delenv(webui_events.GUI_EVENTS_ENV, raising=False)
+    # Independent in-process detail observers intentionally receive CLI events.
+    monkeypatch.setattr(webui_events, "_detail_listeners", [])
 
     def fail(*_args, **_kwargs):
         raise AssertionError("payload built outside the Web UI")

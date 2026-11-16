@@ -193,10 +193,11 @@ class TrackerStatusManager:
         async def process_single_tracker(tracker_name: str, shared_meta: Meta) -> tuple[str, dict[str, Any], str | None, Any]:
             """Check one isolated metadata copy and return its authoritative tracker result."""
             local_meta = copy.deepcopy(shared_meta)  # Ensure each task gets its own copy of meta
-            # ``skipping`` is legacy tracker-local state.  A failed tracker can
-            # leave it populated on the shared metadata, which must not prevent
-            # other trackers from running their duplicate checks.
+            # Keep tracker-local skip state and report plans isolated between checks.
             local_meta.skipping = None
+            async with meta_lock:
+                meta.trump_plans.pop(tracker_name, None)
+            local_meta.trump_plans.pop(tracker_name, None)
             local_tracker_status: dict[str, Any] = {"banned": False, "skipped": False, "dupe": False, "upload": False, "other": False, "skip_reason": ""}
             display_name = None
             tracker_class = None
@@ -399,11 +400,9 @@ class TrackerStatusManager:
                             if matched_episode_ids:
                                 meta[f"{tracker_name}_matched_episode_ids"] = matched_episode_ids
                             if trumpable_id:
-                                meta["trumpable_id"] = trumpable_id
+                                meta.trumpable_id = trumpable_id
                             if cross_seed_key in local_meta:
                                 meta[cross_seed_key] = cross_seed_value
-                            if trump_plan and not is_dupe:
-                                meta.trump_plans[tracker_name] = trump_plan
 
                         if tracker_name in ["AITHER", "LST"]:
                             were_trumping = local_meta.get("were_trumping", False)
@@ -420,6 +419,9 @@ class TrackerStatusManager:
                                     meta[f"{tracker_name}_trump_reason"] = trump_reason
                                 if trumpable_id_after_dupe_check:
                                     meta[f"{tracker_name}_trumpable_id"] = trumpable_id_after_dupe_check
+                        if trump_plan and not is_dupe:
+                            async with meta_lock:
+                                meta.trump_plans[tracker_name] = trump_plan
 
                 # Determine name change for display during interactive prompt
                 if not local_tracker_status["banned"] and not local_tracker_status["skipped"] and not local_tracker_status["dupe"]:

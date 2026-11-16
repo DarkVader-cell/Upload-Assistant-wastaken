@@ -50,13 +50,13 @@ class AitherSlotRules(SlotRules):
                 return 'One SDR, one retail HDR/DV-HDR (DV/HDR trumps HDR), one hybrid HDR10+/DV-HDR/DV-HDR10+ Remux (DV/HDR10+ trumps DV/HDR and HDR10+). Disc DV normally beats hybrid unless proven inferior; grade checks/plots required.'
         return 'Verify a listed Aither format/resolution slot and any required source/comparison/staff evidence.'
 
-    def decision(self, verdict: Verdict, reason: str, conflicts: Sequence[ReleaseProfile] = (), notes: Sequence[str] = (), *, slot: str = "", why: str = "") -> SlotDecision:
+    def decision(self, verdict: Verdict, reason: str, conflicts: Sequence[ReleaseProfile] = (), notes: Sequence[str] = (), *, slot: str = "", why: str = "", trump: bool = False) -> SlotDecision:
         candidate = getattr(self, '_candidate', None)
         details = list(notes)
         if candidate is not None:
             details.extend([f'Detected incoming: {candidate.resolution or "unknown resolution"} · {candidate.kind or "unknown type"} · {candidate.codec or "unknown codec"} · {candidate.hdr_label}.',
                             'Aither rule: '+self._policy(candidate)])
-        result = super().decision(verdict, reason, conflicts, details, slot=slot, why=why)
+        result = super().decision(verdict, reason, conflicts, details, slot=slot, why=why, trump=trump)
         result.requires_evidence = verdict is Verdict.REVIEW
         return result
 

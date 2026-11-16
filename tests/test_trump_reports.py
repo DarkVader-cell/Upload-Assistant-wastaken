@@ -470,7 +470,7 @@ def planned_meta(**overrides: Any) -> Meta:
     fields: dict[str, Any] = {
         "ua_name": "Upload Assistant",
         "trump_plans": {"AITHER": aither.to_dict(), "LST": lst.to_dict()},
-        "tracker_status": {"AITHER": {"upload": True, "torrent_id": 501}, "LST": {"upload": True, "torrent_id": 601}},
+        "tracker_status": {"AITHER": {"upload": True, "upload_success": True, "torrent_id": 501}, "LST": {"upload": True, "upload_success": True, "torrent_id": 601}},
     }
     return Meta({**fields, **overrides})
 
@@ -493,7 +493,7 @@ def test_reports_go_to_each_tracker_with_its_own_payload(fake_http: type[FakeCli
 
 
 def test_only_finished_uploads_send_a_report(fake_http: type[FakeClient]) -> None:
-    meta = planned_meta(tracker_status={"AITHER": {"upload": False}, "LST": {"upload": True}})
+    meta = planned_meta(tracker_status={"AITHER": {"upload": False}, "LST": {"upload": True, "upload_success": True}})
 
     assert submitted(meta) == {"LST": False}
     assert fake_http.posts == []
@@ -518,7 +518,7 @@ def test_a_refused_report_shows_the_sites_message(fake_http: type[FakeClient], m
     logged: list[str] = []
     monkeypatch.setattr("src.trump_reports.logger.info", lambda message, *_args, **_kwargs: logged.append(str(message)))
     plan = TrumpPlan("ULCX", "31", OLD["name"], trump_reports.TRUMPABLE)
-    meta = Meta({"trump_plans": {"ULCX": plan.to_dict()}, "tracker_status": {"ULCX": {"upload": True, "torrent_id": 701}}})
+    meta = Meta({"trump_plans": {"ULCX": plan.to_dict()}, "tracker_status": {"ULCX": {"upload": True, "upload_success": True, "torrent_id": 701}}})
 
     assert asyncio.run(trump_reports.submit_reports(meta, CONFIG, {"ULCX": ULCX})) == {"ULCX": False}
     assert any("You already have an open report \[on] this torrent." in line for line in logged)
@@ -538,7 +538,7 @@ def test_lst_refuses_a_non_numeric_torrent_id(fake_http: type[FakeClient]) -> No
 )
 def test_ulcx_reports_the_trumped_torrent_with_a_link_to_the_upload(fake_http: type[FakeClient], reason: str, category: str) -> None:
     plan = TrumpPlan("ULCX", "31", OLD["name"], reason, note="Better encode")
-    meta = Meta({"ua_name": "Upload Assistant", "trump_plans": {"ULCX": plan.to_dict()}, "tracker_status": {"ULCX": {"upload": True, "torrent_id": 701}}})
+    meta = Meta({"ua_name": "Upload Assistant", "trump_plans": {"ULCX": plan.to_dict()}, "tracker_status": {"ULCX": {"upload": True, "upload_success": True, "torrent_id": 701}}})
 
     assert asyncio.run(trump_reports.submit_reports(meta, CONFIG, {"ULCX": ULCX})) == {"ULCX": True}
 
@@ -552,7 +552,7 @@ def test_ulcx_reports_the_trumped_torrent_with_a_link_to_the_upload(fake_http: t
 
 def test_ulcx_refuses_a_non_numeric_torrent_id(fake_http: type[FakeClient]) -> None:
     plan = TrumpPlan("ULCX", "None", OLD["name"], trump_reports.TRUMPABLE)
-    meta = Meta({"trump_plans": {"ULCX": plan.to_dict()}, "tracker_status": {"ULCX": {"upload": True, "torrent_id": 701}}})
+    meta = Meta({"trump_plans": {"ULCX": plan.to_dict()}, "tracker_status": {"ULCX": {"upload": True, "upload_success": True, "torrent_id": 701}}})
 
     assert asyncio.run(trump_reports.submit_reports(meta, CONFIG, {"ULCX": ULCX})) == {"ULCX": False}
     assert fake_http.posts == []
@@ -618,7 +618,7 @@ def test_a_plan_made_in_the_tracker_check_is_submitted_after_the_upload(monkeypa
     assert asyncio.run(trackerstatus.TrackerStatusManager(CONFIG).process_all_trackers(meta)) == 1
     assert meta.trump_plans["AITHER"]["reported_id"] == "11"
 
-    meta.tracker_status["AITHER"]["torrent_id"] = 501  # what a finished upload records
+    meta.tracker_status["AITHER"].update({"torrent_id": 501, "upload_success": True})  # acknowledged upload
     assert asyncio.run(trump_reports.submit_reports(meta, CONFIG, {"AITHER": Aither})) == {"AITHER": True}
     ((url, payload, _headers),) = fake_http.posts
     assert url == "https://aither.cc/api/trumping-reports/create"

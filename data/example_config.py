@@ -2205,6 +2205,7 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
+            # Zenith ignores extra per-episode and per-disc pack screenshots.
         },
         "ZMPT": {
             "cli_alias": "ZMPT",

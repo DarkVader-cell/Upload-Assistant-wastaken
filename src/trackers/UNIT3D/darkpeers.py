@@ -143,6 +143,9 @@ class DarkPeers(TmdbTvNaming, UNIT3D):
         category = str(meta.category or "").strip().upper()
 
         if category in {"MOVIE", "TV"}:
+            if meta.hardcoded_subs:
+                logger.info(f"{self.tracker}: [bold red]does not allow Movies or TV releases with hardcoded subtitles. Skipping upload.")
+                return False
             if not await self.validate_video_languages(meta):
                 return False
             if not await self.validate_video_resolution(meta):
@@ -174,10 +177,6 @@ class DarkPeers(TmdbTvNaming, UNIT3D):
 
         if group == "HDT" and release_type != "REMUX":
             logger.info(f"{self.tracker}: [bold red]only allows HDT releases when they are Remuxes. Skipping upload.")
-            return False
-
-        if category in {"MOVIE", "TV"} and meta.hardcoded_subs:
-            logger.info(f"{self.tracker}: [bold red]does not allow Movies or TV releases with hardcoded subtitles. Skipping upload.")
             return False
 
         return True
@@ -473,9 +472,10 @@ class DarkPeers(TmdbTvNaming, UNIT3D):
         if meta.category == "TV":
             dp_name = await self._tv_name(meta, dp_name)
 
-        audio = await self.get_audio(meta)
-        if audio and audio != "SKIPPED" and "Dual-Audio" in dp_name:
-            dp_name = dp_name.replace("Dual-Audio", audio)
+        if "Dual-Audio" in dp_name:
+            audio = await self.get_audio(meta)
+            if audio and audio != "SKIPPED":
+                dp_name = dp_name.replace("Dual-Audio", audio)
 
         return {"name": add_incomplete_pack_marker(dp_name, meta, self.tracker)}
 

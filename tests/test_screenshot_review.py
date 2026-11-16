@@ -21,6 +21,7 @@ from src.screenshot_review import (
     image_version,
     list_review_items,
     list_screenshots,
+    refill_screenshot_slot,
     replace_screenshot,
     staged_remote_uploads,
     target_count,

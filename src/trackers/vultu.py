@@ -154,6 +154,9 @@ class Vultu:
             return False
 
         if category in ("MOVIE", "TV"):
+            if int(meta.screens or 0) < 3:
+                logger.warning(f"{self.tracker}: [red]At least 3 screenshots are required.[/red]")
+                return False
             if not (meta.tmdb or meta.tmdb_id or meta.imdb_tt):
                 logger.warning(f"{self.tracker}: [red]Movies and TV must be linked to a TMDB (or IMDb) entry.[/red]")
                 return False

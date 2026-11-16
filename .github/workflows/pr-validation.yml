@@ -2,6 +2,9 @@ name: PR validation
 
 on:
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "**/*.md"
   workflow_dispatch:
 
 permissions:
@@ -166,8 +169,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: upload-assistant-pr:${{ matrix.arch }}
           provenance: false
-          cache-from: type=gha,scope=pr-webui-${{ matrix.arch }}
-          cache-to: type=gha,mode=max,scope=pr-webui-${{ matrix.arch }}
+          # Load the image for runtime checks; do not export per-PR GHA caches.
           load: true
           push: false
 

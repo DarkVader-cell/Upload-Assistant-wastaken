@@ -116,6 +116,50 @@ async def qui_request(request: Awaitable[httpx.Response]) -> httpx.Response | st
 class QbittorrentClientMixin:
     config: dict[str, Any]
 
+    @staticmethod
+    def _qui_api_settings(client: dict[str, Any]) -> tuple[str, str, str] | None:
+        """Return native Qui settings only when all required values are supplied."""
+        url = str(client.get("qui_api_url") or "").strip().rstrip("/")
+        key = str(client.get("qui_api_key") or "").strip()
+        instance = str(client.get("qui_instance_id") or "").strip()
+        return (url, key, instance) if url and key and instance.isdecimal() else None
+
+    async def _qui_instance_health_check(self, client: dict[str, Any]) -> bool:
+        """Enforce the optional native Qui health gate before injection."""
+        if not client.get("qui_health_check", False):
+            return True
+        settings = self._qui_api_settings(client)
+        if settings is None:
+            logger.warning("Qui health check enabled without complete native API settings.")
+            return False
+        url, key, instance = settings
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as session:
+                status = await session.get(f"{url}/api/instances/{instance}/status", headers={"X-API-Key": key})
+                capabilities = await session.get(f"{url}/api/instances/{instance}/capabilities", headers={"X-API-Key": key})
+            return status.is_success and capabilities.is_success
+        except httpx.HTTPError:
+            logger.warning("Qui native health check failed.")
+            return False
+
+    async def _qui_has_duplicate(self, client: dict[str, Any], infohash: str) -> bool | None:
+        """Optionally ask Qui; unknown responses fall back to normal qBittorrent checks."""
+        settings = self._qui_api_settings(client)
+        if settings is None or not client.get("qui_native_duplicate_check", False):
+            return None
+        url, key, instance = settings
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as session:
+                response = await session.post(f"{url}/api/instances/{instance}/torrents/check-duplicates", headers={"X-API-Key": key}, json={"hashes": [infohash]})
+            if response.is_success:
+                payload = response.json()
+                if isinstance(payload, dict) and isinstance(payload.get("duplicates"), list):
+                    return any(isinstance(item, dict) and str(item.get("hash", "")).casefold() == infohash.casefold() for item in payload["duplicates"])
+        except (httpx.HTTPError, ValueError):
+            pass
+        logger.warning("Qui native duplicate check unavailable; continuing with normal qBittorrent checks.")
+        return None
+
     def _extract_tracker_ids_from_comment(self, comment: str) -> dict[str, str]:
         raise NotImplementedError
 
@@ -164,7 +208,7 @@ class QbittorrentClientMixin:
 
         class TorrentInfo:
             def __init__(self, properties_data: dict[str, Any]) -> None:
-                self.hash = properties_data.get("hash", info_hash_v1)
+                self.hash = properties_data.get("hash", "")
                 self.infohash_v1 = properties_data.get("infohash_v1", info_hash_v1)
                 self.name = properties_data.get("name", "")
                 self.comment = properties_data.get("comment", "")
@@ -232,7 +276,7 @@ class QbittorrentClientMixin:
 
         for torrent in torrents:
             try:
-                if getattr(torrent, "infohash_v1", "") == info_hash_v1:
+                if info_hash_v1.casefold() in {str(getattr(torrent, "infohash_v1", "")).casefold(), str(getattr(torrent, "hash", "")).casefold()}:
                     comment = getattr(torrent, "comment", "")
 
                     torrent_comments = meta.torrent_comments
@@ -931,6 +975,12 @@ class QbittorrentClientMixin:
         client_name: str = "",
     ) -> bool | None:
         """Add `torrent` in seed mode; False on failure, None when skipped by `match_existing_content`."""
+        if not await self._qui_instance_health_check(client):
+            logger.warning("Qui health check failed; refusing torrent injection.")
+            return False
+        if await self._qui_has_duplicate(client, torrent.infohash):
+            logger.info("[yellow]Torrent already exists in Qui; skipping duplicate injection.[/yellow]")
+            return True
         qbt_proxy_url = ""
         label = client_name or "qBittorrent"
         access: QbitAccess | None = None
@@ -1734,7 +1784,7 @@ class QbittorrentClientMixin:
                     logger.debug("[yellow]Skipping torrent with missing name attribute")
                     continue
 
-                if not self._torrent_name_matches(torrent_name, meta):
+                if not self._matches_qbit_content_path(torrent, meta):
                     continue
 
                 torrent_properties: dict[str, Any] = {}
@@ -1821,7 +1871,7 @@ class QbittorrentClientMixin:
                     "hash": torrent.hash,
                     "name": torrent.name,
                     "save_path": torrent.save_path,
-                    "content_path": os.path.normpath(Path(str(torrent.save_path)) / str(torrent.name)),
+                    "content_path": os.path.normpath(str(getattr(torrent, "content_path", "") or Path(str(torrent.save_path)) / str(torrent.name))),
                     "size": torrent.size,
                     "category": torrent.category,
                     "seeders": torrent.num_complete,

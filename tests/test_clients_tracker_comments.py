@@ -92,7 +92,11 @@ async def test_early_qbit_match_uses_exact_content_path_before_filelist_is_popul
     monkeypatch.setattr(client, "retry_qbt_operation", immediate_retry)
     meta = Meta({"path": media, "uuid": "SampleFilm.mkv", "filelist": [], "torrent_comments": []})
 
-    matches = await client._process_torrent_matches([torrent], {}, [], "", "", None, qbt_client, meta)
+    from src.torrent_clients.qbittorrent import QbitAccess
+
+    access = QbitAccess({})
+    access.qbt_client = qbt_client
+    matches = await client._process_torrent_matches([torrent], {}, [], access, meta)
 
     assert len(matches) == 1  # noqa: S101
     assert matches[0]["hash"] == "abc123"  # noqa: S101

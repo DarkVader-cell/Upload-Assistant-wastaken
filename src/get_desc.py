@@ -2081,11 +2081,7 @@ class DescriptionBuilder:
             logger.debug(f"DEBUG: Saving final description to [yellow]{desc_file}[/yellow]")
             async with aiofiles.open(desc_file, "w", encoding="utf-8") as description_file:
                 await description_file.write(final_description)
-        # Some trackers (for example Anthelion) submit screenshots through a
-        # separate upload field rather than rendering them in the description.
-        # Only validate screenshots when this description actually requested
-        # the screenshot section; otherwise a valid separate-field upload is
-        # rejected as if its description were missing images.
+        # Trackers that submit screenshots separately must not be rejected here.
         if screenshots and str(meta.category or "").upper() in {"MOVIE", "TV"} and int(meta.screens or 0) >= 3:
             validate_description_screenshots(final_description, meta, self.tracker)
         return final_description

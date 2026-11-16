@@ -7,7 +7,7 @@ from typing import Any, cast
 import aiofiles
 
 from src.console import logger
-from src.exceptions import NoAudioMediaError
+from src.exceptions import NoAudioMediaError, UnreadableMediaError
 from src.mediainfo import MediaInfo, strip_report_by_line
 from src.meta import Meta
 

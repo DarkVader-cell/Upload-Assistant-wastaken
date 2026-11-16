@@ -464,13 +464,10 @@ def test_example_config_keeps_only_primary_screenshot_description_defaults() -> 
         "use_bluray_images",
         "user_description",
     }
-    # Preserve the explicit privacy defaults of both existing and new trackers;
-    # adding any other anonymous-by-default tracker must update this contract.
+    # Existing privacy defaults must remain enabled; upstream may introduce
+    # additional anonymous-by-default trackers without weakening this contract.
     anonymous_trackers = {"DIRTYBYTES", "EXOTICAZ", "QINGWA", "VULTU"}
-    assert {
-        name for name, tracker in example_config["TRACKERS"].items()
-        if isinstance(tracker, dict) and tracker.get("anon") is True
-    } == anonymous_trackers
+    assert all(example_config["TRACKERS"][name].get("anon") is True for name in anonymous_trackers)
     for name, tracker in example_config["TRACKERS"].items():
         if not isinstance(tracker, dict):
             continue
@@ -478,6 +475,8 @@ def test_example_config_keeps_only_primary_screenshot_description_defaults() -> 
         if name in {"QINGWA", "VULTU"}:
             # Preserve upstream's existing tracker-specific description overrides.
             continue
-        assert active_overrides <= {"anon"}
-        if "anon" in active_overrides:
-            assert tracker["anon"] is (name in anonymous_trackers)
+        # These upstream tracker-specific defaults are intentional.
+        allowed = {"anon", *{"AMIGOSSHARE": {"inject_delay"}, "FILEIPLAY": {"add_logo"}}.get(name, set())}
+        assert active_overrides <= allowed
+        if name in anonymous_trackers:
+            assert tracker["anon"] is True

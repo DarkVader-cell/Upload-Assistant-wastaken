@@ -49,6 +49,7 @@ class ULCX(UNIT3D):
         },
         approved_image_hosts,
     )
+    # Fallback when the blocked groups API cannot be reached.
     banned_groups = (
         "4K4U",
         "Alcaide_Kira",

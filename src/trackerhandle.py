@@ -107,6 +107,84 @@ async def resume_acknowledged_clients(meta: Meta, client: Any) -> set[str]:
     return completed
 
 
+def _is_str_dict(val: object) -> TypeIs[dict[str, object]]:
+    return isinstance(val, dict)
+
+
+async def recheck_dupes_after_wait(meta: Meta, config: dict[str, Any], tracker_name: str, t_class: Any, reason: str) -> bool:
+    """Repeat a tracker's duplicate search after a wait; return False when a new duplicate blocks the upload.
+
+    Only releases that were not in the first search count, so a duplicate the
+    user already accepted does not stop the upload.
+    """
+    logger.info(f"[yellow]{tracker_name}: Redoing dupe check after {reason} wait...[/yellow]")
+    title_key = f"{tracker_name}_title_releases"
+    try:
+        if tracker_name not in {"PASSTHEPOPCORN"}:
+            new_dupes = cast(list[Any], await t_class.search_existing(meta))
+        else:
+            ptp = PassThePopcorn(config=config)
+            group_id = await retry_readonly(lambda: ptp.get_group_by_imdb(meta.imdb, strict=True, allow_prompt=False), tracker_name, operation_name="PTP group lookup")
+            if not group_id or (meta.ptp_groupid and group_id != meta.ptp_groupid):
+                raise ValueError("PTP group changed or could not be verified")
+            meta.ptp_groupid = group_id
+            new_dupes = cast(list[Any], await retry_readonly(lambda: ptp.search_existing(group_id, meta), tracker_name))
+    except Exception as e:
+        logger.info(f"[bold red]{tracker_name}: Error redoing duplicate check after {reason} wait: {e}[/bold red]")
+        status = meta.tracker_status.setdefault(tracker_name, {})
+        status["status_message"] = f"Skipped: Error redoing dupe check after {reason} wait: {e}"
+        return False
+
+    def is_known(dupe: Any, known: Sequence[Any]) -> bool:
+        for known_dupe in known:
+            if _is_str_dict(dupe) and _is_str_dict(known_dupe):
+                if dupe.get("name") == known_dupe.get("name") and dupe.get("size") == known_dupe.get("size"):
+                    return True
+            elif isinstance(dupe, str) and isinstance(known_dupe, str) and dupe == known_dupe:
+                return True
+        return False
+
+    initial_dupes = cast(list[Any], meta.initial_dupes.get(tracker_name, []))
+    real_new_dupes = [d for d in new_dupes if not is_known(d, initial_dupes)]
+    # Whole-title searches also refresh the slot-rule evidence, which can hold
+    # releases the basic duplicate search leaves out (other HDR layers, codecs).
+    initial_title_releases = meta.initial_title_releases.get(tracker_name)
+    refreshed_title_releases = meta.get(title_key)
+    new_title_releases = (
+        [release for release in cast(list[Any], refreshed_title_releases) if not is_known(release, cast(list[Any], initial_title_releases))]
+        if isinstance(initial_title_releases, list) and isinstance(refreshed_title_releases, list)
+        else []
+    )
+    if not real_new_dupes and not new_title_releases:
+        return True
+
+    slot_decision = await evaluate_slots(new_dupes, meta, tracker_name, config)
+    if slot_decision is not None and slot_decision.verdict is Verdict.ALLOW:
+        logger.info(f"[green]{tracker_name}: new releases appeared during the wait, but slot rules still allow this upload.[/green]")
+        return True
+    if slot_decision is not None and slot_decision.verdict is Verdict.BLOCK:
+        logger.info(f"[red]{tracker_name}: a release that fills this slot appeared during the wait. Automatically skipping upload.[/red]")
+        return False
+    if slot_decision is not None and slot_decision.verdict is Verdict.REVIEW and (tracker_name == "PASSTHEPOPCORN" or getattr(slot_decision, "requires_evidence", False)):
+        logger.warning(f"{tracker_name}: changed occupancy requires evidence review; skipping upload.")
+        return False
+    if not real_new_dupes:
+        # The first check asks about a REVIEW conflict in interactive runs and keeps
+        # the basic result in unattended ones. Nobody may be present after a wait,
+        # so a conflict that would have been asked about skips the upload instead.
+        interactive = (not meta.unattended or meta.unattended_confirm) and not meta.ask_dupe
+        if slot_decision is not None and slot_decision.verdict is Verdict.REVIEW and slot_decision.conflicts and meta.dupe is False and interactive:
+            logger.info(f"[red]{tracker_name}: a release that needs a slot review appeared during the wait. Automatically skipping upload.[/red]")
+            return False
+        return True
+    dupe_checker = DupeChecker(config)
+    real_new_dupes = cast(list[Any], await dupe_checker.filter_dupes(real_new_dupes, meta, tracker_name))
+    if real_new_dupes:
+        logger.info(f"[red]New dupe found on {tracker_name} during wait! Automatically skipping upload.[/red]")
+        return False
+    return True
+
+
 async def process_trackers(
     meta: Meta,
     config: dict[str, Any],
@@ -425,6 +503,8 @@ async def process_trackers(
                             if real_new_dupes:
                                 logger.info(f"[red]New dupe found on {tracker_name} during wait! Automatically skipping upload.[/red]")
                                 return False
+            if meta.upload_waited:
+                return await recheck_dupes_after_wait(meta, config, tracker_name, t_class, "scheduled")
             return True
 
         if tracker in api_trackers:

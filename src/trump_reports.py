@@ -388,12 +388,22 @@ async def submit_reports(meta: Meta, config: dict[str, Any], tracker_class_map: 
         tracker_cls = tracker_class_map.get(tracker)
         if plan is None or tracker_cls is None or status.get("upload") is not True:
             continue
+        # A permitted or attempted upload is not an acknowledged success.
+        if not meta.debug and status.get("upload_success") is not True:
+            continue
+        if tracker == "LST" and plan.reported_id in {str(value) for value in (meta.get("LST_protected_ids") or [])}:
+            logger.warning("LST: refusing a report against a protected internal release.")
+            continue
         tracker_instance = tracker_cls(config=config)
         if support(tracker_instance) is None:
             continue
         trumping_id = status.get("torrent_id")
         if not trumping_id and not meta.debug:
             logger.info(f"[red]{tracker}: the upload did not return a torrent ID, so the trump report was not sent.[/red]")
+            results[tracker] = False
+            continue
+        if not meta.debug and str(trumping_id) == plan.reported_id:
+            logger.warning(f"{tracker}: refusing to report a torrent as trumping itself.")
             results[tracker] = False
             continue
         logger.info(f"[yellow]Submitting trump report to {tracker}.....")

@@ -10,7 +10,8 @@ import sys
 import unicodedata
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, cast
+from tempfile import NamedTemporaryFile
+from typing import Any, TypeIs, cast
 
 import aiofiles
 import bencodepy

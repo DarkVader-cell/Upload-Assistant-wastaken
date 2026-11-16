@@ -7,6 +7,7 @@ from src.get_desc import DescriptionBuilder
 from src.get_name import build_name_components
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
+from src.tracker_images import get_tracker_image_collection
 from src.trackers.common import Common
 from src.trackers.naming import BLU_NAME_RULES, add_incomplete_pack_marker, build_video_name
 from src.trackers.UNIT3D import UNIT3D
@@ -192,6 +193,9 @@ class OnlyEncodes(UNIT3D):
         self.rehost_images_manager = RehostImagesManager(config)
 
     async def get_additional_checks(self, meta: Meta) -> bool:
+        if int(meta.screens or 0) < 3:
+            logger.info(f"{self.tracker}: [red]At least 3 screenshots are required.[/red]")
+            return False
         if not await self.common.check_adult_media_allowed(meta, self.tracker):
             return False
 
@@ -204,6 +208,11 @@ class OnlyEncodes(UNIT3D):
         )
 
     async def get_description(self, meta: Meta) -> dict[str, str]:
+        screenshots = get_tracker_image_collection(meta, self.tracker, "screenshots") or []
+        linked_screenshots = [image for image in screenshots if _is_str_dict(image) and image.get("web_url") and (image.get("raw_url") or image.get("img_url"))]
+        if len(linked_screenshots) < 3:
+            raise ValueError(f"{self.tracker}: At least 3 hosted, linked screenshots are required")
+
         builder = DescriptionBuilder(self.tracker, self.config)
         # OnlyEncodes requires linked medium thumbnails from the first episode or
         # movie. Keep these overrides local so other trackers retain user settings.

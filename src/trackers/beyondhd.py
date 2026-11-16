@@ -26,6 +26,10 @@ def format_bhd_imdb_id(value: object) -> str:
     return digits.zfill(7) if digits else "0"
 
 
+def _is_str_dict(val: object) -> TypeIs[dict[str, Any]]:
+    return isinstance(val, dict)
+
+
 class BEYONDHD:
     """
     BHD Private Torrent Tracker

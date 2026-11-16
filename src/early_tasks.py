@@ -139,7 +139,7 @@ def _is_str_mapping(value: object) -> TypeIs[Mapping[str, Any]]:
 async def prepare_usenet_archive_early(meta: Meta, config: Mapping[str, Any]) -> None:
     """Create archive/PAR2 files before duplicate confirmation, never post them."""
     usenet_cfg = config.get("USENET", {})
-    if meta.hdb_offer or not needs_usenet_archive(meta) or not isinstance(usenet_cfg, Mapping) or usenet_cfg.get("skip_archive", False):
+    if meta.hdb_offer or not needs_usenet_archive(meta) or not _is_str_mapping(usenet_cfg) or bool(usenet_cfg.get("skip_archive", False)):
         return
     try:
         from src.usenetcreate import prepare_and_upload_usenet

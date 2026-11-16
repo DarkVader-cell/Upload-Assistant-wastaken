@@ -122,7 +122,7 @@ def _check_version(temp_dir: Path, expected_version: int | None) -> int:
     return current_version
 
 
-def save_review(temp_dir: Path, content: str, version: int | None = None, *, expected_version: int | None = None) -> dict[str, Any]:
+def save_review(temp_dir: Path, content: str, version: int | None = None, source_path: str | None = None, *, expected_version: int | None = None) -> dict[str, Any]:
     """Atomically persist a user draft without relying on a browser path.
 
     With ``expected_version`` the write is a compare-and-swap: it only happens when the
@@ -132,6 +132,8 @@ def save_review(temp_dir: Path, content: str, version: int | None = None, *, exp
     with review_lock(temp_dir):
         current_version = _check_version(temp_dir, expected_version)
         payload: dict[str, Any] = {"content": content, "version": current_version + 1 if version is None else version}
+        if source_path:
+            payload["source_path"] = source_path
         return _write_review(temp_dir, payload)
 
 
@@ -190,7 +192,7 @@ def draft(meta: dict[str, Any], temp_dir: Path) -> tuple[str, int]:
     review = load_review(temp_dir)
     version = review_version(review)
     content = review.get("content")
-    if isinstance(content, str):
+    if isinstance(content, str) and _review_matches_source(meta, review):
         return content, version
     override = meta.get("description_override")
     if isinstance(override, str) and override:

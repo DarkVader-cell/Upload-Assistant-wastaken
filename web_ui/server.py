@@ -7371,6 +7371,7 @@ def execution_screenshots():
                     "image_url": urls[0],
                     "full_image_url": urls[1],
                     "can_replace": can_capture and item.source != "addition",
+                    "can_refill": can_capture and (item.source != "addition" or item.path is not None),
                     "can_delete": item.source in {"local", "addition"} or can_discard,
                 }
                 for item in items
@@ -7447,11 +7448,10 @@ def save_execution_description():
     if not isinstance(requested_version, int):
         return jsonify({"success": False, "error": "Description version is required"}), 400
 
-    temp_dir, _meta_file, _meta_data = resolved
+    temp_dir, _meta_file, meta_data = resolved
     try:
-        # save_review holds the execution's file lock while it checks the version and
-        # writes, so the compare-and-swap also covers the upload process's own writes.
-        saved = save_review(temp_dir, content, expected_version=requested_version)
+        # Bind the draft to the exact source while preserving compare-and-swap locking.
+        saved = save_review(temp_dir, content, source_path=meta_data.get("path"), expected_version=requested_version)
     except ReviewConflictError as conflict:
         return jsonify({"success": False, "error": "Description changed in another browser tab", "version": conflict.current_version}), 409
     except TimeoutError:
@@ -7483,7 +7483,7 @@ def reset_execution_description():
         return jsonify({"success": False, "error": "Description source was not found"}), 404
     content = source["content"]
     try:
-        saved = save_review(temp_dir, content, expected_version=requested_version)
+        saved = save_review(temp_dir, content, source_path=meta_data.get("path"), expected_version=requested_version)
     except ReviewConflictError as conflict:
         return jsonify({"success": False, "error": "Description changed in another browser tab", "version": conflict.current_version}), 409
     except TimeoutError:

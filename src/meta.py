@@ -548,7 +548,7 @@ class Meta:
     personalrelease: bool = False
     piece_size_constraints_enabled: str | bool = False
     platform: str = ""
-    potential_missing: list[Any] = field(default_factory=list)
+    potential_missing: list[str] = field(default_factory=list[str])
     prepare_only: bool = False
     prefer_small_pieces: bool = False
     print_tracker_links: bool = True
@@ -621,6 +621,8 @@ class Meta:
     scene: bool = False
     screens: int = 0
     screenshots_in_description: bool | None = None
+    screenshots_reported_torrent: list[str] | None = None
+    screenshots_trumping_torrent: list[str] | None = None
     sd: int | bool = False
     sdh_subs: int | None = None
     search_requests: bool = False
@@ -628,6 +630,7 @@ class Meta:
     season_air_first_date: str | None = None
     season_int: int = 0
     season_name: str = ""
+    season_pack_contains_episode: bool | None = None
     season_pack_exists: bool = False
     season_pack_id: int | str | None = None
     season_pack_incomplete: bool = False
@@ -650,6 +653,7 @@ class Meta:
     skip_tracker_descriptions: bool = False
     skip_trackers: bool = False
     skip_uploading: int | bool = False
+    skip_upload_trackers: list[Any] = field(default_factory=list)
     skipit: bool = False
     # The user chose to skip this release at the confirmation prompt.
     skipped_by_user: bool = False
@@ -697,6 +701,9 @@ class Meta:
     transmission_label: str | None = None
     # Trump reports to send after uploading, per tracker (``src.trump_reports.TrumpPlan`` as a dict).
     trump_plans: dict[str, dict[str, Any]] = field(default_factory=dict[str, dict[str, Any]])
+    trump_reason: str | None = None
+    trumpable_id: int | str | None = None
+    were_trumping: bool = False
     tv_movie: bool = False
     tv_pack: bool = False
     tvdb_episode_data: dict[str, Any] = field(default_factory=dict[str, Any])

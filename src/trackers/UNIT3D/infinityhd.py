@@ -284,14 +284,20 @@ class InfinityHD(TmdbTvNaming, UNIT3D):
             ihd_name = await self._rebuild_tv_name(meta, ihd_name) or " ".join(ihd_name.split())
 
         components = build_name_components(meta)
-        if components.title and components.alt_title and components.year:
+        if components.year and not meta.no_aka and ((components.title and components.alt_title) or (meta.title and meta.aka)):
             # Normalize the exact metadata prefix when TV rebuilding cannot do so.
             old_prefix = " ".join(f"{components.title} {components.year} {components.alt_title}".split())
+            raw_prefix = " ".join(f"{meta.title} {components.year} {meta.aka}".split())
+            if meta.title and meta.aka and (ihd_name == raw_prefix or ihd_name.startswith(raw_prefix + " ")):
+                old_prefix = raw_prefix
+                title, alt_title = str(meta.title), str(meta.aka)
+            else:
+                title, alt_title = components.title, components.alt_title
             if ihd_name == old_prefix or ihd_name.startswith(old_prefix + " ") or (components.tag and ihd_name == old_prefix + components.tag):
                 year = components.year
                 if meta.category == "TV" and not await self._tv_title_needs_year(meta):
                     year = ""
-                new_prefix = " ".join(f"{components.title} {components.alt_title} {year}".split())
+                new_prefix = " ".join(f"{title} {alt_title} {year}".split())
                 ihd_name = new_prefix + ihd_name[len(old_prefix) :]
 
         if not meta.language_checked:

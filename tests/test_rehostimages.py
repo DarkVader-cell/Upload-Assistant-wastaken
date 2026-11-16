@@ -162,9 +162,9 @@ def test_all_declared_tracker_image_host_policies_accept_configured_hosts() -> N
         approved = set(getattr(tracker_class, "approved_image_hosts", ()) or ())
         policy = getattr(tracker_class, "image_host_policy", None)
         approved.update(getattr(policy, "approved_image_hosts", ()) or ())
-        # BHD and TORRENTHR have dedicated host restrictions; their policy
-        # regression tests cover the permitted hosts instead.
-        if approved and tracker_name not in {"BEYONDHD", "TORRENTHR"} and not {"imgbb", "ptscreens"}.issubset(approved):
+        # These trackers have dedicated, narrower host restrictions. Never
+        # add unsupported hosts merely to satisfy the common-host assertion.
+        if approved and tracker_name not in {"BEYONDHD", "TORRENTHR", "HAPPYFAPPY", "KUFIRC"} and not {"imgbb", "ptscreens"}.issubset(approved):
             missing.append(str(tracker_name))
 
     assert not missing, f"Trackers missing configured image hosts: {missing}"

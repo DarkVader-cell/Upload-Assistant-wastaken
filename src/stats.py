@@ -513,6 +513,8 @@ def tracker_route_outcome(status: Mapping[str, Any], *, upload_started: bool = T
     """
     if status.get("upload_success") is True:
         return "success"
+    if status.get("manual_pending") or status.get("manual_prepared"):
+        return "skipped:no_upload"
     message = _status_text(status)
     if status.get("banned"):
         return "skipped:banned"

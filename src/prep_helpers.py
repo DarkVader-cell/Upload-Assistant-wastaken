@@ -1181,6 +1181,8 @@ async def search_metadata(
         meta.category = meta.category.upper()
 
     ids = None
+    # A confirmation edit prepares the same meta again; drop the previous pass's Arr year.
+    meta.arr_year = 0
     if not meta.skip_trackers and not meta.hdb_offer:
         if meta.category == "TV" and use_sonarr and meta.tvdb_id == 0:
             ids = await prep_instance.sonarr_manager.get_sonarr_data(filename=meta.path, title=meta.filename)
@@ -1685,7 +1687,9 @@ async def finalize_metadata(
     meta.bluray_single_score = int(float(prep_instance.config["DEFAULT"].get("bluray_single_score", 100)))
     meta.use_bluray_images = prep_instance.config["DEFAULT"].get("use_bluray_images", False)
     releases: list[Any] = []
-    if meta.bluray_url and meta.is_disc in ("BDMV", "DVD") and not meta.site_check:
+    if meta.hdb_offer:
+        pass  # Offers must not fetch or rehost Blu-ray artwork.
+    elif meta.bluray_url and meta.is_disc in ("BDMV", "DVD") and not meta.site_check:
         # An explicit edition needs no IMDb ID or search, and also applies when editing.
         releases = await use_bluray_url(meta, meta.bluray_url)
     elif _should_fetch_bluray_info(meta, get_bluray_info, _should_add_bluray_link(meta, prep_instance.config)):

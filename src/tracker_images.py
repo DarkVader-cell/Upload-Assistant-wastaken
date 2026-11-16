@@ -91,7 +91,7 @@ def deduplicate_images(images: Sequence[ImageDict]) -> list[ImageDict]:
     return result
 
 
-def get_tracker_image_collection(meta: Meta, tracker: str, collection: ImageCollection) -> list[Any]:
+def get_tracker_image_collection(meta: Meta, tracker: str, collection: ImageCollection) -> list[ImageDict]:
     """Return a tracker override or the release-wide collection as fallback."""
     tracker_collections = meta.tracker_image_collections.get(tracker, {})
     if collection in tracker_collections:

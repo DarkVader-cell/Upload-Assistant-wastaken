@@ -221,6 +221,31 @@ async def test_qbit_hash_lookup_accepts_hybrid_hash_and_uses_resolved_v1_hash(tm
 
 
 @pytest.mark.asyncio
+async def test_qbit_hash_lookup_rejects_mismatched_properties(tmp_path, monkeypatch):
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return {"infohash_v1": "a" * 40, "name": "Other", "comment": "https://lst.gg/torrents/123"}
+
+    class Session:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def get(self, *_args, **_kwargs):
+            return Response()
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr("src.torrent_clients.qbittorrent.httpx.AsyncClient", Session)
+    meta = Meta({"base_dir": str(tmp_path), "uuid": "release", "path": str(tmp_path / "release.mkv"), "infohash": "b" * 64})
+    await Clients({}).get_ptp_from_hash_qbit(meta, {"qui_proxy_url": "https://qbit.example"}, pathed=True)
+    assert not meta.torrent_comments
+    assert not meta.get_tracker_id("LST")
+
+
+@pytest.mark.asyncio
 async def test_preparation_looks_up_original_client_hash_after_reuse(tmp_path, monkeypatch):
     media = tmp_path / "fictional-release.mkv"
     source = tmp_path / "fictional-release.torrent"

@@ -13,6 +13,11 @@ from typing import Any
 
 from defusedxml import ElementTree
 
+try:
+    import rarfile
+except ImportError:
+    rarfile = None
+
 from src.console import logger
 
 

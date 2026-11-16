@@ -3,6 +3,7 @@ import asyncio
 import re
 from typing import Any, cast
 
+import httpx
 import langcodes
 
 from src.console import logger

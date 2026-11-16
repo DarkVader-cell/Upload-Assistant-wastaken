@@ -352,7 +352,7 @@ class PassThePopcorn:
         return imagelist if meta.keep_images else []
 
     async def get_group_by_imdb(self, imdb: int | str, *, strict: bool = False, allow_prompt: bool = True) -> str | None:
-        params = {
+        params: dict[str, Any] = {
             "imdb": imdb,
             "json": "noredirect",
         }
@@ -1916,9 +1916,10 @@ class PassThePopcorn:
             return False
 
         # having UA add the torrent link as a comment.
-        if match:
-            meta.tracker_status[self.tracker]["status_message"] = str(response.url)
-            meta.tracker_status[self.tracker]["torrent_id"] = match.group(2)
-            await common.create_torrent_ready_to_seed(meta, self.tracker, self.source_flag, self.announce_url, str(response.url))
-            return True
-        return False
+        group_id, torrent_id = match.groups()
+        torrent_link = f"{self.base_url}/torrents.php?id={group_id}&torrentid={torrent_id}"
+        meta.tracker_status[self.tracker]["status_message"] = torrent_link
+        meta.tracker_status[self.tracker]["torrent_id"] = torrent_id
+        meta.tracker_status[self.tracker]["torrent_link"] = torrent_link
+        await common.create_torrent_ready_to_seed(meta, self.tracker, self.source_flag, self.announce_url, torrent_link)
+        return True
