@@ -158,6 +158,9 @@ Implementation notes:
 ### Performance / multiprocessing
 
 - `process_limit` (str): Max number of screenshot optimization processes.
+- `screenshot_process_limit` (str): Max concurrent capture processes within an upload (default: `1`). Screenshot batches also coordinate across Upload Assistant processes.
+- `screenshot_io_priority` (bool): Request high best-effort I/O priority for screenshot FFmpeg processes on Linux (default: `true`; effectiveness depends on the storage scheduler).
+- `screenshot_capture_timeout` (int): Seconds allowed for each regular-video capture attempt, default `1800`, maximum `86400`; a timed-out attempt is retried once. A larger value can tolerate a busy disk but cannot make a blocked disk faster. OS-level uninterruptible I/O may delay cancellation.
 - `threads` (str): Thread limit per process during image optimization.
 - `ffmpeg_limit` (bool): Limit CPU usage when running ffmpeg.
 - `add_dynamic_hdr_plot` (bool): Generate and add Dolby Vision/HDR10+ metadata plots when dynamic metadata is detected. The required tools download automatically on first use. Extraction reads each selected video file in full and can take a while for large releases.

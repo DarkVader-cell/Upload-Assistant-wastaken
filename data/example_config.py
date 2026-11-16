@@ -347,6 +347,9 @@ config: dict[str, Any] = {
         "screenshot_process_limit": "1",
         # Use best-effort max disk I/O priority for FFmpeg screenshot reads on Linux.
         "screenshot_io_priority": True,
+        # Seconds allowed per screenshot attempt (one retry); 1800 tolerates slow shared HDDs.
+        # Values above 86400 are capped. Waiting cannot make a saturated disk faster.
+        "screenshot_capture_timeout": 1800,
         # Set to True to reduce CPU usage by applying an additional FFmpeg limit.
         "ffmpeg_limit": False,
         # FFmpeg compression level for screenshots (0-9).

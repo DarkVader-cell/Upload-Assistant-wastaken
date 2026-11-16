@@ -2968,13 +2968,16 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
             if loglevel == "verbose" or (meta and meta.debug):
                 logger.info(f"[cyan]FFmpeg command: {' '.join(compile_ffmpeg_command(info_cmd))}[/cyan]")
 
-            returncode, stdout, stderr = await run_cmd(info_cmd, 600)  # Allow slow seeks on busy disks.
+            # Slow/shared HDDs can block reads beyond the former deadline.
+            # Keep the wait finite and configurable, including fallback paths.
+            capture_timeout = min(_positive_config_int("screenshot_capture_timeout", 1800), 86400)
+            returncode, stdout, stderr = await run_cmd(info_cmd, capture_timeout)
             if returncode != 0 and hdr_tonemap and meta.libplacebo:
                 # Retry once (shader compile might have delayed first invocation)
                 if loglevel == "verbose" or meta.debug:
                     logger.info("[yellow]First libplacebo attempt failed; retrying once...[/yellow]")
                 await asyncio.sleep(1.0)
-                returncode, stdout, stderr = await run_cmd(info_cmd, 600)
+                returncode, stdout, stderr = await run_cmd(info_cmd, capture_timeout)
 
             if returncode != 0 and hdr_tonemap and meta.libplacebo:
                 # Fallback: switch to zscale tonemap chain
@@ -2990,7 +2993,7 @@ async def capture_screenshot(args: tuple[int, str, float, str, float, float, flo
                 info_cmd = build_cmd(use_libplacebo=False)
                 if loglevel == "verbose" or meta.debug:
                     logger.info(f"[cyan]Fallback FFmpeg command: {' '.join(compile_ffmpeg_command(info_cmd))}[/cyan]")
-                returncode, stdout, stderr = await run_cmd(info_cmd, 600)
+                returncode, stdout, stderr = await run_cmd(info_cmd, capture_timeout)
                 cmd = info_cmd  # for logging below
 
             if returncode == 0 and Path(image_path).exists():
