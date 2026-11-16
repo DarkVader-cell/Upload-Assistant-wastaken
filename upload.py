@@ -121,6 +121,7 @@ from src.qbitwait import Wait
 from src.queuemanage import QueueManager
 from src.rehostimages import check_tracker_image_hosts
 from src.screenshot_manifest import files as manifest_files
+from src.stats import accumulate_upload_durations
 from src.takescreens import TakeScreensManager, download_artwork_from_meta
 from src.temp_paths import artwork_dir, music_release_snapshot_path, screenshots_dir
 from src.torrent_manifest import TorrentManifest
@@ -1349,6 +1350,70 @@ def skip_unsupported_release(meta: Meta, error: UnsupportedSiteCheckError, stage
     webui_events.notice("attention", f"Skipped: {error}")
     webui_events.stage(stage, "skip")
     meta.skipped_unsupported = True
+
+
+async def _handle_edit_confirmation_loop(meta: Meta, confirm: bool, editargs_tracking: tuple[str, ...], previous_trackers: list[str] | str, helper: Any, parser: Any, prep: Prep) -> tuple[bool, Meta]:
+    """Review corrections to the prepared release before upload."""
+    while not confirm:
+        try:
+            with webui_events.prompt_context(kind="edit_args", values=_editarg_suggestions(meta), applied=shlex.join(editargs_tracking), actions=[("continue", "Continue without changes"), ("skip", "Skip this upload")]):
+                answer = CLI_UI.ask_string("Input args that need correction, 'continue' to keep them, or 'skip' to skip this upload")
+        except EOFError:
+            await cleanup_manager.cleanup()
+            cleanup_manager.reset_terminal()
+            sys.exit(1)
+        if answer == "continue":
+            break
+        if (answer or "").strip().lower() == "skip":
+            webui_events.notice("attention", "Skipped on your request; nothing was uploaded.")
+            webui_events.stage("confirm", "skip")
+            meta.skipped_by_user = True
+            return False, meta
+        if not answer or not answer.strip():
+            logger.info("[yellow]Enter arguments, continue, or skip.[/yellow]")
+            continue
+        try:
+            editargs = tuple(shlex.split(answer))
+            roots = subprocess_roots()
+            if roots is not None:
+                validate_argument_paths(editargs, roots)
+            next_args = editargs_tracking + editargs
+            original_args = meta.item_args if meta.item_args is not None else list(sys.argv[1:])
+            edited_meta, edit_parser, _ = parser.parse(list(original_args) + list(next_args), meta.copy() if roots is not None else meta)
+            if roots is not None:
+                edited_meta.path = validate_subprocess_path(cast(str, edited_meta.path))
+        except (ValueError, SystemExit) as error:
+            logger.info("Invalid arguments: %s", error, extra={"markup": False})
+            continue
+        if edited_meta is not meta:
+            meta.update(edited_meta)
+        upload_history.keep_given_ids(meta, edit_parser, next_args)
+        editargs_tracking = next_args
+        if not meta.trackers:
+            meta.trackers = previous_trackers
+        if isinstance(meta.trackers, str):
+            meta.trackers = [t.strip().upper() for t in meta.trackers.split(",") if t.strip()]
+        else:
+            meta.trackers = [t.strip().upper() for t in meta.trackers if t]
+        meta.edit = True
+        try:
+            meta = await prep.gather_prep(meta=meta, mode="cli")
+        except UnsupportedSiteCheckError as error:
+            skip_unsupported_release(meta, error, stage="confirm")
+            return False, meta
+        TrackerSetup(config=config).filter_unsupported_trackers(meta)
+        if meta.category == "MUSIC" and _music_artwork_required(meta) and not is_valid_cover_image(meta.artwork_path):
+            await _prompt_music_meta(meta)
+        meta.name_notag, meta.name, meta.clean_name, meta.potential_missing = await name_manager.get_name(meta)
+        await write_meta_file(meta)
+        _publish_webui_preview_target(cast(str, meta.path or ""), meta.uuid or None)
+        try:
+            confirm = await helper.get_confirmation(meta)
+        except EOFError:
+            await cleanup_manager.cleanup()
+            cleanup_manager.reset_terminal()
+            sys.exit(1)
+    return True, meta
 
 
 async def process_meta(meta: Meta, base_dir: str) -> bool:
