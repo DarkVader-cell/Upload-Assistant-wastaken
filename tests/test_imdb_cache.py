@@ -52,5 +52,6 @@ def test_imdb_graphql_requests_include_imdb_referer(monkeypatch, tmp_path):
         await imdb_manager.get_imdb_info_api(1, base_dir=tmp_path, config={"DEFAULT": {"metadata_cache_dir": "cache"}})
 
         assert client.requests[0][1]["headers"]["Referer"] == "https://www.imdb.com/"
+        assert client.requests[0][1]["headers"]["x-imdb-client-name"] == "imdb-web-next"
 
     asyncio.run(run())
