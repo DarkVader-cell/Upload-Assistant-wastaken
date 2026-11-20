@@ -1757,13 +1757,17 @@ def set_execution_preview_target(session_id: str, expected_run_token: str, path:
             process_info.pop("meta_uuid", None)
 
 
+def _session_state_is_current_locked(session_id: str, process_state: Mapping[str, object]) -> bool:
+    current_state = active_processes.get(session_id)
+    if current_state is None or current_state is not process_state:
+        return False
+    run_token = process_state.get("run_token")
+    return bool(run_token and current_state.get("run_token") == run_token)
+
+
 def _session_state_is_current(session_id: str, process_state: Mapping[str, object]) -> bool:
     with active_processes_lock:
-        current_state = active_processes.get(session_id)
-        if current_state is None or current_state is not process_state:
-            return False
-        run_token = process_state.get("run_token")
-        return bool(run_token and current_state.get("run_token") == run_token)
+        return _session_state_is_current_locked(session_id, process_state)
 
 
 def _discard_session_state(session_id: str, process_state: Mapping[str, object]) -> None:
@@ -2109,33 +2113,48 @@ def _read_execution_preview_meta_file(meta_file: Path) -> Mapping[str, object] |
         return None
 
 
+def _preview_meta_matches_target(meta_data: Mapping[str, object], execution_path: str) -> bool:
+    meta_path = _stringify_preview_value(meta_data.get("path"))
+    if not meta_path:
+        return True
+    try:
+        return os.path.normcase(os.path.realpath(meta_path)) == os.path.normcase(os.path.realpath(execution_path))
+    except (OSError, ValueError):
+        return False
+
+
 def _resolve_execution_preview_meta(session_id: str) -> tuple[str, Path | None, Mapping[str, object] | None]:
-    process_info = active_processes.get(session_id, {})
-    execution_path = _stringify_preview_value(process_info.get("path"))
-    if not execution_path:
-        return "", None, None
-
-    base_tmp_dir = STATE_DIR / "tmp"
-    alias_meta_file = base_tmp_dir / Path(execution_path).name / "meta.json"
-    alias_meta = _read_execution_preview_meta_file(alias_meta_file) if alias_meta_file.exists() else None
-    meta_uuid = _stringify_preview_value(process_info.get("meta_uuid"))
-    if not meta_uuid and alias_meta is not None:
-        meta_uuid = _stringify_preview_value(alias_meta.get("uuid"))
-
-    if meta_uuid:
-        canonical_meta_file = base_tmp_dir / meta_uuid / "meta.json"
-        canonical_meta = _read_execution_preview_meta_file(canonical_meta_file) if canonical_meta_file.exists() else None
-        if canonical_meta is not None:
-            process_info["meta_uuid"] = meta_uuid
-            return execution_path, canonical_meta_file, canonical_meta
-
-    if alias_meta is not None:
-        alias_uuid = _stringify_preview_value(alias_meta.get("uuid"))
-        if alias_uuid:
-            process_info["meta_uuid"] = alias_uuid
-        return execution_path, alias_meta_file, alias_meta
-
-    return execution_path, None, None
+    for _ in range(3):
+        with active_processes_lock:
+            process_info = active_processes.get(session_id)
+            if process_info is None:
+                return "", None, None
+            execution_path = _stringify_preview_value(process_info.get("path"))
+            known_uuid = _stringify_preview_value(process_info.get("meta_uuid"))
+        if not execution_path:
+            return "", None, None
+        base_tmp_dir = STATE_DIR / "tmp"
+        alias_file = base_tmp_dir / Path(execution_path).name / "meta.json"
+        alias = _read_execution_preview_meta_file(alias_file) if alias_file.exists() else None
+        uuid = known_uuid or (_stringify_preview_value(alias.get("uuid")) if alias else "")
+        meta_file, meta_data, cache_uuid = None, None, ""
+        if uuid:
+            canonical_file = base_tmp_dir / uuid / "meta.json"
+            canonical = _read_execution_preview_meta_file(canonical_file) if canonical_file.exists() else None
+            if canonical is not None and _preview_meta_matches_target(canonical, execution_path):
+                meta_file, meta_data, cache_uuid = canonical_file, canonical, uuid
+        if meta_data is None and alias is not None and _preview_meta_matches_target(alias, execution_path):
+            alias_uuid = _stringify_preview_value(alias.get("uuid"))
+            if not known_uuid or alias_uuid == known_uuid:
+                meta_file, meta_data, cache_uuid = alias_file, alias, alias_uuid
+        with active_processes_lock:
+            if (active_processes.get(session_id) is process_info
+                and _stringify_preview_value(process_info.get("path")) == execution_path
+                and _stringify_preview_value(process_info.get("meta_uuid")) == known_uuid):
+                if cache_uuid:
+                    process_info["meta_uuid"] = cache_uuid
+                return execution_path, meta_file, meta_data
+    return "", None, None
 
 
 # Lines the child writes for the server rather than the terminal.
@@ -7851,17 +7870,25 @@ def _launch_session(session_id: str, process_state: dict[str, object]) -> None:
     command, base_dir, env = cast(tuple[list[str], Path, dict[str, str]], process_state["launch"])
     # codeql[py/command-line-injection]
     process, process_mode = _spawn_webui_upload_process(command, base_dir, env)
-    process_state.update({"mode": process_mode, "process": process})
-    if not _session_state_is_current(session_id, process_state):
+    with active_processes_lock:
+        process_state.update({"mode": process_mode, "process": process})
+        still_current = _session_state_is_current_locked(session_id, process_state)
+    if not still_current:
         _terminate_process_tree(process)
         _close_webui_process_io(process)
         raise RuntimeError("Execution session was replaced before subprocess startup completed")
-    threading.Thread(
-        target=_pump_session,
-        args=(session_id, process_state, process, process_mode),
-        name=f"webui-session-{session_id}",
-        daemon=True,
-    ).start()
+    try:
+        threading.Thread(
+            target=_pump_session,
+            args=(session_id, process_state, process, process_mode),
+            name=f"webui-session-{session_id}",
+            daemon=True,
+        ).start()
+    except BaseException:
+        with contextlib.suppress(Exception):
+            _terminate_process_tree(process)
+        _close_webui_process_io(process)
+        raise
 
 
 def _start_scheduled_sessions() -> None:
@@ -7870,7 +7897,7 @@ def _start_scheduled_sessions() -> None:
         with active_processes_lock:
             busy = sum(1 for info in active_processes.values() if _session_is_running(info) and not info.get("scheduled"))
             waiting = sorted(
-                ((key, info) for key, info in active_processes.items() if info.get("scheduled") and _session_is_running(info)),
+                ((key, info) for key, info in active_processes.items() if info.get("scheduled") and "launch" in info and _session_is_running(info)),
                 key=lambda item: float(cast(float, item[1].get("scheduled_at") or 0)),
             )
             if busy >= MAX_CONCURRENT_SESSIONS or not waiting:
@@ -7884,7 +7911,7 @@ def _start_scheduled_sessions() -> None:
         except Exception as e:
             console.print(f"Could not start scheduled session {session_id}: {e}", markup=False)
             _publish_session_event(process_state, {"type": "error", "data": "Execution error"})
-            _remove_session_queue_file(str(process_state.get("execution_path") or ""))
+            _release_session_queue_file(str(process_state.get("execution_path") or ""), process_state)
             _finish_session(process_state, None)
 
 
@@ -8055,6 +8082,31 @@ def _remove_session_queue_file(validated_path: str) -> None:
             _remove_generated_queue_file(key)
             _remove_generated_queue_logs(generated, lines)
             console.print(f"Cleaned up queue file: {Path(validated_path).name}", markup=False)
+    except Exception as cleanup_err:
+        console.print(f"Failed to cleanup queue file: {cleanup_err}", markup=False)
+
+
+def _release_session_queue_file(validated_path: str, own_state: Mapping[str, object] | None) -> None:
+    """Release a generated queue only when no other running session uses it."""
+    if not validated_path:
+        return
+    try:
+        key = os.path.normcase(os.path.realpath(validated_path))
+        with active_processes_lock:
+            others = [info for info in active_processes.values() if info is not own_state and _session_is_running(info)]
+            if any(os.path.normcase(os.path.realpath(str(info.get("execution_path") or ""))) == key for info in others if info.get("execution_path")):
+                return
+            with _generated_queues_lock:
+                generated = _generated_queues.pop(key, None)
+                logs_in_use = generated is not None and any(
+                    _generated_queues.get(os.path.normcase(os.path.realpath(str(info.get("execution_path"))))) == generated
+                    for info in others if info.get("execution_path")
+                )
+        if generated is not None:
+            lines = Path(key).read_text(encoding="utf-8").splitlines() if Path(key).is_file() else []
+            _remove_generated_queue_file(key)
+            if not logs_in_use:
+                _remove_generated_queue_logs(generated, lines)
     except Exception as cleanup_err:
         console.print(f"Failed to cleanup queue file: {cleanup_err}", markup=False)
 
@@ -8252,10 +8304,18 @@ def _pump_session(session_id: str, process_state: dict[str, object], process: _W
         _close_webui_process_io(process)
         execution_path = str(process_state.get("execution_path") or "")
         if execution_path:
-            _remove_session_queue_file(execution_path)
+            _release_session_queue_file(execution_path, process_state)
         if exit_code is not None:
             _publish_session_event(process_state, {"type": "exit", "code": exit_code})
         _finish_session(process_state, exit_code)
+        _start_scheduled_sessions()
+
+
+def _release_reservation(session_id: str, process_state: dict[str, object] | None) -> None:
+    if process_state is not None:
+        with contextlib.suppress(Exception):
+            _discard_session_state(session_id, process_state)
+    with contextlib.suppress(Exception):
         _start_scheduled_sessions()
 
 
@@ -8450,7 +8510,7 @@ def execute_command():
                         # queue file (unless reused here) and end its listeners.
                         existing_path = str(existing.get("execution_path") or "")
                         if existing_path and os.path.normcase(os.path.realpath(existing_path)) != os.path.normcase(os.path.realpath(validated_path)):
-                            _remove_session_queue_file(existing_path)
+                            _release_session_queue_file(existing_path, existing)
                         if "events_cond" in existing:
                             _finish_session(existing, None)
 
@@ -8470,7 +8530,7 @@ def execute_command():
                     with _generated_queues_lock:
                         queue_hash = _generated_queues.get(os.path.normcase(os.path.realpath(validated_path)))
                     if queue_hash is None:
-                        _discard_session_state(session_id, process_state)
+                        _release_reservation(session_id, process_state)
                         yield _sse({"type": "error", "data": "WebUI queue expired; select the paths again"})
                         return
                     env[QUEUE_ENV] = validated_path
@@ -8502,7 +8562,7 @@ def execute_command():
                         raise ValueError("Invalid script path")
                 except Exception as err:
                     console.print(f"Refusing to run unsafe command: {err}", markup=False)
-                    _discard_session_state(session_id, process_state)
+                    _release_reservation(session_id, process_state)
                     yield _sse({"type": "error", "data": "Unsafe execution request"})
                     return
 
@@ -8512,8 +8572,8 @@ def execute_command():
                     # tab watches /api/sessions instead of holding a stream open.
                     handed_off = True
                     console.print(f"Scheduled upload session {session_id}", markup=False)
-                    yield _sse({"type": "scheduled"})
                     _start_scheduled_sessions()
+                    yield _sse({"type": "scheduled"})
                     return
 
                 _launch_session(session_id, process_state)
@@ -8526,13 +8586,11 @@ def execute_command():
                 console.print(f"Execution error for session {session_id}: {e}", markup=False)
                 console.print(traceback.format_exc(), markup=False)
                 if not handed_off:
+                    _release_reservation(session_id, process_state)
                     yield _sse({"type": "error", "data": "Execution error"})
-                    with contextlib.suppress(Exception):
-                        if process_state is not None:
-                            _discard_session_state(session_id, process_state)
             finally:
                 if not handed_off and validated_path:
-                    _remove_session_queue_file(validated_path)
+                    _release_session_queue_file(validated_path, process_state)
 
         return Response(generate(), mimetype="text/event-stream", headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"})
 
@@ -8621,20 +8679,16 @@ def kill_process():
             if not _verify_csrf_header() or not _verify_same_origin():
                 return jsonify({"error": "CSRF/Origin validation failed", "success": False}), 403
 
-        if session_id not in active_processes:
+        with active_processes_lock:
+            process_info = active_processes.get(session_id)
+            process = process_info.get("process") if process_info is not None else None
+            if process_info is not None and process is None and _session_state_is_current_locked(session_id, process_info):
+                active_processes.pop(session_id, None)
+        if process_info is None:
             return jsonify({"error": "No active process", "success": False}), 404
-
-        process_info = active_processes[session_id]
-        # Retrieve subprocess handle
-        process = process_info.get("process")
         if process is None:
-            # Kill can race with startup after the session has been registered
-            # but before Popen returns. Removing this state makes the launcher
-            # terminate the controller immediately if it does start. A scheduled
-            # upload is cancelled the same way and its queue file is released.
-            _discard_session_state(session_id, process_info)
             if process_info.get("scheduled"):
-                _remove_session_queue_file(str(process_info.get("execution_path") or ""))
+                _release_session_queue_file(str(process_info.get("execution_path") or ""), process_info)
             return jsonify({"success": True, "message": "Execution startup cancelled"})
 
         terminated = False
@@ -8659,8 +8713,7 @@ def kill_process():
                     stderr_t.join(timeout=1)
 
             if terminated:
-                with contextlib.suppress(Exception):
-                    active_processes.pop(session_id, None)
+                _discard_session_state(session_id, process_info)
 
         if not terminated:
             return jsonify({"error": "Failed to terminate process tree", "success": False}), 500
