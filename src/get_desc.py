@@ -1763,6 +1763,7 @@ class DescriptionBuilder:
         custom_header: bool = True,
         custom_signature: bool = True,
         description: bool = True,
+        disc_bdinfo: bool = True,  # BDInfo spoilers of later discs in a multi-disc pack
         game: bool = True,
         languages: bool = True,
         logo: bool = True,
@@ -2029,7 +2030,7 @@ class DescriptionBuilder:
         audio_spectrogram_section = await self.get_audio_spectrogram_section(meta) if audio_spectrogram else ""
         dynamic_hdr_plot_section = await self.get_dynamic_hdr_plot_section(meta) if dynamic_hdr_plot else ""
 
-        discs_and_screenshots = await self._handle_discs_and_screenshots(meta, approved_hosts, images, multi_screens) if screenshots else ""
+        discs_and_screenshots = await self._handle_discs_and_screenshots(meta, approved_hosts, images, multi_screens, disc_bdinfo=disc_bdinfo) if screenshots else ""
         if self._get_bool_config("hide_screenshot_header_if_only_section", True, meta):
             image_sections = [
                 (menu_section, await self.menu_screenshot_header(meta) if menu_section else ""),
@@ -2163,7 +2164,11 @@ class DescriptionBuilder:
             ]
         return []
 
-    def _append_disc_mediainfo(self, desc_parts: list[str], disc: dict[str, Any]) -> None:
+    def _append_disc_mediainfo(self, desc_parts: list[str], disc: dict[str, Any], bdinfo: bool = True) -> None:
+        if disc["type"] == "BDMV" and not bdinfo:
+            # The tracker carries this disc's BDInfo in its own field; the name still labels the screenshots.
+            desc_parts.append(f"{disc.get('name', 'BDINFO')}\n\n")
+            return
         blocks = self.disc_mediainfo_blocks(disc)
         if not blocks:
             return
@@ -2178,11 +2183,12 @@ class DescriptionBuilder:
         images: list[dict[str, str]],
         multi_screens: int,
         include_header: bool = True,
+        disc_bdinfo: bool = True,
     ) -> str:
         # Trackers upload concurrently, but each pack file's images are created
         # once: later trackers wait here and reuse them.
         async with release_image_lock(meta):
-            return await self._render_discs_and_screenshots(meta, approved_image_hosts, images, multi_screens, include_header)
+            return await self._render_discs_and_screenshots(meta, approved_image_hosts, images, multi_screens, include_header, disc_bdinfo)
 
     async def _render_discs_and_screenshots(
         self,
@@ -2191,6 +2197,7 @@ class DescriptionBuilder:
         images: list[dict[str, str]],
         multi_screens: int,
         include_header: bool = True,
+        disc_bdinfo: bool = True,
     ) -> str:
         if not images:
             return ""
@@ -2391,7 +2398,7 @@ class DescriptionBuilder:
                         if meta.get(new_images_key):
                             logger.debug(f"[yellow]Found needed image URLs for {new_images_key}")
                             desc_parts.append("[center]")
-                            self._append_disc_mediainfo(desc_parts, each)
+                            self._append_disc_mediainfo(desc_parts, each, disc_bdinfo)
                             desc_parts.append("[/center]\n\n")
                             # Use existing URLs from meta to write to descfile
                             desc_parts.append("[center]")
@@ -2407,7 +2414,7 @@ class DescriptionBuilder:
                             meta.retry_count += 1
                             meta[new_images_key] = []
                             desc_parts.append("[center]")
-                            self._append_disc_mediainfo(desc_parts, each)
+                            self._append_disc_mediainfo(desc_parts, each, disc_bdinfo)
                             desc_parts.append("[/center]\n\n")
                             # Check if new screenshots already exist before running prep.screenshots
                             new_screens = [f.name for f in manifest_files(meta.base_dir, meta.uuid, f"FILE_{i}")]
