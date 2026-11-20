@@ -262,6 +262,7 @@ def test_config_test_prowlarr_requires_session_and_csrf(monkeypatch) -> None:
 
 
 def test_config_test_prowlarr_returns_no_secrets(monkeypatch) -> None:
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     monkeypatch.setattr(server, "_is_authenticated", lambda: True)
     monkeypatch.setattr(server, "_verify_csrf_header", lambda: True)
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)

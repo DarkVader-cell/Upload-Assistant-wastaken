@@ -142,6 +142,7 @@ def test_wait_falls_back_to_webui_credentials(monkeypatch):
 def webui_client_test(monkeypatch):
     import web_ui.server as server
 
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     for guard in ("_is_authenticated", "_verify_csrf_header", "_verify_same_origin", "_is_ip_allowed"):
         monkeypatch.setattr(server, guard, lambda *args: True)
     qbit = MagicMock()

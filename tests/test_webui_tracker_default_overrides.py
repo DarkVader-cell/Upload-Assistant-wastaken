@@ -25,6 +25,7 @@ def tracker_config(tmp_path: Path, monkeypatch):
         path.write_text(f"config = {config!r}\n", encoding="utf-8")
     monkeypatch.setattr(server, "CODE_DIR", example_path.parent.parent)
     monkeypatch.setattr(server, "STATE_DIR", config_path.parent.parent)
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     monkeypatch.setattr(server, "_is_authenticated", lambda: True)
     monkeypatch.setattr(server, "_verify_csrf_header", lambda: True)
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)

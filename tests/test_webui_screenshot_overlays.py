@@ -23,6 +23,8 @@ def test_legacy_overlay_fields_round_trip_independently(tmp_path: Path, monkeypa
         monkeypatch.setattr(server, name, lambda: True)
     monkeypatch.setattr(server, "_write_audit_log", lambda *args, **kwargs: None)
 
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
+
     def displayed_options():
         with server.app.test_request_context("/api/config_options"):
             items = server.config_options().get_json()["sections"][0]["items"]
@@ -84,6 +86,7 @@ def test_editing_labels_preserves_implicit_master_state(tmp_path: Path, monkeypa
         monkeypatch.setattr(server, name, lambda: True)
     monkeypatch.setattr(server, "_write_audit_log", lambda *args, **kwargs: None)
 
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     for key in OVERLAY_KEYS:
         with server.app.test_request_context("/api/config_update", method="POST", json={"path": ["DEFAULT", key], "value": True}):
             assert server.config_update().get_json()["success"] is True

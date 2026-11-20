@@ -3895,6 +3895,65 @@ def _validate_release_group_overrides(value: object) -> None:
                 raise ValueError(f"Overrides for {name} must contain text fields or null values.")
 
 
+REDACTED_PLACEHOLDER = "<REDACTED>"
+_SENSITIVE_CONFIG_KEY_PATTERN = re.compile(
+    r"(api|username|password|announce_url|rss_key|passkey|qui_proxy_url|userhash|secret|token|client_id|login_answer|rtorrent_url|^cookies$)",
+    re.IGNORECASE,
+)
+
+
+def _is_sensitive_config_path(path: list[str]) -> bool:
+    if not path:
+        return False
+    return bool(_SENSITIVE_CONFIG_KEY_PATTERN.search(path[-1]) or ("TORRENT_CLIENTS" in path and re.search(r"(user|pass)", path[-1], re.IGNORECASE)))
+
+
+def _redact_config_value(path: list[str], value: Any, example_value: Any) -> Any:
+    if not isinstance(value, str) or not value.strip() or value == example_value:
+        return value
+    return REDACTED_PLACEHOLDER if _is_sensitive_config_path(path) else value
+
+
+TORRENT_CLIENT_DESTINATION_KEYS = ("torrent_client", "qbit_url", "qbit_port", "deluge_url", "deluge_port", "transmission_protocol", "transmission_host", "transmission_port", "transmission_path", "VERIFY_WEBUI_CERTIFICATE")
+TORRENT_CLIENT_DESTINATION_DEFAULTS: dict[str, Any] = {"transmission_protocol": "http", "transmission_path": "/transmission/rpc", "VERIFY_WEBUI_CERTIFICATE": True}
+
+
+def _contains_redacted(value: Any) -> bool:
+    return any(_contains_redacted(item) for item in value.values()) if isinstance(value, Mapping) else value == REDACTED_PLACEHOLDER
+
+
+def _same_destination_value(draft: Any, saved: Any, *, boolean: bool = False) -> bool:
+    if boolean:
+        return isinstance(draft, bool) and draft == (True if saved is None else saved)
+    if isinstance(draft, bool) or isinstance(saved, bool):
+        return False
+    return ("" if draft is None else str(draft).strip()) == ("" if saved is None else str(saved).strip())
+
+
+def _destination_matches(draft: Mapping[str, Any], saved: Any) -> bool:
+    saved_dict = _as_dict(saved)
+    if saved_dict is None:
+        return False
+    return all(_same_destination_value(draft.get(key, TORRENT_CLIENT_DESTINATION_DEFAULTS.get(key)), saved_dict.get(key, TORRENT_CLIENT_DESTINATION_DEFAULTS.get(key)), boolean=key == "VERIFY_WEBUI_CERTIFICATE") for key in TORRENT_CLIENT_DESTINATION_KEYS)
+
+
+def _restore_redacted_values(draft: Any, saved: Any) -> Any:
+    if isinstance(draft, Mapping):
+        saved_dict = _as_dict(saved) or {}
+        return {key: _restore_redacted_values(value, saved_dict.get(key)) for key, value in draft.items()}
+    return (saved if isinstance(saved, str) else "") if draft == REDACTED_PLACEHOLDER else draft
+
+
+def _find_redacted_sensitive_path(path: list[str], value: Any) -> list[str] | None:
+    if isinstance(value, Mapping):
+        for key, child in value.items():
+            found = _find_redacted_sensitive_path([*path, str(key)], child)
+            if found is not None:
+                return found
+        return None
+    return path if value == REDACTED_PLACEHOLDER and _is_sensitive_config_path(path) else None
+
+
 def _build_config_items(
     example_section: dict[str, Any],
     user_section: dict[str, Any],
@@ -3992,7 +4051,7 @@ def _build_config_items(
                 source = "example"
             item = {
                 "key": key,
-                "value": _json_safe(value),
+                "value": _json_safe(_redact_config_value(key_path, value, example_value)),
                 "example_value": _json_safe(example_value),
                 "source": source,
                 "help": help_text,
@@ -5040,6 +5099,49 @@ def csrf_token():
         return jsonify({"csrf_token": "", "success": False}), 500  # nosec: B105 - not a hardcoded password
 
 
+SETTINGS_REAUTH_SECONDS = 15 * 60
+SETTINGS_REAUTH_HEADER = "X-UA-Reauth-Required"
+
+
+def _settings_reauth_valid() -> bool:
+    state = _session_get("settings_reauth")
+    if not isinstance(state, Mapping):
+        return False
+    until = state.get("until")
+    return isinstance(until, (int, float)) and until > time.time() and _account_fingerprint_matches(state.get("account")) and state.get("totp") == _totp_enabled()
+
+
+def _settings_reauth_required_response() -> Any | None:
+    if _settings_reauth_valid():
+        return None
+    response = jsonify({"success": False, "error": "Confirm your WebUI password to change settings.", "reauth_required": True, "totp_required": _totp_enabled()})
+    response.status_code = 403
+    response.headers[SETTINGS_REAUTH_HEADER] = "1"
+    return response
+
+
+@app.route("/api/settings_reauth", methods=["POST"])
+@limiter.limit("5 per minute;30 per day", key_func=_rate_limit_key_func)
+def settings_reauth():
+    if not _is_authenticated():
+        return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
+    if not _verify_csrf_header() or not _verify_same_origin():
+        return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+    data = _request_json_dict()
+    password = data.get("password")
+    code = str(data.get("totp_code") or "").strip()
+    persisted = _load_user_record()
+    username = persisted.get("username") if persisted else None
+    fingerprint = _account_fingerprint()
+    totp_enabled = _totp_enabled()
+    password_ok = isinstance(username, str) and isinstance(password, str) and bool(password) and auth_mod.verify_user(username, password)
+    totp_ok = not totp_enabled or (bool(code) and _verify_totp_code(code))
+    if not (password_ok and totp_ok and _account_fingerprint_matches(fingerprint)):
+        return jsonify({"success": False, "error": "Password or 2FA code did not match"}), 400
+    _session_set("settings_reauth", {"until": time.time() + SETTINGS_REAUTH_SECONDS, "account": fingerprint, "totp": totp_enabled})
+    return jsonify({"success": True, "valid_seconds": SETTINGS_REAUTH_SECONDS})
+
+
 @app.route("/api/2fa/status")
 def twofa_status():
     """Check 2FA status"""
@@ -5086,6 +5188,8 @@ def access_log_level_api():
     # Require same-origin for token management actions
     if not _verify_same_origin():
         return jsonify({"success": False, "error": "Origin validation failed"}), 403
+    if (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
 
     if access_logger is None:
         return jsonify({"success": False, "error": "Access logging unavailable"}), 500
@@ -5161,6 +5265,8 @@ def ip_control_api():
         # Require CSRF and same-origin for POST
         if not _verify_csrf_header() or not _verify_same_origin():
             return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+        if (reauth := _settings_reauth_required_response()) is not None:
+            return reauth
         try:
             data_raw = request.get_json()
             data = _as_dict(data_raw) or {}
@@ -5208,6 +5314,8 @@ def twofa_setup():
     # Require CSRF + same-origin for 2FA setup (sensitive auth action)
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"error": "CSRF/Origin validation failed", "success": False}), 403
+    if (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
     if _totp_enabled():
         return jsonify({"error": "2FA already enabled", "success": False}), 400
 
@@ -5238,6 +5346,8 @@ def twofa_enable():
     # Require CSRF + same-origin for enabling 2FA
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"error": "CSRF/Origin validation failed", "success": False}), 403
+    if (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
     data = _request_json_dict()
     code = str(data.get("code", "")).strip()
 
@@ -5286,6 +5396,8 @@ def twofa_disable():
     # Require CSRF + same-origin for disabling 2FA
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"error": "CSRF/Origin validation failed", "success": False}), 403
+    if (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
     if not _totp_enabled():
         return jsonify({"error": "2FA not enabled", "success": False}), 400
 
@@ -6048,7 +6160,7 @@ def tracker_api_key_status():
     if not tracker_class or not getattr(tracker_class, "api_key_expiry_supported", False):
         return jsonify({"success": False, "error": "API key expiry checks are not supported for this tracker"}), 400
     config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
-    if "api_key" in data:
+    if "api_key" in data and data["api_key"] != REDACTED_PLACEHOLDER:
         api_key = data["api_key"]
     else:
         trackers_config = config.get("TRACKERS")
@@ -6123,10 +6235,18 @@ def config_test_prowlarr():
         return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+    if (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
 
     data = _request_json_dict()
     base_url = str(data.get("url") or "").strip()
     api_key = str(data.get("api_key") or "").strip()
+    if api_key == REDACTED_PLACEHOLDER:
+        saved_config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+        saved_default = _as_dict(saved_config.get("DEFAULT")) or {}
+        if not _same_destination_value(base_url, saved_default.get("prowlarr_url")):
+            return jsonify({"success": False, "error": "The Prowlarr URL changed. Re-enter the API key to test the new address."}), 400
+        api_key = str(saved_default.get("prowlarr_api_key") or "").strip()
     if not base_url or not api_key:
         return jsonify({"success": False, "error": "Prowlarr URL and API key are required"}), 400
 
@@ -6170,6 +6290,8 @@ def _config_write_route(view: Callable[..., Any]) -> Callable[..., Any]:
             return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
         if not _verify_csrf_header() or not _verify_same_origin():
             return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+        if (reauth := _settings_reauth_required_response()) is not None:
+            return reauth
         try:
             (STATE_DIR / "data").mkdir(parents=True, exist_ok=True, mode=0o700)
             with config_write_lock(STATE_DIR / "data" / "config.py"):
@@ -6323,6 +6445,9 @@ def _apply_config_update(source: str, example_config: dict[str, Any], data: dict
         # The runtime accepts fractional minutes even though the example is 60.
         example_value = 60.0
     coerced_value = None if inherit_tracker_override else _coerce_config_value(raw_value, example_value)
+    redacted_path = _find_redacted_sensitive_path(path, coerced_value)
+    if redacted_path is not None:
+        raise ValueError(f"Refusing to save the redacted placeholder for {'/'.join(redacted_path)}; re-enter the value")
     if len(path) == 2 and path[0] == "TRACKERS" and coerced_value == {} and isinstance(example_value, Mapping):
         saved_trackers = _as_dict(prior_config.get("TRACKERS")) or {}
         if path[1].casefold() not in {str(name).casefold() for name in saved_trackers}:
@@ -6442,9 +6567,10 @@ def config_update():
         return jsonify({"success": False, "error": "An error occurred while updating the configuration"}), 500
 
     _audit_config_updates(records, True)
+    values = [_json_safe(_redact_config_value(record["path"], record["value"], None)) for record in records]
     if is_batch:
-        return jsonify({"success": True, "values": [_json_safe(record["value"]) for record in records]})
-    return jsonify({"success": True, "value": _json_safe(records[0]["value"])})
+        return jsonify({"success": True, "values": values})
+    return jsonify({"success": True, "value": values[0]})
 
 
 @app.route("/api/config_remove_subsection", methods=["POST"])
@@ -6647,12 +6773,22 @@ def config_test_torrent_client():
         return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
     if not _verify_csrf_header() or not _verify_same_origin():
         return jsonify({"success": False, "error": "CSRF/Origin validation failed"}), 403
+    if (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
 
     data = _request_json_dict()
     client_name = str(data.get("name", "")).strip()
     client_config = _as_dict(data.get("config"))
     if not client_name or client_config is None:
         return jsonify({"success": False, "error": "Invalid torrent client configuration"}), 400
+    saved_name = str(data.get("saved_name") or client_name).strip()
+    saved_config = _load_config_from_file(STATE_DIR / "data" / "config.py") or {}
+    saved_clients = _as_dict(saved_config.get("TORRENT_CLIENTS")) or {}
+    saved_client = next((value for name, value in saved_clients.items() if str(name).casefold() == saved_name.casefold()), None)
+    if _contains_redacted(client_config):
+        if not _destination_matches(client_config, saved_client):
+            return jsonify({"success": False, "error": "The client address changed. Re-enter its password or API key to test the new address."}), 400
+        client_config = _restore_redacted_values(client_config, saved_client)
 
     client_type = str(client_config.get("torrent_client", "")).strip().lower()
     if client_type not in {"qbit", "rtorrent", "deluge", "transmission", "watch"}:
@@ -6805,6 +6941,8 @@ def api_tokens():
         return jsonify({"success": False, "error": "Authentication required (web session)"}), 401
     if not _verify_csrf_header():
         return jsonify({"success": False, "error": "CSRF validation failed"}), 403
+    if request.method != "GET" and (reauth := _settings_reauth_required_response()) is not None:
+        return reauth
 
     if request.method == "GET":
         store = _list_api_tokens()

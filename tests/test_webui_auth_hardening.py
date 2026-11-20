@@ -80,6 +80,7 @@ def test_basic_auth_cannot_bypass_two_factor(auth_root, monkeypatch):
 
 
 def test_stored_api_tokens_must_not_be_guessable(auth_root, monkeypatch):
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     server.auth_mod.create_user("fictional-user", PASSWORD)
     monkeypatch.setattr(server, "_verify_csrf_header", lambda: True)
     client = _session_client(server._account_fingerprint())
@@ -125,6 +126,7 @@ def test_command_redaction_hides_attached_and_separate_passwords():
 
 
 def test_ip_control_reports_policies_that_were_not_saved(auth_root, monkeypatch):
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     server.auth_mod.create_user("fictional-user", PASSWORD)
     monkeypatch.setattr(server, "_verify_csrf_header", lambda: True)
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)

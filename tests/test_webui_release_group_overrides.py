@@ -60,6 +60,7 @@ def config_files(tmp_path: Path, monkeypatch):
         path.write_text(f"config = {config!r}\n", encoding="utf-8")
     monkeypatch.setattr(server, "CODE_DIR", code_dir)
     monkeypatch.setattr(server, "STATE_DIR", state_dir)
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     monkeypatch.setattr(server, "_is_authenticated", lambda: True)
     monkeypatch.setattr(server, "_verify_csrf_header", lambda: True)
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)

@@ -273,6 +273,7 @@ def test_config_update_removes_all_optional_arr_instance_keys(
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)
     monkeypatch.setattr(server, "_write_audit_log", lambda *_args, **_kwargs: None)
 
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     for key in ("sonarr_url_1", "sonarr_api_key_1"):
         with server.app.test_request_context(
             "/api/config_update",
@@ -301,6 +302,7 @@ def test_config_update_accepts_dvd_par_boolean(tmp_path: Path, monkeypatch) -> N
     monkeypatch.setattr(server, "_verify_same_origin", lambda: True)
     monkeypatch.setattr(server, "_write_audit_log", lambda *_args, **_kwargs: None)
 
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     for value, expected in ((True, True), (False, False)):
         with server.app.test_request_context("/api/config_update", method="POST", json={"path": ["DEFAULT", "scale_dvd_screenshots_for_par"], "value": value}):
             response = server.config_update()

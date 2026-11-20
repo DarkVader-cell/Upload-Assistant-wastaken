@@ -26,6 +26,7 @@ def batch_config(tmp_path, monkeypatch):
         path.write_text(f"config = {config!r}\n", encoding="utf-8")
     monkeypatch.setattr(server, "CODE_DIR", example_path.parent.parent)
     monkeypatch.setattr(server, "STATE_DIR", config_path.parent.parent)
+    monkeypatch.setattr(server, "_settings_reauth_valid", lambda: True)
     for guard in ("_is_authenticated", "_verify_csrf_header", "_verify_same_origin", "_is_ip_allowed"):
         monkeypatch.setattr(server, guard, lambda *args: True)
     records = []
