@@ -1673,15 +1673,18 @@ def _set_process_progress_if_current(session_id: str, process_state: Mapping[str
         _apply_progress_event(current_state, event)
 
 
-def _progress_items_for_process(process_info: Mapping[str, object]) -> list[dict[str, object]]:
-    items: list[dict[str, object]] = []
-    with active_processes_lock:
-        progress_map_obj = process_info.get("progress")
-        if not _is_str_dict(progress_map_obj):
-            return []
-        items.extend(dict(value) for value in progress_map_obj.values() if _is_str_dict(value))
+def _progress_items_locked(process_info: Mapping[str, object]) -> list[dict[str, object]]:
+    progress_map_obj = process_info.get("progress")
+    if not _is_str_dict(progress_map_obj):
+        return []
+    items = [dict(value) for value in progress_map_obj.values() if _is_str_dict(value)]
     items.sort(key=lambda item: (0 if str(item.get("status", "")) == "running" else 1, str(item.get("id", ""))))
     return items
+
+
+def _progress_items_for_process(process_info: Mapping[str, object]) -> list[dict[str, object]]:
+    with active_processes_lock:
+        return _progress_items_locked(process_info)
 
 
 def _execution_item_paths(validated_path: str) -> list[str]:
@@ -2124,15 +2127,20 @@ def _preview_meta_matches_target(meta_data: Mapping[str, object], execution_path
 
 
 def _resolve_execution_preview_meta(session_id: str) -> tuple[str, Path | None, Mapping[str, object] | None]:
+    path, meta_file, meta_data, _status = _resolve_execution_preview_target(session_id)
+    return path, meta_file, meta_data
+
+
+def _resolve_execution_preview_target(session_id: str) -> tuple[str, Path | None, Mapping[str, object] | None, dict[str, object]]:
     for _ in range(3):
         with active_processes_lock:
             process_info = active_processes.get(session_id)
             if process_info is None:
-                return "", None, None
+                return "", None, None, {}
             execution_path = _stringify_preview_value(process_info.get("path"))
             known_uuid = _stringify_preview_value(process_info.get("meta_uuid"))
         if not execution_path:
-            return "", None, None
+            return "", None, None, {}
         base_tmp_dir = STATE_DIR / "tmp"
         alias_file = base_tmp_dir / Path(execution_path).name / "meta.json"
         alias = _read_execution_preview_meta_file(alias_file) if alias_file.exists() else None
@@ -2153,8 +2161,10 @@ def _resolve_execution_preview_meta(session_id: str) -> tuple[str, Path | None, 
                 and _stringify_preview_value(process_info.get("meta_uuid")) == known_uuid):
                 if cache_uuid:
                     process_info["meta_uuid"] = cache_uuid
-                return execution_path, meta_file, meta_data
-    return "", None, None
+                raw_input_type = process_info.get("input_type")
+                status = {"awaiting_input": bool(process_info.get("awaiting_input")), "input_type": raw_input_type if isinstance(raw_input_type, str) else None, "progress": _progress_items_locked(process_info)}
+                return execution_path, meta_file, meta_data, status
+    return "", None, None, {}
 
 
 # Lines the child writes for the server rather than the terminal.
@@ -2795,8 +2805,7 @@ def _extract_execution_preview(meta_data: Mapping[str, object], fallback_path: s
 
 
 def _find_execution_preview(session_id: str) -> ExecutionPreview | None:
-    process_info = active_processes.get(session_id, {})
-    execution_path, resolved_meta_file, resolved_meta = _resolve_execution_preview_meta(session_id)
+    execution_path, resolved_meta_file, resolved_meta, process_info = _resolve_execution_preview_target(session_id)
     if not execution_path:
         return None
 
@@ -2820,7 +2829,7 @@ def _find_execution_preview(session_id: str) -> ExecutionPreview | None:
             preview = _extract_execution_preview(meta_data, execution_path, session_id)
             preview["awaiting_input"] = bool(process_info.get("awaiting_input"))
             preview["input_type"] = input_type
-            preview["progress"] = _progress_items_for_process(process_info)
+            preview["progress"] = process_info.get("progress", [])
             return preview
         except Exception:  # noqa: S110
             pass
@@ -2875,7 +2884,7 @@ def _find_execution_preview(session_id: str) -> ExecutionPreview | None:
         "detail_sections": [],
         "awaiting_input": bool(process_info.get("awaiting_input")),
         "input_type": input_type,
-        "progress": _progress_items_for_process(process_info),
+        "progress": process_info.get("progress", []),
     }
 
 
@@ -8263,11 +8272,21 @@ def _release_session_queue_file(validated_path: str, own_state: Mapping[str, obj
         console.print(f"Failed to cleanup queue file: {cleanup_err}", markup=False)
 
 
+READER_DRAIN_GRACE_SECONDS = 2.0
+
+
 def _pump_session(session_id: str, process_state: dict[str, object], process: _WebUIProcess, process_mode: str) -> None:
     """Read one upload's output into its session log until the process exits."""
     exit_code: int | None = None
     try:
         output_queue: queue.Queue[tuple[str, str]] = queue.Queue()
+        output_gate = threading.Lock()
+        output_closed = False
+
+        def accept_output(item: tuple[str, str]) -> None:
+            with output_gate:
+                if not output_closed:
+                    output_queue.put(item)
 
         if isinstance(process, _ConPtyProcess):
             # A pseudo terminal combines stdout and stderr into one ANSI stream.
@@ -8278,7 +8297,7 @@ def _pump_session(session_id: str, process_state: dict[str, object], process: _W
                         # the pipe reader. ConPTY can return a whole prompt plus
                         # its trailing input marker in one read.
                         for char in process.read(1024):
-                            output_queue.put(("stdout", char))
+                            accept_output(("stdout", char))
                 except EOFError:
                     pass
                 except Exception as err:
@@ -8297,7 +8316,7 @@ def _pump_session(session_id: str, process_state: dict[str, object], process: _W
                         chunk = stdout.read(1)
                         if not chunk:
                             break
-                        output_queue.put(("stdout", chunk))
+                        accept_output(("stdout", chunk))
                 except Exception as err:
                     console.print(f"stdout read error: {err}", markup=False)
 
@@ -8311,7 +8330,7 @@ def _pump_session(session_id: str, process_state: dict[str, object], process: _W
                         chunk = stderr.read(1)
                         if not chunk:
                             break
-                        output_queue.put(("stderr", chunk))
+                        accept_output(("stderr", chunk))
                 except Exception as err:
                     console.print(f"stderr read error: {err}", markup=False)
 
@@ -8346,8 +8365,21 @@ def _pump_session(session_id: str, process_state: dict[str, object], process: _W
         prompt_timed_out = False
         orphaned = False
 
-        while process.poll() is None or not output_queue.empty():
-            if not prompt_timed_out and _unanswered_prompt_expired(process_state):
+        exited_at: float | None = None
+        while True:
+            exited = process.poll() is not None
+            if exited:
+                readers_done = not stdout_thread.is_alive() and (stderr_thread is None or not stderr_thread.is_alive())
+                if readers_done and output_queue.empty():
+                    break
+                if exited_at is None:
+                    exited_at = time.monotonic()
+                elif not output_closed and time.monotonic() - exited_at >= READER_DRAIN_GRACE_SECONDS:
+                    with output_gate:
+                        output_closed = True
+                if output_closed and output_queue.empty():
+                    break
+            if not exited and not prompt_timed_out and _unanswered_prompt_expired(process_state):
                 prompt_timed_out = True
                 minutes = float(cast(float, process_state["prompt_timeout"])) / 60
                 message = f"Upload killed: a prompt went unanswered for {minutes:g} minutes with no browser connected"
@@ -8454,6 +8486,7 @@ def _pump_session(session_id: str, process_state: dict[str, object], process: _W
             if process.poll() is None:
                 _terminate_process_tree(process)
         _close_webui_process_io(process)
+        process_state.pop("output_queue", None)
         execution_path = str(process_state.get("execution_path") or "")
         if execution_path:
             _release_session_queue_file(execution_path, process_state)

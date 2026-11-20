@@ -16,6 +16,11 @@ def test_scheduler_skips_session_without_launch(monkeypatch):
     assert state["scheduled"] is True
 
 
+def test_preview_rejects_metadata_from_another_path():
+    assert not server._preview_meta_matches_target({"path": "/other/same.mkv"}, "/target/same.mkv")
+    assert server._preview_meta_matches_target({"path": "/target/same.mkv"}, "/target/same.mkv")
+
+
 def test_queue_release_keeps_another_sessions_queue(monkeypatch, tmp_path):
     queue_file = tmp_path / "queue.txt"
     queue_file.write_text("payload\n")
