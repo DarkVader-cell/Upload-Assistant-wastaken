@@ -7575,11 +7575,21 @@ def execution_description():
     return jsonify(
         {
             "success": True,
+            "media_id": _stringify_preview_value(meta_data.get("uuid")),
             "content": content,
             "version": version,
             "sources": source_items(meta_data),
         }
     )
+
+
+def _description_item_error(payload: dict[str, object], meta_data: Mapping[str, object]) -> tuple[Any, int] | None:
+    requested_item = _stringify_preview_value(payload.get("media_id"))
+    if not requested_item:
+        return jsonify({"success": False, "error": "Description item is required"}), 400
+    if requested_item != _stringify_preview_value(meta_data.get("uuid")):
+        return jsonify({"success": False, "error": "The upload moved on to another item"}), 409
+    return None
 
 
 @app.route("/api/execution_description", methods=["PUT"])
@@ -7606,6 +7616,8 @@ def save_execution_description():
         return jsonify({"success": False, "error": "Description version is required"}), 400
 
     temp_dir, _meta_file, meta_data = resolved
+    if (item_error := _description_item_error(payload, meta_data)) is not None:
+        return item_error
     try:
         # Bind the draft to the exact source while preserving compare-and-swap locking.
         saved = save_review(temp_dir, content, source_path=meta_data.get("path"), expected_version=requested_version)
@@ -7635,6 +7647,8 @@ def reset_execution_description():
     from src.description_review import ReviewConflictError, save_review, source_items
 
     temp_dir, _meta_file, meta_data = resolved
+    if (item_error := _description_item_error(payload, meta_data)) is not None:
+        return item_error
     source = next((item for item in source_items(meta_data) if item["key"] == source_key), None)
     if source is None:
         return jsonify({"success": False, "error": "Description source was not found"}), 404
