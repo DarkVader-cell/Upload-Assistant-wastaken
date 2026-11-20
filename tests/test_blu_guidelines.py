@@ -324,10 +324,11 @@ def test_personal_release_should_failures_are_must():
     assert not decide(m=m).constraint_violation
 
 
-def test_prehosted_capture_manifest_counts_before_image_upload(monkeypatch):
-    monkeypatch.setattr("src.slot_rules.trackers.blutopia.manifest_files", lambda *_args: ["frame1.png", "frame2.png", "frame3.png"])
+def test_missing_screenshots_do_not_create_generic_slot_review():
     m = meta(image_list=[], uuid="synthetic", base_dir="/unused")
-    assert decide(m=m).verdict is Verdict.ALLOW
+    result = decide(m=m)
+    assert result.verdict is Verdict.ALLOW
+    assert not any("Screenshots:" in item for item in result.requirements)
 
 
 def test_known_non_anime_hi10p_is_not_a_manual_loophole():

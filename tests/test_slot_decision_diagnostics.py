@@ -84,7 +84,8 @@ def test_upload_only_evidence_check_says_no_identified_existing_cause(monkeypatc
     m = Meta(type="WEBDL", category="MOVIE", resolution="1080p", video_codec="AVC", service="AMZN", container="mkv")
     decision = BlutopiaSlotRules(m).evaluate(profile_from_meta(m), [])
     assert not decision.conflicts and not decision.related_releases
-    assert any("Screenshots: 0" in x for x in decision.requirements)
+    assert not any("Screenshots:" in x for x in decision.requirements)
+    assert any("MediaInfo:" in x for x in decision.requirements)
     text = render(monkeypatch, decision)
     assert "Required checks for this upload" in text and "No specific existing release" in text
     assert "Seed ≥7 days" not in text

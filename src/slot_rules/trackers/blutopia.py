@@ -7,9 +7,6 @@ better stream, and untouched originals remain alongside derived hybrids.
 
 import re
 from collections.abc import Sequence
-from contextlib import suppress
-
-from src.screenshot_manifest import files as manifest_files
 from dataclasses import replace
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -293,11 +290,6 @@ class BlutopiaSlotRules(SlotRules):
             )
         if m.personalrelease:
             pending.append("Personal release: SHOULD requirements are MUST, including applicable sources, audio assets, tags, logs and subtitle hygiene")
-        hosted_count = len(m.image_list) if isinstance(m.image_list, list) else 0
-        local_count = len(manifest_files(m.base_dir, m.uuid)) if m.base_dir and m.uuid else 0
-        screenshot_count = max(hosted_count, local_count)
-        if screenshot_count < 3:
-            pending.append(f"Screenshots: {screenshot_count} available; verify the tracker screenshot and comparison requirements before upload.")
         if not m.mediainfo:
             pending.append("MediaInfo: no parsed report was supplied for this upload; provide the required report in the tracker parser.")
         if not p.audio_languages or not m.original_language:
