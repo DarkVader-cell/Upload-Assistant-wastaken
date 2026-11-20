@@ -7,15 +7,28 @@ from src.get_desc import DescriptionBuilder
 from src.meta import Meta
 from src.rehostimages import ImageHostPolicy, RehostImagesManager
 from src.trackers.common import Common
+from src.trackers.naming import BLU_EDITION_TERMS, VideoNameRules, build_video_name
 from src.trackers.UNIT3D import UNIT3D
 
 Config = dict[str, Any]
+
+# STC's guide follows Aither's template, but a foreign-language label sits right before the audio
+# ("NF WEB-DL FRENCH DD+ 5.1"), and DVD-sourced releases omit resolution and video codec.
+STC_NAME_RULES = VideoNameRules(
+    language_slot="before_audio",
+    english_dub_only=True,
+    edition_terms=BLU_EDITION_TERMS,
+    honor_manual_year_on_tv=True,
+)
 
 
 class SkipTheCommercials(UNIT3D):
     """
     SkipTheCommercials (STC) is a Private Torrent Tracker for TV and
     documentary movies.
+
+    Naming guide: https://skipthecommercials.xyz/wikis/3
+    Synced with: last updated May 24, 2026.
     """
 
     # Options of the ID fields, offered in the Web UI preview (the getters ignore mapping_only).
@@ -55,7 +68,10 @@ class SkipTheCommercials(UNIT3D):
         self.rehost_images_manager = RehostImagesManager(config)
 
     async def get_name(self, meta: Meta) -> dict[str, str]:
-        """Apply STC's language marker without changing the shared base name."""
+        """Apply the STC naming guide and the fork's language marker."""
+        guided_name = await build_video_name(meta, STC_NAME_RULES, self.tracker)
+        if guided_name:
+            return {"name": guided_name}
         result = await super().get_name(meta)
         name = str(result.get("name", ""))
         if meta.category != "TV" or meta.dual_audio:
