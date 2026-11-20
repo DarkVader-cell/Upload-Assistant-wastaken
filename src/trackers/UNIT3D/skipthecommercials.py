@@ -70,9 +70,7 @@ class SkipTheCommercials(UNIT3D):
     async def get_name(self, meta: Meta) -> dict[str, str]:
         """Apply the STC naming guide and the fork's language marker."""
         guided_name = await build_video_name(meta, STC_NAME_RULES, self.tracker)
-        if guided_name:
-            return {"name": guided_name}
-        result = await super().get_name(meta)
+        result = {"name": guided_name} if guided_name else await super().get_name(meta)
         name = str(result.get("name", ""))
         if meta.category != "TV" or meta.dual_audio:
             return {"name": name}
@@ -88,7 +86,7 @@ class SkipTheCommercials(UNIT3D):
         elif len(unique_languages) > 1:
             language_tag = "MULTI"
 
-        if not language_tag:
+        if not language_tag or (guided_name and re.search(rf"\b{re.escape(language_tag)}\b", name, re.IGNORECASE)):
             return {"name": name}
 
         marker = f"{meta.season}{meta.episode}"
