@@ -1,0 +1,9 @@
+[Unit]
+Description=Run HBD-to-Destiny low-space handoff
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/Upload-Assistant-wastaken/tools/ua-hbd-to-destiny
+TimeoutStartSec=infinity

@@ -1,0 +1,11 @@
+[Unit]
+Description=Check HBD VPS space for Destiny handoff
+
+[Timer]
+OnActiveSec=1min
+OnUnitInactiveSec=15min
+AccuracySec=1min
+Unit=ua-hbd-to-destiny.service
+
+[Install]
+WantedBy=timers.target

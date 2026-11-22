@@ -743,7 +743,7 @@ class UploadHelper:
                 trumpable_text = _format_dupes_list(trumpable_dupes)
                 logger.info("[bold red]Trumpable found![/bold red]", extra={"ua_gui": False})
                 webui_events.dupes(tracker_name, trumpable_dupes, source_size=meta.source_size, trumpable=True)
-            elif meta.season_pack_contains_episode and any(
+            elif meta.get("season_pack_contains_episode") and any(
                 str(entry.get("id")) not in protected_ids and (report_ids is None or str(entry.get("id")) in report_ids)
                 for entry in meta.get(f"{tracker_name}_matched_episode_ids", [])):
                 matched_episodes = [entry for entry in cast(list[DupeEntry], meta.get(f"{tracker_name}_matched_episode_ids", []))

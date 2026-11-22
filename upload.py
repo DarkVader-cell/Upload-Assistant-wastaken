@@ -3070,7 +3070,7 @@ async def do_the_thing(base_dir: str) -> None:
 
             else:
                 meta = meta
-                if meta.were_trumping:
+                if meta.get("were_trumping", False):
                     trump_trackers = [t for t in cast(list[Any], meta.trackers)
                                       if isinstance(t, str) and t in {"AITHER", "LST"} and meta.get(f"{t}_were_trumping", True)]
                     logger.info("[yellow]Checking for existing trump reports.....")
@@ -3078,7 +3078,7 @@ async def do_the_thing(base_dir: str) -> None:
                     trumping_trackers: list[str] = []
                     for tracker in trump_trackers:
                         is_trumping = await tracker_setup.process_trumpables(meta, tracker=tracker)
-                        skip_upload_trackers = set(meta.skip_upload_trackers or [])
+                        skip_upload_trackers = set(meta.get("skip_upload_trackers") or [])
 
                         # Apply any per-tracker skip decisions made during trumpable processing
 
