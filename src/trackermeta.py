@@ -1,6 +1,5 @@
 # Upload Assistant © 2025 Audionut & wastaken7 — Licensed under UAPL v1.0
 import asyncio
-import io
 import sys
 from collections.abc import Mapping, Sequence
 from io import BytesIO
@@ -94,6 +93,23 @@ async def prompt_user_for_confirmation(message: str, meta: Meta | None = None) -
         sys.exit(1)
 
 
+def _verified_image_size(response: httpx.Response, url: str) -> tuple[int, int] | None:
+    if response.status_code != 200:
+        logger.error(f"[red]Failed to retrieve image: {url} (status code: {response.status_code})[/red]")
+        return None
+    if "image" not in response.headers.get("Content-Type", "").lower():
+        logger.info(f"[red]Content type is not an image: {url}[/red]")
+        return None
+    try:
+        with Image.open(BytesIO(response.content)) as image:
+            size = image.size
+            image.verify()
+            return size
+    except (OSError, SyntaxError) as e:
+        logger.info(f"[red]Image verification failed (corrupt image): {url} {e}[/red]")
+        return None
+
+
 async def check_images_concurrently(imagelist: Sequence[ImageDict], meta: Meta) -> list[ImageDict]:
     # Ensure meta.image_sizes exists
     if "image_sizes" not in meta:
@@ -155,57 +171,29 @@ async def check_images_concurrently(imagelist: Sequence[ImageDict], meta: Meta) 
         if parsed_host == "tmdb.org" or parsed_host.endswith(".tmdb.org"):
             return None
 
-        # Verify the image link
         try:
-            if await check_image_link(img_url, timeout):
-                try:
-                    async with httpx.AsyncClient(timeout=timeout) as session:
-                        try:
-                            response = await session.get(img_url)
-                            if response.status_code == 200:
-                                image_content = response.content
-
-                                try:
-                                    image = Image.open(BytesIO(image_content))
-                                    vertical_resolution = image.height
-                                    lower_bound = expected_vertical_resolution * 0.70
-                                    upper_bound = expected_vertical_resolution * (1.30 if meta.is_disc == "DVD" else 1.00)
-
-                                    if not (lower_bound <= vertical_resolution <= upper_bound):
-                                        logger.info(
-                                            f"[red]Image {img_url} resolution ({vertical_resolution}p) "
-                                            f"is outside the allowed range ({int(lower_bound)}-{int(upper_bound)}p). Skipping.[/red]"
-                                        )
-                                        return None
-
-                                    # Save image
-                                    Path(save_directory).mkdir(parents=True, exist_ok=True)
-                                    image_filename = Path(save_directory) / Path(img_url).name
-                                    await asyncio.to_thread(Path(image_filename).write_bytes, image_content)
-
-                                    logger.info(f"Saved {img_url} as {image_filename}")
-
-                                    meta.image_sizes[img_url] = len(image_content)
-
-                                    logger.debug(f"Valid image {img_url} with resolution {image.width}x{image.height} and size {len(image_content) / 1024:.2f} KiB")
-                                    return image_dict
-                                except Exception as e:
-                                    logger.error(f"[red]Failed to process image {img_url}: {e}")
-                                    return None
-                            else:
-                                logger.error(f"[red]Failed to fetch image {img_url}. Status: {response.status_code}. Skipping.")
-                                return None
-                        except TimeoutError:
-                            logger.info(f"[red]Timeout downloading image: {img_url}")
-                            return None
-                        except httpx.HTTPError as e:
-                            logger.info(f"[red]Client error downloading image: {img_url} - {e}")
-                            return None
-                except Exception as e:
-                    logger.info(f"[red]Session error for image: {img_url} - {e}")
-                    return None
-            else:
+            async with httpx.AsyncClient(timeout=timeout) as session:
+                response = await session.get(img_url)
+            size = _verified_image_size(response, img_url)
+            if size is None:
                 return None
+            width, height = size
+            lower_bound = expected_vertical_resolution * 0.70
+            upper_bound = expected_vertical_resolution * (1.30 if meta.is_disc == "DVD" else 1.00)
+            if not (lower_bound <= height <= upper_bound):
+                logger.info(
+                    f"[red]Image {img_url} resolution ({height}p) is outside the allowed range ({int(lower_bound)}-{int(upper_bound)}p). Skipping.[/red]"
+                )
+                return None
+
+            image_content = response.content
+            save_directory.mkdir(parents=True, exist_ok=True)
+            image_filename = save_directory / Path(img_url).name
+            await asyncio.to_thread(image_filename.write_bytes, image_content)
+            meta.image_sizes[img_url] = len(image_content)
+            logger.info(f"Saved {img_url} as {image_filename}")
+            logger.debug(f"Valid image {img_url} with resolution {width}x{height} and size {len(image_content) / 1024:.2f} KiB")
+            return image_dict
         except Exception as e:
             logger.error(f"[red]Error checking image: {img_url} - {e}")
             return None
@@ -244,24 +232,7 @@ async def check_image_link(url: str, timeout: httpx.Timeout | None = None) -> bo
         async with httpx.AsyncClient(timeout=timeout, verify=False) as session:  # noqa: S501
             try:
                 response = await session.get(url)
-                if response.status_code == 200:
-                    content_type = response.headers.get("Content-Type", "").lower()
-                    if "image" in content_type:
-                        # Attempt to load the image
-                        image_data = response.content
-                        try:
-                            image = Image.open(io.BytesIO(image_data))
-                            image.verify()  # This will check if the image is broken
-                            return True
-                        except (OSError, SyntaxError) as e:
-                            logger.info(f"[red]Image verification failed (corrupt image): {url} {e}[/red]")
-                            return False
-                    else:
-                        logger.info(f"[red]Content type is not an image: {url}[/red]")
-                        return False
-                else:
-                    logger.error(f"[red]Failed to retrieve image: {url} (status code: {response.status_code})[/red]")
-                    return False
+                return _verified_image_size(response, url) is not None
             except TimeoutError:
                 logger.info(f"[red]Timeout checking image link: {url}[/red]")
                 return False
