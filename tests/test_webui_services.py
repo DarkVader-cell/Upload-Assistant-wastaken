@@ -1,6 +1,8 @@
 # ruff: noqa: S101
 
 import json
+from collections import UserDict
+from types import MappingProxyType
 
 from web_ui.services.detached_jobs import restore_detached_jobs, snapshot_detached_jobs, validate_detached_args
 from web_ui.services.presets import load_argument_presets, save_argument_presets
@@ -48,6 +50,24 @@ def test_detached_snapshot_redacts_commands_and_sets_capabilities():
             "can_retry": False,
         }
     ]
+
+
+def test_detached_snapshot_limits_stably_without_copying_skipped_jobs_or_mutating_records():
+    class SortKeyOnlyJob(UserDict):
+        def __iter__(self):
+            raise AssertionError("skipped job fields should not be enumerated")
+
+    def record(job_id, created_at):
+        return MappingProxyType({"id": job_id, "created_at": created_at, "status": "queued", "command": ("secret",)})
+
+    jobs = {
+        "first": record("first", "2"),
+        "latest": record("latest", "3"),
+        "tied": SortKeyOnlyJob(created_at="2"),
+    }
+    snapshots = snapshot_detached_jobs(jobs, ["first", "latest"], limit=2, json_safe=lambda value: value)
+    assert [(job["id"], job["queue_position"]) for job in snapshots] == [("latest", 2), ("first", 1)]
+    assert all("command" not in job for job in snapshots)
 
 
 def test_detached_argument_validation_keeps_unattended_compatibility():

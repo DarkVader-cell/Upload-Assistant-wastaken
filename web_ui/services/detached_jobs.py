@@ -61,9 +61,8 @@ def snapshot_detached_jobs(
     limit: int,
     json_safe: Callable[[object], Any],
 ) -> list[dict[str, Any]]:
-    values = [dict(job) for job in jobs.values()]
+    values = sorted(jobs.values(), key=lambda item: str(item.get("created_at", "")), reverse=True)
     queue_positions = {job_id: index + 1 for index, job_id in enumerate(queue)}
-    values.sort(key=lambda item: str(item.get("created_at", "")), reverse=True)
     snapshots: list[dict[str, Any]] = []
     for job in values[:limit]:
         snapshot = {key: value for key, value in job.items() if key != "command"}

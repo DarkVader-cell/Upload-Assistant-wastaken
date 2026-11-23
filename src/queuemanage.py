@@ -280,20 +280,11 @@ class QueueManager:
             # Normalize the path
             dir_path = os.path.normpath(dir_path)
 
-            # Check for disc structures first (VIDEO_TS or BDMV subfolders)
-            for entry in os.scandir(dir_path):
-                if entry.is_dir() and entry.name.upper() in ("VIDEO_TS", "BDMV"):
-                    return True
-
-            # Check for files with allowed extensions
-            if allowed_extensions_tuple:
-                for entry in os.scandir(dir_path):
-                    if entry.is_file() and entry.name.lower().endswith(allowed_extensions_tuple):
+            with os.scandir(dir_path) as entries:
+                for entry in entries:
+                    if entry.name.upper() in ("VIDEO_TS", "BDMV") and entry.is_dir():
                         return True
-            else:
-                # If no allowed_extensions specified, include any directory with files
-                for entry in os.scandir(dir_path):
-                    if entry.is_file():
+                    if (not allowed_extensions_tuple or entry.name.lower().endswith(allowed_extensions_tuple)) and entry.is_file():
                         return True
 
             return False
