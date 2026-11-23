@@ -8,6 +8,7 @@ import os
 import platform
 import random
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -212,29 +213,36 @@ class TorrentCreator:
         return piece_size
 
     @staticmethod
-    def _mkbrr_exclude_parts(root_folder: str, filelist: Sequence[str], allow_subs: bool = False) -> tuple[list[str], list[str]]:
-        """Return the unselected file names and the extension patterns to exclude."""
+    def _scan_mkbrr_files(root_folder: str, filelist: Sequence[str], allow_subs: bool, *, measure_size: bool) -> tuple[int, list[str], list[str]]:
+        """Collect exclusion parts and, during directory preflight, all regular file bytes."""
         if allow_subs:
             manual_patterns = ["*.nfo", "*.jpg", "*.png", "*.txt", "*.xml"]
         else:
             manual_patterns = ["*.nfo", "*.jpg", "*.png", "*.srt", "*.sub", "*.vtt", "*.ssa", "*.ass", "*.txt", "*.xml"]
         keep_set = {str(Path(f).resolve()) for f in filelist}
 
+        size = 0
         exclude_files: set[str] = set()
         for dirpath, _, filenames in os.walk(root_folder):
             for fname in filenames:
-                full_path = str(Path(Path(dirpath) / fname).resolve())
-                if full_path in keep_set:
+                file_path = Path(dirpath) / fname
+                if measure_size:
+                    # Follow regular-file symlinks for size; a broken link still needs exclusion handling.
+                    with contextlib.suppress(OSError):
+                        info = file_path.stat()
+                        if stat.S_ISREG(info.st_mode):
+                            size += info.st_size
+                if str(file_path.resolve()) in keep_set:
                     continue
                 if any(fnmatch.fnmatch(fname, pat) for pat in manual_patterns):
                     continue
                 exclude_files.add(fname)
 
-        return sorted(exclude_files), manual_patterns
+        return size, sorted(exclude_files), manual_patterns
 
     @staticmethod
     def build_mkbrr_exclude_string(root_folder: str, filelist: Sequence[str], allow_subs: bool = False) -> str:
-        names, manual_patterns = TorrentCreator._mkbrr_exclude_parts(root_folder, filelist, allow_subs)
+        _, names, manual_patterns = TorrentCreator._scan_mkbrr_files(root_folder, filelist, allow_subs, measure_size=False)
         return ",".join(names + manual_patterns)
 
     @staticmethod
@@ -246,7 +254,11 @@ class TorrentCreator:
         therefore also drop a selected ``E01.mkv``, and a name with a comma or
         glob characters, such as ``sample.[GRP].mkv``, would not be excluded.
         """
-        names, manual_patterns = TorrentCreator._mkbrr_exclude_parts(root_folder, filelist, allow_subs)
+        _, names, manual_patterns = TorrentCreator._scan_mkbrr_files(root_folder, filelist, allow_subs, measure_size=False)
+        return TorrentCreator._exact_mkbrr_exclusions(filelist, names, manual_patterns)
+
+    @staticmethod
+    def _exact_mkbrr_exclusions(filelist: Sequence[str], names: list[str], manual_patterns: list[str]) -> str | None:
         if any(not _MKBRR_GLOB_CHARACTERS.isdisjoint(name) for name in names):
             return None
         selected = {Path(file).name.casefold() for file in filelist}
@@ -255,6 +267,11 @@ class TorrentCreator:
         if any(fnmatch.fnmatchcase(name, pattern) for name in selected for pattern in manual_patterns):
             return None
         return ",".join(names + manual_patterns)
+
+    @classmethod
+    def _mkbrr_directory_preflight(cls, root_folder: str, filelist: Sequence[str], allow_subs: bool) -> tuple[int, str | None]:
+        size, names, manual_patterns = cls._scan_mkbrr_files(root_folder, filelist, allow_subs, measure_size=True)
+        return size, cls._exact_mkbrr_exclusions(filelist, names, manual_patterns)
 
     @classmethod
     async def create_torrent(
@@ -338,25 +355,25 @@ class TorrentCreator:
                     if output_filename == "BASE":
                         exclude.extend(f"*{extension}" for extension in SUBTITLE_EXTENSIONS)
 
-                # Calculate initial size
-                def calculate_size() -> int:
+                use_mkbrr = bool(meta.mkbrr)
+                check_exclusions = use_mkbrr and not meta.is_disc and is_video
+
+                def preflight() -> tuple[int, str | None]:
                     size = 0
                     if Path(path).is_file():
                         size = Path(path).stat().st_size
                     elif Path(path).is_dir():
+                        if check_exclusions:
+                            return cls._mkbrr_directory_preflight(str(path), creation_filelist, is_subs)
                         for root, _dirs, files in os.walk(path):
                             size += sum((Path(root) / f).stat().st_size for f in files if (Path(root) / f).is_file())
-                    return size
+                    exclusions = cls.mkbrr_exact_exclude_string(str(path), creation_filelist, is_subs) if check_exclusions else None
+                    return size, exclusions
 
-                initial_size = await asyncio.to_thread(calculate_size)
-
-                mkbrr_exclude: str | None = None
-                use_mkbrr = bool(meta.mkbrr)
-                if use_mkbrr and not meta.is_disc and is_video:
-                    mkbrr_exclude = await asyncio.to_thread(cls.mkbrr_exact_exclude_string, str(path), creation_filelist, is_subs)
-                    if mkbrr_exclude is None:
-                        logger.debug("[yellow]mkbrr cannot exclude only the unselected files; creating this torrent without mkbrr.[/yellow]")
-                        use_mkbrr = False
+                initial_size, mkbrr_exclude = await asyncio.to_thread(preflight)
+                if check_exclusions and mkbrr_exclude is None:
+                    logger.debug("[yellow]mkbrr cannot exclude only the unselected files; creating this torrent without mkbrr.[/yellow]")
+                    use_mkbrr = False
 
                 # If using mkbrr, run the external application
                 if use_mkbrr:
