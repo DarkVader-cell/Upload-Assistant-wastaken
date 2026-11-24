@@ -142,8 +142,11 @@ test("every distribution chart and expandable stats table has a stable preferenc
       keys.set(name, group);
     },
   });
-  assert.equal(keys.get("DistributionChart").size, 5);
-  assert.equal(keys.get("ChartWithTable").size, 10);
+  // Pin persisted identifiers, not just the number of chart components.
+  const distributions = ["uploads-by-destination", "categories", "cache-by-provider", "external-operations", "upload-problems", "image-hosts"];
+  const tables = [...distributions, "media-profile", "streaming-services", "personal-releases", "artifact-activity", "content-time", "execution-source", "stage-timing", "after-upload"];
+  assert.deepEqual(keys.get("DistributionChart"), new Set([...distributions.map(JSON.stringify), '{`media-profile-${dimension}`}']));
+  assert.deepEqual(keys.get("ChartWithTable"), new Set(tables.map(JSON.stringify)));
 });
 
 test("daily activity restores each series and validates saved values independently", () => {
