@@ -56,9 +56,6 @@ WORKDIR /Upload-Assistant
 # Copy the rest of the application
 COPY . .
 
-# Download the pinned official MediaInfo CLI used by the application.
-RUN python3 -c "import asyncio; from pathlib import Path; from bin.get_mediainfo import MediaInfoBinaryManager; binary = asyncio.run(MediaInfoBinaryManager.ensure_mediainfo_binary('/Upload-Assistant')); Path('/usr/local/bin/mediainfo').symlink_to(binary)"
-
 # Preserve the built-in data/ directory outside the mount-point so that
 # volume mounts over /Upload-Assistant/data/ don't hide critical files
 # (__init__.py, example-config.py, templates/).
@@ -75,7 +72,7 @@ RUN rm -rf /Upload-Assistant/defaults \
 # permissions in the same layer so each binary is stored in the image once.
 # UID 1000 owns them (runtime binary updates need chmod) and any other UID
 # (e.g. Unraid 99:100) can read/execute.
-RUN python3 -c "import asyncio; from bin.get_mediainfo import MediaInfoBinaryManager; asyncio.run(MediaInfoBinaryManager.ensure_mediainfo_binary('/Upload-Assistant'))" \
+RUN python3 -c "import asyncio; from pathlib import Path; from bin.get_mediainfo import MediaInfoBinaryManager; binary = asyncio.run(MediaInfoBinaryManager.ensure_mediainfo_binary('/Upload-Assistant')); Path('/usr/local/bin/mediainfo').symlink_to(binary)" \
     && python3 -c "from bin.get_mkbrr import MkbrrBinaryManager; MkbrrBinaryManager.download_mkbrr_for_docker()" \
     && python3 bin/get_bdinfo_docker.py \
     && find bin/mkbrr -name "mkbrr" -print0 | xargs -0 chmod +x \
