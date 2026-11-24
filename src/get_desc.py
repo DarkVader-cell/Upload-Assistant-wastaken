@@ -7,6 +7,7 @@ import math
 import os
 import re
 import urllib.parse
+from collections import deque
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
@@ -2536,7 +2537,7 @@ class DescriptionBuilder:
                         )
 
         # Files whose images still have to be generated and hosted, in order.
-        pending_files = [(i, file) for i, file in pack_files if i > 0 and not meta.get(f"new_images_file_{i}")]
+        pending_files = deque((i, file) for i, file in pack_files if i > 0 and not meta.get(f"new_images_file_{i}"))
 
         async def capture_file_screens(index: int, file_path: str) -> list[str]:
             group = f"FILE_{index}"
@@ -2571,7 +2572,7 @@ class DescriptionBuilder:
                 if not pending_files or pending_files[0][0] != i or next_capture is None:
                     continue
 
-                pending_files.pop(0)
+                pending_files.popleft()
                 new_images_key = f"new_images_file_{i}"
                 meta[new_images_key] = []
                 new_screens = await next_capture

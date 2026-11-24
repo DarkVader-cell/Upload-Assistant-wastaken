@@ -1842,7 +1842,6 @@ config: dict[str, Any] = {
             # The configurations below override the DEFAULT configuration
         },
         "ROCKETHD": {
-            "anon": False,
             "cli_alias": "RHD",
             # Instead of using the tracker acronym for folder name when sym/hard linking, you can use a custom name
             "link_dir_name": "",
@@ -1915,29 +1914,6 @@ config: dict[str, Any] = {
             # Upload as sticky/pinned
             "sticky": False,
             # The configurations below override the DEFAULT configuration
-            "add_logo": True,
-            "logo_size": "",
-            "thumbnail_size": "",
-            "screens_per_row": "",
-            "episode_overview": True,
-            "tonemapped_header": "[center]Screenshots have been adapted for SDR viewing, for reference only.[/center]",
-            "multiScreens": "",
-            "pack_thumb_size": "",
-            "charLimit": "",
-            "fileLimit": "",
-            "processLimit": "",
-            "custom_description_header": "",
-            "screenshot_header": "[h2]Screenshots[/h2]",
-            "disc_menu_header": "[h2]Disc Menu Screenshots[/h2]",
-            "audio_spectrogram_header": "[h2]Audio Spectrogram[/h2]",
-            "dynamic_hdr_plot_header": "[h2]Dynamic HDR Metadata[/h2]",
-            "custom_signature": "",
-            "add_bluray_link": True,
-            "use_bluray_images": True,
-            "bluray_image_size": "",
-            "add_audio_spectrogram": False,
-            "add_dynamic_hdr_plot": False,
-            "inject_delay": 0,
         },
         "SHAREISLAND": {
             "anon": False,
